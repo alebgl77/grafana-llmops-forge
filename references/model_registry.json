@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "verified_at": "2026-07-12",
+    "currency": "USD",
+    "unit": "per_million_tokens",
+    "refresh_protocol": "Si verified_at > 30 jours ET accès web disponible : pour chaque modèle DÉTECTÉ dans la capability map, vérifier le prix sur l'URL officielle de _meta.sources correspondant au fournisseur ; écrire le résultat dans model_registry.local.json (même schéma) à côté de la capability map — la forge le charge en priorité. Ne jamais éditer ce fichier seed pendant une exécution ; il sert de fallback hors ligne. Les entrées estimate:true doivent être vérifiées en priorité.",
+    "matching": "match_models() normalise (minuscules, alphanumérique) et compare id + aliases aux valeurs du label modèle observé. Ajouter des aliases plutôt que de renommer les id.",
+    "sources": {
+      "openai": "https://platform.openai.com/docs/pricing",
+      "anthropic": "https://docs.claude.com/en/docs/about-claude/pricing",
+      "google": "https://ai.google.dev/gemini-api/docs/pricing",
+      "mistral": "https://mistral.ai/pricing",
+      "deepseek": "https://api-docs.deepseek.com/quick_start/pricing",
+      "alibaba": "https://www.alibabacloud.com/help/en/model-studio/models",
+      "moonshot": "https://platform.moonshot.ai/docs/pricing",
+      "zhipu": "https://docs.z.ai/guides/overview/pricing",
+      "minimax": "https://platform.minimax.io/docs/price",
+      "xai": "https://docs.x.ai/overview",
+      "meta_hosted": "https://openrouter.ai/models"
+    },
+    "notes": "Prix standard non-batch, hors remises volume. tiered_pricing: le prix input monte au-delà du seuil de contexte indiqué. cached_input_per_mtok: lecture de cache (écriture non incluse). Les prix LLM bougent trimestriellement — la date fait partie de la donnée."
+  },
+  "models": [
+    {"id": "gpt-5.5", "aliases": ["gpt5.5"], "vendor": "OpenAI", "region": "us", "input_per_mtok": 5.0, "output_per_mtok": 30.0, "context_window": 400000, "open_weights": false, "gpai_in_scope": true, "notes": "Flagship raisonnement ; tokens de thinking facturés en output."},
+    {"id": "gpt-5.4", "aliases": ["gpt5.4"], "vendor": "OpenAI", "region": "us", "input_per_mtok": 2.5, "output_per_mtok": 15.0, "context_window": 400000, "open_weights": false, "gpai_in_scope": true, "notes": "Cheval de trait production ; batch −50 %."},
+    {"id": "gpt-5.4-mini", "aliases": ["gpt-5.4mini"], "vendor": "OpenAI", "region": "us", "input_per_mtok": 0.45, "output_per_mtok": 1.8, "context_window": 400000, "open_weights": false, "gpai_in_scope": true, "estimate": true},
+    {"id": "gpt-5.4-pro", "aliases": [], "vendor": "OpenAI", "region": "us", "input_per_mtok": 30.0, "output_per_mtok": 180.0, "context_window": 400000, "open_weights": false, "gpai_in_scope": true, "notes": "Tier premium raisonnement long."},
+    {"id": "gpt-4.1", "aliases": [], "vendor": "OpenAI", "region": "us", "input_per_mtok": 2.0, "output_per_mtok": 8.0, "context_window": 1000000, "open_weights": false, "gpai_in_scope": true},
+    {"id": "gpt-4.1-nano", "aliases": ["gpt4.1nano"], "vendor": "OpenAI", "region": "us", "input_per_mtok": 0.10, "output_per_mtok": 0.40, "context_window": 1000000, "open_weights": false, "gpai_in_scope": true, "notes": "Classification/extraction haut volume."},
+    {"id": "o4-mini", "aliases": ["o4mini"], "vendor": "OpenAI", "region": "us", "input_per_mtok": 1.1, "output_per_mtok": 4.4, "context_window": 200000, "open_weights": false, "gpai_in_scope": true},
+
+    {"id": "claude-fable-5", "aliases": ["fable-5", "claude-fable"], "vendor": "Anthropic", "region": "us", "input_per_mtok": null, "output_per_mtok": null, "context_window": null, "open_weights": false, "gpai_in_scope": true, "notes": "Classe Mythos ; rétabli le 1er juillet 2026 après levée du contrôle export US. Prix : vérifier docs.claude.com."},
+    {"id": "claude-opus-4.8", "aliases": ["claude-opus-4-8", "opus-4.8"], "vendor": "Anthropic", "region": "us", "input_per_mtok": 5.0, "output_per_mtok": 25.0, "cached_input_per_mtok": 0.5, "context_window": 200000, "open_weights": false, "gpai_in_scope": true, "notes": "Cache read ≈ 10 % du prix input."},
+    {"id": "claude-sonnet-4.6", "aliases": ["claude-sonnet-4-6", "sonnet-4.6"], "vendor": "Anthropic", "region": "us", "input_per_mtok": 3.0, "output_per_mtok": 15.0, "cached_input_per_mtok": 0.3, "context_window": 200000, "open_weights": false, "gpai_in_scope": true},
+    {"id": "claude-sonnet-5", "aliases": ["sonnet-5"], "vendor": "Anthropic", "region": "us", "input_per_mtok": 2.0, "output_per_mtok": 10.0, "context_window": 200000, "open_weights": false, "gpai_in_scope": true, "estimate": true, "notes": "Input 2$ vérifié ; output à confirmer."},
+    {"id": "claude-haiku-4.5", "aliases": ["claude-haiku-4-5", "haiku-4.5"], "vendor": "Anthropic", "region": "us", "input_per_mtok": 0.80, "output_per_mtok": 4.0, "context_window": 200000, "open_weights": false, "gpai_in_scope": true, "estimate": true},
+
+    {"id": "gemini-3.1-pro", "aliases": ["gemini-3-1-pro"], "vendor": "Google", "region": "us", "input_per_mtok": 2.0, "output_per_mtok": 12.0, "context_window": 1000000, "open_weights": false, "gpai_in_scope": true, "tiered_pricing": {"threshold_tokens": 200000, "input_per_mtok": 4.0, "output_per_mtok": 18.0}},
+    {"id": "gemini-3-flash", "aliases": ["gemini-3.0-flash"], "vendor": "Google", "region": "us", "input_per_mtok": 0.50, "output_per_mtok": 3.0, "context_window": 1000000, "open_weights": false, "gpai_in_scope": true},
+    {"id": "gemini-3.1-flash-lite", "aliases": ["gemini-flash-lite"], "vendor": "Google", "region": "us", "input_per_mtok": 0.10, "output_per_mtok": 0.40, "context_window": 1000000, "open_weights": false, "gpai_in_scope": true},
+    {"id": "gemini-2.5-flash", "aliases": [], "vendor": "Google", "region": "us", "input_per_mtok": 0.15, "output_per_mtok": 0.60, "context_window": 1000000, "open_weights": false, "gpai_in_scope": true},
+
+    {"id": "grok-4", "aliases": [], "vendor": "xAI", "region": "us", "input_per_mtok": 3.0, "output_per_mtok": 15.0, "context_window": 256000, "open_weights": false, "gpai_in_scope": true, "estimate": true},
+    {"id": "grok-4-fast", "aliases": [], "vendor": "xAI", "region": "us", "input_per_mtok": 0.20, "output_per_mtok": 0.50, "context_window": 2000000, "open_weights": false, "gpai_in_scope": true, "estimate": true, "notes": "Plus grand contexte pratique du marché (2M)."},
+
+    {"id": "llama-4-maverick", "aliases": ["llama-4", "llama4"], "vendor": "Meta", "region": "us", "input_per_mtok": null, "output_per_mtok": null, "context_window": 1000000, "open_weights": true, "gpai_in_scope": true, "notes": "Open weights — prix selon hébergeur (0,10–3,00 $ pour les mêmes poids). Renseigner le prix de VOTRE hébergeur dans model_registry.local.json."},
+    {"id": "nova-lite", "aliases": ["amazon-nova-lite"], "vendor": "Amazon", "region": "us", "input_per_mtok": 0.06, "output_per_mtok": 0.24, "context_window": 300000, "open_weights": false, "gpai_in_scope": true, "estimate": true},
+
+    {"id": "mistral-large-3", "aliases": ["mistral-large"], "vendor": "Mistral AI", "region": "eu", "input_per_mtok": 2.0, "output_per_mtok": 6.0, "context_window": 128000, "open_weights": false, "gpai_in_scope": true, "estimate": true, "notes": "Souveraineté UE ; hébergement EU disponible."},
+    {"id": "mistral-medium-3", "aliases": ["mistral-medium"], "vendor": "Mistral AI", "region": "eu", "input_per_mtok": 0.40, "output_per_mtok": 2.0, "context_window": 128000, "open_weights": false, "gpai_in_scope": true, "estimate": true},
+    {"id": "mistral-small-3.2", "aliases": ["mistral-small"], "vendor": "Mistral AI", "region": "eu", "input_per_mtok": 0.10, "output_per_mtok": 0.30, "context_window": 128000, "open_weights": true, "gpai_in_scope": true, "notes": "Option budget RGPD-friendly ; open weights."},
+    {"id": "magistral", "aliases": ["magistral-medium"], "vendor": "Mistral AI", "region": "eu", "input_per_mtok": null, "output_per_mtok": null, "context_window": 128000, "open_weights": false, "gpai_in_scope": true, "notes": "Gamme raisonnement Mistral — vérifier le prix courant."},
+
+    {"id": "deepseek-v4-flash", "aliases": ["deepseek-chat", "deepseek-v4"], "vendor": "DeepSeek", "region": "asia", "input_per_mtok": 0.14, "output_per_mtok": 0.28, "cached_input_per_mtok": 0.0036, "context_window": 1000000, "open_weights": false, "gpai_in_scope": true, "notes": "Rapport qualité/prix de référence ; parle nativement les formats OpenAI ET Anthropic."},
+    {"id": "deepseek-v4-pro-max", "aliases": ["deepseek-v4-pro"], "vendor": "DeepSeek", "region": "asia", "input_per_mtok": 1.2, "output_per_mtok": 2.4, "context_window": 1000000, "open_weights": true, "gpai_in_scope": true, "estimate": true, "notes": "Open weights, ~80,6 % SWE-bench Verified."},
+    {"id": "deepseek-v3.2", "aliases": ["deepseek-v3"], "vendor": "DeepSeek", "region": "asia", "input_per_mtok": 0.14, "output_per_mtok": 0.28, "context_window": 128000, "open_weights": true, "gpai_in_scope": true},
+    {"id": "qwen3.7-max", "aliases": ["qwen-max", "qwen3.7"], "vendor": "Alibaba", "region": "asia", "input_per_mtok": 1.25, "output_per_mtok": 5.0, "context_window": 262144, "open_weights": false, "gpai_in_scope": true, "estimate": true, "notes": "Le moins cher du top 10 frontier."},
+    {"id": "qwen3.6-plus", "aliases": ["qwen-plus"], "vendor": "Alibaba", "region": "asia", "input_per_mtok": 0.40, "output_per_mtok": 1.2, "context_window": 262144, "open_weights": false, "gpai_in_scope": true, "estimate": true},
+    {"id": "kimi-k2.6", "aliases": ["kimi-k2", "moonshot-k2.6"], "vendor": "Moonshot AI", "region": "asia", "input_per_mtok": 0.60, "output_per_mtok": 2.5, "context_window": 256000, "open_weights": true, "gpai_in_scope": true, "estimate": true},
+    {"id": "glm-5.2", "aliases": ["glm5.2"], "vendor": "Z.AI (Zhipu)", "region": "asia", "input_per_mtok": 1.40, "output_per_mtok": 4.40, "context_window": 200000, "open_weights": true, "gpai_in_scope": true, "notes": "Leader open-weights GPQA (~91 %)."},
+    {"id": "glm-4.7-flash", "aliases": ["glm-flash"], "vendor": "Z.AI (Zhipu)", "region": "asia", "input_per_mtok": 0.0, "output_per_mtok": 0.0, "context_window": 128000, "open_weights": true, "gpai_in_scope": true, "notes": "Gratuit (rate-limité)."},
+    {"id": "minimax-m3", "aliases": ["minimax-m3-standard"], "vendor": "MiniMax", "region": "asia", "input_per_mtok": 0.60, "output_per_mtok": 2.40, "context_window": 200000, "open_weights": false, "gpai_in_scope": true, "notes": "Modèle le moins cher > 80 % SWE-bench Verified."}
+  ]
+}

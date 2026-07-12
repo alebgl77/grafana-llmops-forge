@@ -1,0 +1,60 @@
+name: "🐛 Bug report"
+description: A panel didn't render, a query failed, or the forge misbehaved.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please **never paste your Grafana token, prompt
+        contents, or a screenshot that reveals real costs/teams.** Redact first.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you get instead?
+      placeholder: "The finops dashboard shows 'No data' on the cost panels, but discovery detected litellm."
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: The exact commands you ran (redact secrets).
+      render: shell
+      placeholder: |
+        python3 scripts/discover.py --out capability_map.json
+        python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints finops --dry-run
+    validations:
+      required: true
+  - type: input
+    id: grafana
+    attributes:
+      label: Grafana version & edition
+      placeholder: "11.2.0 · OSS (self-hosted)"
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version & OS
+      placeholder: "3.11 · Ubuntu 24.04"
+    validations:
+      required: true
+  - type: dropdown
+    id: dialect
+    attributes:
+      label: Telemetry dialect(s) involved
+      multiple: true
+      options:
+        - OpenTelemetry GenAI (gen_ai.*)
+        - LiteLLM
+        - vLLM / TGI / Ollama
+        - NVIDIA DCGM (GPU)
+        - None / not sure
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Sanity checks
+      options:
+        - label: "`python3 scripts/forge_dashboards.py --selftest` passes on my machine."
+        - label: I have redacted all secrets and sensitive values from this report.

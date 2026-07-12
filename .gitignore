@@ -1,0 +1,42 @@
+# --- grafana-llmops-forge : artefacts d'exécution (never commit) ---
+# Runtime outputs — may contain real costs, teams, model names. Keep them local.
+capability_map.json
+model_registry.local.json
+deploy_manifest.json
+selftest_output/
+generated_dashboards/
+visual_audit/
+*.audit.png
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+.eggs/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# --- Secrets / env (the token must NEVER be committed) ---
+.env
+.env.*
+*.local
+
+# --- Local working docs (private growth/strategy, not for publication) ---
+LAUNCH_KIT.md
+launch_brief.md
+
+# --- OS / editor ---
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*~

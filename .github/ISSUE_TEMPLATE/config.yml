@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 💬 Questions & ideas (Discussions)
+    url: https://github.com/alebgl77/grafana-llmops-forge/discussions
+    about: Ask how to instrument a stack, share a dashboard, or propose a direction.
+  - name: 🔒 Report a security issue (private)
+    url: https://github.com/alebgl77/grafana-llmops-forge/security/advisories/new
+    about: Please disclose vulnerabilities privately, not in a public issue.

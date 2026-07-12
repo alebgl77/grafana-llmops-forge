@@ -1,0 +1,51 @@
+name: CI
+
+# Zero-dependency by design: no `pip install`, no external services.
+# The self-test and the audit harness generate all six dashboards from a
+# simulated capability map and assert the invariants — offline, on every OS.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selftest:
+    name: selftest & audit (${{ matrix.os }} · py${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python-version: ['3.8', '3.11', '3.13']
+        exclude:
+          # 3.8 is not available on the macos-latest (arm64) runners.
+          - os: macos-latest
+            python-version: '3.8'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Confirm zero third-party dependencies
+        shell: bash
+        run: |
+          test ! -f requirements.txt || (echo "Unexpected requirements.txt" && exit 1)
+          echo "stdlib-only: no dependencies to install."
+
+      - name: Offline self-test (generate the 6 blueprints)
+        run: python scripts/forge_dashboards.py --selftest
+
+      - name: Full audit harness (multi-topology invariants)
+        run: python audit_harness.py
+
+      - name: Byte-compile all sources
+        run: python -m compileall -q scripts audit_harness.py

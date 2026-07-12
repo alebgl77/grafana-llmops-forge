@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use Grafana LLMOps Forge in your work, please cite it as below."
+title: "Grafana LLMOps Forge"
+abstract: >-
+  A zero-dependency Python toolkit and Claude Code Skill that turns any Grafana
+  instance into an AI/LLM observability command center: discovery-first
+  auto-generation of FinOps, gateway, agent/RAG, adoption, self-hosted inference
+  and EU AI Act governance dashboards, with SLO alerting and vision-verified
+  rendering.
+type: software
+authors:
+  - family-names: Beguel
+    given-names: Alexandre
+license: MIT
+repository-code: "https://github.com/alebgl77/grafana-llmops-forge"
+version: 0.1.0
+date-released: "2026-07-12"
+keywords:
+  - llmops
+  - observability
+  - grafana
+  - opentelemetry
+  - finops
+  - eu-ai-act
+  - prometheus
+  - genai

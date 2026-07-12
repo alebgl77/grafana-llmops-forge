@@ -1,0 +1,37 @@
+# Grafana LLMOps Forge
+
+> A zero-dependency Python 3 toolkit and Claude Code Skill that turns any Grafana
+> instance (OSS, Cloud, Enterprise) into an AI/LLM observability command center.
+> It auto-discovers the LLM telemetry actually present and forges FinOps, gateway,
+> agent/RAG, adoption, self-hosted-inference and EU AI Act governance dashboards —
+> then vision-verifies the rendered result. Prerequisite: a Grafana URL and a
+> service-account token. Nothing else to deploy; no data leaves your infrastructure.
+
+Key facts:
+- Prerequisite: one Grafana URL + a service-account token. Everything else is discovered or provisioned.
+- Zero third-party dependencies: Python 3 standard library only, no `pip install`, fully auditable.
+- Detects 4 telemetry dialects: OpenTelemetry GenAI (`gen_ai.*`), LiteLLM, self-hosted inference (vLLM/TGI/Ollama), and NVIDIA DCGM (GPU).
+- Generates 6 dashboard blueprints: FinOps & cost, Gateway Operations, Agents & RAG, Adoption, Inference (self-hosted), EU AI Act Governance.
+- Cost is computed from an embedded, date-stamped ~30-model pricing registry (input/output/cache; US/EU/Asia sovereignty) composed into PromQL.
+- EU AI Act governance maps Articles 12, 26, 50 and 73 to measurable Grafana signals — this is observability *evidence*, not legal advice.
+- Discovery-first: only panels backed by a real observed metric name are emitted (no "No data" panels).
+- Vision-verified rendering: after deploy, the real dashboard render is screenshotted and inspected for correctness.
+- Works offline: `python3 scripts/forge_dashboards.py --selftest` renders all six dashboards with no live Grafana.
+
+## Documentation
+- [README](https://github.com/alebgl77/grafana-llmops-forge/blob/main/README.md): full overview, quick start, comparison, FAQ.
+- [README (Français)](https://github.com/alebgl77/grafana-llmops-forge/blob/main/README.fr.md): version française pour DSI.
+- [SKILL.md](https://github.com/alebgl77/grafana-llmops-forge/blob/main/SKILL.md): the Claude Code / Agent Skill definition and pipeline.
+
+## Reference library
+- [Query library (PromQL/LogQL/TraceQL)](https://github.com/alebgl77/grafana-llmops-forge/blob/main/references/query_library.md)
+- [Dashboard blueprints](https://github.com/alebgl77/grafana-llmops-forge/blob/main/references/dashboard_blueprints.md)
+- [EU AI Act × observability mapping](https://github.com/alebgl77/grafana-llmops-forge/blob/main/references/eu_ai_act_observability.md)
+- [Instrumentation guide](https://github.com/alebgl77/grafana-llmops-forge/blob/main/references/instrumentation_guide.md)
+- [Grafana API compatibility](https://github.com/alebgl77/grafana-llmops-forge/blob/main/references/grafana_api_compat.md)
+- [Model pricing registry](https://github.com/alebgl77/grafana-llmops-forge/blob/main/references/model_registry.json)
+
+## Topics
+LLMOps observability, AI FinOps, Grafana LLM dashboard, EU AI Act monitoring,
+gen_ai OpenTelemetry dashboard, self-hosted inference and GPU (DCGM) monitoring,
+LiteLLM spend, vLLM metrics, token cost tracking, SLO alerting for LLM gateways.

@@ -1,0 +1,40 @@
+name: "✨ Feature request"
+description: A new blueprint, dialect, query, provider price, or capability.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem are you trying to solve?
+      description: The observability / FinOps / governance question you can't answer today.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: A new panel, a dialect to detect, a provider to price, an alert rule…
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - New / extended blueprint
+        - New telemetry dialect
+        - Model pricing registry
+        - Query library (PromQL / LogQL / TraceQL)
+        - EU AI Act governance
+        - Grafana API / compatibility
+        - Docs / translation
+        - Other
+    validations:
+      required: true
+  - type: checkboxes
+    id: constraints
+    attributes:
+      label: Design constraints (this project is opinionated)
+      options:
+        - label: My proposal keeps the zero-dependency (stdlib-only) rule.
+        - label: My proposal is discovery-first (keys off real metric names, no hard-coded assumptions).
