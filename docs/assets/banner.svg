@@ -1,0 +1,69 @@
+<svg width="1280" height="400" viewBox="0 0 1280 400" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0d1117"/><stop offset="1" stop-color="#161b27"/>
+    </linearGradient>
+    <linearGradient id="flame" x1="0" y1="1" x2="0" y2="0">
+      <stop offset="0" stop-color="#F46800"/><stop offset=".55" stop-color="#FF9830"/><stop offset="1" stop-color="#FFCB6B"/>
+    </linearGradient>
+    <linearGradient id="txt" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#FF9830"/><stop offset="1" stop-color="#F4D35E"/>
+    </linearGradient>
+    <linearGradient id="eu" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2ea04366"/><stop offset="1" stop-color="#2ea04300"/></linearGradient>
+    <linearGradient id="us" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#388bfd66"/><stop offset="1" stop-color="#388bfd00"/></linearGradient>
+    <linearGradient id="as" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#f4680066"/><stop offset="1" stop-color="#f4680000"/></linearGradient>
+    <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
+      <path d="M32 0H0V32" fill="none" stroke="#21283b" stroke-width="1"/>
+    </pattern>
+    <filter id="glow"><feGaussianBlur stdDeviation="6" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>
+  </defs>
+
+  <rect width="1280" height="400" fill="url(#bg)"/>
+  <rect width="1280" height="400" fill="url(#grid)" opacity=".5"/>
+
+  <!-- courbes stacked souveraineté (droite) -->
+  <g transform="translate(760,60)">
+    <rect width="460" height="280" rx="12" fill="#0d1117" stroke="#30363d"/>
+    <text x="20" y="30" fill="#8b949e" font-size="13">AI · Executive FinOps — spend by sovereignty</text>
+    <g transform="translate(20,50)">
+      <path d="M0 190 L0 150 C60 140,90 120,140 118 C200 116,240 90,300 84 C350 79,390 70,420 62 L420 190 Z" fill="url(#as)"/>
+      <path d="M0 190 L0 165 C70 158,110 146,160 142 C220 137,270 122,330 116 C370 112,400 106,420 100 L420 190 Z" fill="url(#us)"/>
+      <path d="M0 190 L0 178 C80 174,130 168,190 164 C260 159,320 152,420 146 L420 190 Z" fill="url(#eu)"/>
+      <path d="M0 150 C60 140,90 120,140 118 C200 116,240 90,300 84 C350 79,390 70,420 62" fill="none" stroke="#F46800" stroke-width="2.5"/>
+      <path d="M0 165 C70 158,110 146,160 142 C220 137,270 122,330 116 C370 112,400 106,420 100" fill="none" stroke="#388bfd" stroke-width="2.5"/>
+      <path d="M0 178 C80 174,130 168,190 164 C260 159,320 152,420 146" fill="none" stroke="#2ea043" stroke-width="2.5"/>
+      <line x1="0" y1="190" x2="420" y2="190" stroke="#30363d"/>
+    </g>
+    <g font-size="12" transform="translate(20,262)">
+      <circle cx="6" cy="-4" r="5" fill="#2ea043"/><text x="18" y="0" fill="#c9d1d9">EU</text>
+      <circle cx="66" cy="-4" r="5" fill="#388bfd"/><text x="78" y="0" fill="#c9d1d9">US</text>
+      <circle cx="126" cy="-4" r="5" fill="#F46800"/><text x="138" y="0" fill="#c9d1d9">Asia</text>
+      <text x="418" y="0" fill="#3fb950" text-anchor="end">✓ vision-verified</text>
+    </g>
+  </g>
+
+  <!-- flamme forge -->
+  <g transform="translate(74,96)" filter="url(#glow)">
+    <path d="M60 208 C18 178,8 132,30 96 C40 120,52 128,58 126 C44 92,54 48,88 20 C84 62,100 78,116 92 C132 106,148 130,142 162 C154 152,158 140,160 128 C176 160,168 192,138 210 C112 226,84 224,60 208 Z" fill="url(#flame)"/>
+    <path d="M78 200 C58 184,54 158,68 138 C74 152,82 156,88 154 C80 134,88 110,106 96 C104 120,114 130,124 140 C136 152,140 170,130 186 C118 202,96 208,78 200 Z" fill="#0d1117" opacity=".85"/>
+    <path d="M88 192 C78 182,77 166,86 154 C90 162,95 164,99 162 C95 150,100 136,110 128 C109 142,115 148,121 154 C128 162,130 172,124 182 C116 192,98 198,88 192 Z" fill="url(#flame)"/>
+  </g>
+
+  <!-- titre -->
+  <g transform="translate(268,150)">
+    <text font-size="58" font-weight="800" letter-spacing="1">
+      <tspan fill="#e6edf3">GRAFANA</tspan>
+      <tspan fill="url(#txt)" dx="14">LLMOPS</tspan>
+      <tspan fill="#e6edf3" dx="14">FORGE</tspan>
+    </text>
+    <text y="46" font-size="19" fill="#8b949e">Point it at any Grafana. Get a full AI observability suite —</text>
+    <text y="74" font-size="19" fill="#8b949e">discovered, generated, deployed, <tspan fill="#3fb950">visually verified</tspan>.</text>
+    <g transform="translate(0,108)" font-size="14">
+      <rect x="-2" y="-18" width="150" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="73" y="1" text-anchor="middle" fill="#FF9830">6 dashboards</text>
+      <rect x="158" y="-18" width="128" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="222" y="1" text-anchor="middle" fill="#79c0ff">4 dialects</text>
+      <rect x="296" y="-18" width="160" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="376" y="1" text-anchor="middle" fill="#d2a8ff">EU AI Act ready</text>
+    </g>
+  </g>
+
+  <text x="268" y="368" font-size="13" fill="#484f58">$ python3 scripts/discover.py &amp;&amp; python3 scripts/forge_dashboards.py --deploy --with-alerts</text>
+</svg>

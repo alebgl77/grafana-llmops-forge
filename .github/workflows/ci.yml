@@ -1,0 +1,20 @@
+name: CI
+on:
+  push: {branches: [main]}
+  pull_request:
+permissions: {contents: read}
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix: {python: ["3.8", "3.12"]}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "${{ matrix.python }}"}
+      - name: Offline selftest (6 blueprints, zero network)
+        run: cd scripts && python forge_dashboards.py --selftest --with-alerts
+      - name: Audit harness (27 checks, 4 topologies)
+        run: python tests/audit_harness.py
+      - name: Registry JSON is valid & priced models have sources
+        run: python -c "import json; r=json.load(open('references/model_registry.json')); assert r['models'] and r['_meta']['sources']; print(len(r['models']),'models OK')"

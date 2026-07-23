@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+capability_map.json
+model_registry.local.json
+generated_dashboards/
+selftest_output/
+visual_audit/
+*.skill
+.env

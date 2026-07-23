@@ -1,0 +1,112 @@
+<svg width="1240" height="700" viewBox="0 0 1240 700" xmlns="http://www.w3.org/2000/svg" font-family="Inter,-apple-system,Segoe UI,Roboto,sans-serif">
+  <defs>
+    <linearGradient id="sp1" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#F4680030"/><stop offset="1" stop-color="#F4680000"/></linearGradient>
+    <linearGradient id="eu2" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#2ea04355"/><stop offset="1" stop-color="#2ea04308"/></linearGradient>
+    <linearGradient id="us2" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#388bfd55"/><stop offset="1" stop-color="#388bfd08"/></linearGradient>
+    <linearGradient id="as2" x1="0" y1="1" x2="0" y2="0"><stop offset="0" stop-color="#f4680055"/><stop offset="1" stop-color="#f4680008"/></linearGradient>
+  </defs>
+  <style>
+    .panel{fill:#181b1f;stroke:#2c3236;rx:6}
+    .pt{fill:#9aa0a6;font-size:12px}
+    .big{fill:#e6edf3;font-size:34px;font-weight:700}
+    .unit{fill:#9aa0a6;font-size:14px}
+    .ax{fill:#6e7681;font-size:10px;font-family:ui-monospace,monospace}
+    .lg{font-size:11px;fill:#c9d1d9}
+  </style>
+
+  <!-- fenêtre -->
+  <rect width="1240" height="700" rx="14" fill="#111217"/>
+  <rect width="1240" height="46" rx="14" fill="#181b1f"/>
+  <circle cx="26" cy="23" r="6" fill="#ff5f57"/><circle cx="46" cy="23" r="6" fill="#febc2e"/><circle cx="66" cy="23" r="6" fill="#28c840"/>
+  <text x="96" y="28" fill="#e6edf3" font-size="14" font-weight="600">AI · Executive FinOps &amp; Coûts</text>
+  <text x="96" y="28" dx="270" fill="#6e7681" font-size="11">folder: AI Observability · tag: llmops-forge</text>
+  <rect x="960" y="10" width="150" height="26" rx="5" fill="#22262b"/><text x="1035" y="27" text-anchor="middle" fill="#c9d1d9" font-size="12">⏱ Last 24 hours</text>
+  <rect x="1120" y="10" width="96" height="26" rx="5" fill="#22262b"/><text x="1168" y="27" text-anchor="middle" fill="#c9d1d9" font-size="12">↻ 1m</text>
+
+  <!-- rangée stats -->
+  <g transform="translate(16,62)">
+    <rect width="292" height="120" class="panel"/>
+    <text x="14" y="22" class="pt">Dépense (période affichée)</text>
+    <text x="14" y="66" class="big">$2 847</text><text x="120" y="66" class="unit">.30</text>
+    <path d="M14 104 C40 100,60 96,88 94 C130 91,170 82,278 72 L278 110 L14 110 Z" fill="url(#sp1)"/>
+    <path d="M14 104 C40 100,60 96,88 94 C130 91,170 82,278 72" stroke="#F46800" stroke-width="2" fill="none"/>
+  </g>
+  <g transform="translate(324,62)">
+    <rect width="292" height="120" class="panel"/>
+    <text x="14" y="22" class="pt">Rythme de dépense / jour</text>
+    <text x="14" y="66" class="big">$118</text><text x="96" y="66" class="unit">/ day</text>
+    <text x="14" y="100" fill="#3fb950" font-size="13">▼ 12% vs hier — arbitrage haiku↑</text>
+  </g>
+  <g transform="translate(632,62)">
+    <rect width="292" height="120" class="panel"/>
+    <text x="14" y="22" class="pt">Coût moyen / requête</text>
+    <text x="14" y="66" class="big">$0.0041</text>
+    <text x="14" y="100" fill="#9aa0a6" font-size="13">61.2M tokens · 693k requêtes</text>
+  </g>
+  <g transform="translate(940,62)">
+    <rect width="284" height="120" class="panel"/>
+    <text x="14" y="22" class="pt">Tokens générés / s</text>
+    <text x="14" y="66" class="big">708</text><text x="82" y="66" class="unit">tok/s</text>
+    <text x="14" y="100" fill="#9aa0a6" font-size="13">in 1 942 tok/s · cache hit 34%</text>
+  </g>
+
+  <!-- graphe souveraineté -->
+  <g transform="translate(16,198)">
+    <rect width="756" height="300" class="panel"/>
+    <text x="14" y="24" class="pt">Dépense par souveraineté (USD/s) — pilotage AI Act</text>
+    <g transform="translate(50,44)">
+      <g stroke="#22262b"><line x2="680" y1="0" y2="0"/><line x2="680" y1="52" y2="52"/><line x2="680" y1="104" y2="104"/><line x2="680" y1="156" y2="156"/><line x2="680" y1="208" y2="208"/></g>
+      <g class="ax" text-anchor="end"><text x="-8" y="4">2.0¢</text><text x="-8" y="56">1.5¢</text><text x="-8" y="108">1.0¢</text><text x="-8" y="160">0.5¢</text><text x="-8" y="212">0</text></g>
+      <!-- asia (top) -->
+      <path d="M0 208 L0 96 C60 92,100 78,150 74 C210 70,260 52,320 46 C400 38,470 40,540 30 C590 24,640 20,680 16 L680 208 Z" fill="url(#as2)"/>
+      <!-- us -->
+      <path d="M0 208 L0 132 C70 128,120 118,170 114 C240 108,300 96,360 90 C440 82,520 78,680 64 L680 208 Z" fill="url(#us2)"/>
+      <!-- eu -->
+      <path d="M0 208 L0 176 C80 172,140 166,200 162 C300 155,420 148,680 132 L680 208 Z" fill="url(#eu2)"/>
+      <path d="M0 96 C60 92,100 78,150 74 C210 70,260 52,320 46 C400 38,470 40,540 30 C590 24,640 20,680 16" stroke="#F46800" stroke-width="2.5" fill="none"/>
+      <path d="M0 132 C70 128,120 118,170 114 C240 108,300 96,360 90 C440 82,520 78,680 64" stroke="#388bfd" stroke-width="2.5" fill="none"/>
+      <path d="M0 176 C80 172,140 166,200 162 C300 155,420 148,680 132" stroke="#2ea043" stroke-width="2.5" fill="none"/>
+      <g class="ax"><text y="224">00:00</text><text x="160" y="224">06:00</text><text x="330" y="224">12:00</text><text x="500" y="224">18:00</text><text x="660" y="224">now</text></g>
+    </g>
+    <g transform="translate(50,286)" class="lg">
+      <circle cx="5" cy="-4" r="5" fill="#2ea043"/><text x="16">🇪🇺 EU (Mistral) — $9.10</text>
+      <circle cx="195" cy="-4" r="5" fill="#388bfd"/><text x="206">🇺🇸 US (OpenAI·Anthropic·Google) — $71.40</text>
+      <circle cx="520" cy="-4" r="5" fill="#F46800"/><text x="531">🌏 Asia (DeepSeek·Qwen) — $37.80</text>
+    </g>
+  </g>
+
+  <!-- tokens par modèle -->
+  <g transform="translate(788,198)">
+    <rect width="436" height="300" class="panel"/>
+    <text x="14" y="24" class="pt">Tokens output par modèle / s</text>
+    <g transform="translate(30,46)">
+      <g stroke="#22262b"><line x2="380" y1="0" y2="0"/><line x2="380" y1="70" y2="70"/><line x2="380" y1="140" y2="140"/><line x2="380" y1="210" y2="210"/></g>
+      <path d="M0 210 L0 150 C60 146,120 130,190 122 C260 114,320 100,380 92 L380 210Z" fill="#a371f733"/>
+      <path d="M0 150 C60 146,120 130,190 122 C260 114,320 100,380 92" stroke="#a371f7" stroke-width="2" fill="none"/>
+      <path d="M0 210 L0 178 C80 174,150 168,220 160 C290 152,340 148,380 144 L380 210Z" fill="#79c0ff2e"/>
+      <path d="M0 178 C80 174,150 168,220 160 C290 152,340 148,380 144" stroke="#79c0ff" stroke-width="2" fill="none"/>
+      <path d="M0 196 C90 193,180 190,380 182" stroke="#3fb950" stroke-width="2" fill="none"/>
+    </g>
+    <g transform="translate(30,272)" class="lg">
+      <circle cx="5" cy="-4" r="4" fill="#a371f7"/><text x="14">claude-haiku-4.5</text>
+      <circle cx="135" cy="-4" r="4" fill="#79c0ff"/><text x="144">gpt-5.4</text>
+      <circle cx="215" cy="-4" r="4" fill="#3fb950"/><text x="224">mistral-small-3.2</text>
+    </g>
+  </g>
+
+  <!-- top modèles -->
+  <g transform="translate(16,514)">
+    <rect width="1208" height="164" class="panel"/>
+    <text x="14" y="24" class="pt">Top modèles (tokens, période) — registre vérifié 2026-07-12</text>
+    <g font-size="12" fill="#c9d1d9" font-family="ui-monospace,monospace">
+      <g fill="#6e7681"><text x="24" y="52">MODEL</text><text x="380" y="52">REGION</text><text x="520" y="52">TOKENS</text><text x="700" y="52">COST</text><text x="880" y="52">SHARE</text></g>
+      <line x1="14" y1="62" x2="1194" y2="62" stroke="#2c3236"/>
+      <text x="24" y="86">claude-haiku-4.5</text><text x="380" y="86">🇺🇸 us</text><text x="520" y="86">28.4M</text><text x="700" y="86">$47.20</text>
+      <rect x="880" y="76" width="220" height="10" rx="5" fill="#22262b"/><rect x="880" y="76" width="146" height="10" rx="5" fill="#a371f7"/>
+      <text x="24" y="112">gpt-5.4</text><text x="380" y="112">🇺🇸 us</text><text x="520" y="112">18.1M</text><text x="700" y="112">$58.90</text>
+      <rect x="880" y="102" width="220" height="10" rx="5" fill="#22262b"/><rect x="880" y="102" width="94" height="10" rx="5" fill="#79c0ff"/>
+      <text x="24" y="138">deepseek-v4-flash</text><text x="380" y="138">🌏 asia</text><text x="520" y="138">9.8M</text><text x="700" y="138">$2.10</text>
+      <rect x="880" y="128" width="220" height="10" rx="5" fill="#22262b"/><rect x="880" y="128" width="50" height="10" rx="5" fill="#F46800"/>
+    </g>
+  </g>
+</svg>

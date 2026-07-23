@@ -1,0 +1,98 @@
+<svg width="1240" height="600" viewBox="0 0 1240 600" xmlns="http://www.w3.org/2000/svg" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace">
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#8b949e"/>
+    </marker>
+    <marker id="arG" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#3fb950"/>
+    </marker>
+    <marker id="arO" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#F46800"/>
+    </marker>
+  </defs>
+  <style>
+    .box{fill:#161b22;stroke:#30363d;rx:10}
+    .t{fill:#e6edf3;font-size:15px;font-weight:700}
+    .s{fill:#8b949e;font-size:12px}
+    .c{fill:#79c0ff;font-size:12px}
+    .flow{stroke:#8b949e;stroke-width:2;fill:none;marker-end:url(#ar)}
+  </style>
+  <rect width="1240" height="600" fill="#0d1117"/>
+  <text x="620" y="36" text-anchor="middle" fill="#e6edf3" font-size="20" font-weight="800">grafana-llmops-forge — pipeline</text>
+
+  <!-- Grafana instance -->
+  <rect x="40" y="70" width="220" height="120" class="box" rx="10"/>
+  <text x="150" y="98" text-anchor="middle" class="t" fill="#FF9830">Grafana 9 → 13+</text>
+  <text x="150" y="120" text-anchor="middle" class="s">OSS · Cloud · Enterprise</text>
+  <text x="150" y="140" text-anchor="middle" class="s">Prometheus/Mimir · Loki · Tempo</text>
+  <text x="150" y="166" text-anchor="middle" class="c">only prerequisite: URL + token</text>
+
+  <!-- Phase 1 discover -->
+  <rect x="330" y="70" width="250" height="120" class="box" rx="10"/>
+  <text x="455" y="96" text-anchor="middle" class="t">① discover.py</text>
+  <text x="455" y="118" text-anchor="middle" class="s">probes real metric names</text>
+  <text x="455" y="136" text-anchor="middle" class="s">otel_genai · litellm · vllm · dcgm</text>
+  <text x="455" y="162" text-anchor="middle" class="c">→ capability_map.json</text>
+  <path class="flow" d="M260 130 H326"/>
+
+  <!-- Phase 2 registry -->
+  <rect x="650" y="70" width="250" height="120" class="box" rx="10"/>
+  <text x="775" y="96" text-anchor="middle" class="t">② model registry</text>
+  <text x="775" y="118" text-anchor="middle" class="s">30+ models · US 🇺🇸 EU 🇪🇺 Asia 🌏</text>
+  <text x="775" y="136" text-anchor="middle" class="s">$/1M in · out · cached · tiers</text>
+  <text x="775" y="162" text-anchor="middle" class="c">web-refresh if &gt; 30 days</text>
+  <path class="flow" d="M580 130 H646"/>
+
+  <!-- Phase 4 forge -->
+  <rect x="970" y="70" width="230" height="120" class="box" rx="10" stroke="#F46800"/>
+  <text x="1085" y="96" text-anchor="middle" class="t" fill="#FF9830">③ forge_dashboards.py</text>
+  <text x="1085" y="118" text-anchor="middle" class="s">6 blueprints × detected dialect</text>
+  <text x="1085" y="136" text-anchor="middle" class="s">deterministic UIDs · idempotent</text>
+  <text x="1085" y="162" text-anchor="middle" class="c">+ 5 SLO alert rules</text>
+  <path class="flow" d="M900 130 H966"/>
+
+  <!-- blueprints row -->
+  <g font-size="12" text-anchor="middle">
+    <rect x="60" y="260" width="170" height="52" class="box" rx="8"/><text x="145" y="282" fill="#e6edf3">💰 FinOps &amp; Costs</text><text x="145" y="300" class="s">sovereignty split</text>
+    <rect x="250" y="260" width="170" height="52" class="box" rx="8"/><text x="335" y="282" fill="#e6edf3">🛡 Gateway SLO</text><text x="335" y="300" class="s">p99 · TTFT · errors</text>
+    <rect x="440" y="260" width="170" height="52" class="box" rx="8"/><text x="525" y="282" fill="#e6edf3">🤖 Agents &amp; RAG</text><text x="525" y="300" class="s">tools · TraceQL</text>
+    <rect x="630" y="260" width="170" height="52" class="box" rx="8"/><text x="715" y="282" fill="#e6edf3">📈 Adoption</text><text x="715" y="300" class="s">teams · model mix</text>
+    <rect x="820" y="260" width="170" height="52" class="box" rx="8"/><text x="905" y="282" fill="#e6edf3">⚡ Inference</text><text x="905" y="300" class="s">vLLM · GPU · KV</text>
+    <rect x="1010" y="260" width="170" height="52" class="box" rx="8"/><text x="1095" y="282" fill="#e6edf3">⚖ EU AI Act</text><text x="1095" y="300" class="s">Art.12·26·50·73</text>
+  </g>
+  <path class="flow" d="M1085 190 V225 H620 V255" stroke-dasharray="0"/>
+  <g stroke="#30363d" stroke-width="1.5" fill="none">
+    <path d="M620 225 H145 V255"/><path d="M620 225 H335 V255"/><path d="M525 225 V255"/><path d="M715 225 V255"/><path d="M620 225 H905 V255"/><path d="M620 225 H1095 V255"/>
+  </g>
+
+  <!-- deploy -->
+  <rect x="440" y="360" width="360" height="64" class="box" rx="10"/>
+  <text x="620" y="386" text-anchor="middle" class="t">④ deploy — legacy API, resource-API fallback</text>
+  <text x="620" y="408" text-anchor="middle" class="s">folder « AI Observability » · overwrite-safe · URLs out</text>
+  <path class="flow" d="M620 312 V356"/>
+
+  <!-- vision loop -->
+  <rect x="180" y="470" width="300" height="100" class="box" rx="10" stroke="#3fb950"/>
+  <text x="330" y="496" text-anchor="middle" class="t" fill="#3fb950">⑤ visual_audit.py</text>
+  <text x="330" y="518" text-anchor="middle" class="s">native /render → PNG</text>
+  <text x="330" y="536" text-anchor="middle" class="s">fallback: Playwright (kiosk + DOM scan)</text>
+  <text x="330" y="558" text-anchor="middle" class="c">captures every deployed panel</text>
+
+  <rect x="560" y="470" width="300" height="100" class="box" rx="10" stroke="#3fb950"/>
+  <text x="710" y="496" text-anchor="middle" class="t" fill="#3fb950">⑥ Claude vision review</text>
+  <text x="710" y="518" text-anchor="middle" class="s">scale plausibility · "No data" · p50&gt;p95</text>
+  <text x="710" y="536" text-anchor="middle" class="s">cross-panel coherence checklist</text>
+  <text x="710" y="558" text-anchor="middle" class="c">verdict per dashboard: ✅ ⚠ ❌</text>
+
+  <rect x="940" y="470" width="260" height="100" class="box" rx="10" stroke="#F46800"/>
+  <text x="1070" y="496" text-anchor="middle" class="t" fill="#FF9830">⑦ remediation</text>
+  <text x="1070" y="518" text-anchor="middle" class="s">fix at the source:</text>
+  <text x="1070" y="536" text-anchor="middle" class="s">registry · capability map · code</text>
+  <text x="1070" y="558" text-anchor="middle" class="c">max 2 loops → honest report</text>
+
+  <path d="M620 424 V446 H330 V466" class="flow" stroke="#3fb950" marker-end="url(#arG)"/>
+  <path d="M480 520 H556" class="flow" stroke="#3fb950" marker-end="url(#arG)"/>
+  <path d="M860 520 H936" class="flow" stroke="#3fb950" marker-end="url(#arG)"/>
+  <path d="M1070 466 V196" fill="none" stroke="#F46800" stroke-width="2" stroke-dasharray="6 5" marker-end="url(#arO)"/>
+  <text x="1082" y="330" fill="#F46800" font-size="12" transform="rotate(90 1082 330)" text-anchor="middle">re-forge only what failed</text>
+</svg>
