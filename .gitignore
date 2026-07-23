@@ -7,3 +7,4 @@ selftest_output/
 visual_audit/
 *.skill
 .env
+!dist/*.skill
