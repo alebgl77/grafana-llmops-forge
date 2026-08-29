@@ -18,8 +18,13 @@
 - Avertissement si aucun contact point n'est configuré (alertes sans destinataire).
 - Workflow mensuel de fraîcheur du registre de prix.
 
+### Hardened
+- **Cardinalité** : garde-fou dur (aucun group-by au-delà de 300 valeurs distinctes) et bornage `topk` sur tous les panels groupés (équipes, services, agents, outils, logs) — un graphe à 300 courbes est illisible *et* lent.
+- `maxDataPoints: 500` sur toutes les séries temporelles : coût de requête borné sur les longues plages.
+- Visuels du README explicitement étiquetés « illustration, pas capture » ; `make demo` fournit le rendu réel.
+
 ### Changed
-- Description du skill en anglais (le déclenchement suivait mal les requêtes anglophones) ; version française conservée dans `docs/SKILL.fr.md`.
+- SKILL.md intégralement en anglais (le déclenchement suivait mal les requêtes anglophones) ; version française conservée dans `docs/SKILL.fr.md`.
 - Harnais d'audit : 27 → 41 contrôles.
 
 ## [1.1.0] — 2026-07-23

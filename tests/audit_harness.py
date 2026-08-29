@@ -249,6 +249,32 @@ check("mode recorded → llm:cost_usd_per_second", bool(ex2), "aucune expr recor
 check("recorded = expressions courtes", all(len(e) < 200 for e in ex2),
       str(max((len(e) for e in ex2), default=0)))
 
+# ------------------------------------------------ 10. bornage cardinalité
+print("\n[10] Cardinalité & coût de requête")
+cap_hi = json.loads(json.dumps(forge_dashboards.selftest_capability()))
+prom = list(cap_hi["signals"])[0]
+cap_hi["signals"][prom]["otel_genai"]["group_labels"] = [
+    {"label": "end_user_id", "cardinality": 4200}]
+r, d = run_forge(cap_hi, "audit_card")
+check("forge exit 0 sur cardinalité extrême", r.returncode == 0, r.stderr[-200:])
+bs = load_boards(d)
+exprs = [e for b in bs.values() for _, e in all_exprs(b)]
+check("aucun group-by sur un label à 4200 valeurs",
+      not any("end_user_id" in e for e in exprs))
+r, d = run_forge(forge_dashboards.selftest_capability(), "audit_topk")
+bs = load_boards(d)
+grouped = [(p["title"], tg["expr"]) for b in bs.values() for p in b["panels"]
+           if p["type"] == "timeseries" for tg in p.get("targets", [])
+           if re.search(r"sum by\((service_name|team|gen_ai_agent_name|"
+                        r"gen_ai_tool_name)\)", tg.get("expr", ""))]
+check("panels groupés bornés par topk", grouped and
+      all(e.startswith("topk(") for _, e in grouped),
+      str([t for t, e in grouped if not e.startswith("topk(")]))
+mdp = [p.get("maxDataPoints") for b in bs.values() for p in b["panels"]
+       if p["type"] == "timeseries"]
+check("maxDataPoints posé sur toutes les séries temporelles",
+      mdp and all(v == 500 for v in mdp), str(set(mdp)))
+
 print("\n" + ("=" * 60))
 print(f"RÉSULTAT : {'✅ AUDIT PROPRE' if not FAIL else '❌ ' + str(len(FAIL)) + ' échec(s)'}")
 for f in FAIL:

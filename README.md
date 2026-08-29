@@ -37,7 +37,7 @@ python3 scripts/visual_audit.py --dashboards generated_dashboards  # ③ prove i
 ```
 
 <div align="center"><img src="docs/assets/dashboard-finops.svg" alt="Generated FinOps dashboard" width="100%"/>
-<sub><i>The FinOps blueprint — costs composed from a 30-model price registry, split by provider sovereignty (EU / US / Asia).</i></sub></div>
+<sub><i><b>Illustration</b> (hand-drawn SVG, not a screenshot) of the FinOps blueprint: cost composed from a 30-model price registry, split by provider sovereignty. For the real thing on real data, run <code>make demo</code> — it boots Grafana + Prometheus + a synthetic LLM workload and deploys these dashboards for real in about a minute.</i></sub></div>
 
 ## Why this is different
 
@@ -49,7 +49,8 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 4. **Governance is observable.** The EU AI Act dashboard maps articles (12, 26§6, 50, 73) to live signals: logging evidence, retention posture, incident watch, an auto-built model inventory with sovereignty and GPAI flags, and the post-Digital-Omnibus timeline.
 5. **Verified by eye, not just by API.** HTTP 200 proves the JSON was accepted — not that the render is right. After deploy, `visual_audit.py` captures every panel (native Grafana renderer, Playwright fallback) and an AI vision pass checks scale plausibility, "No data" panels, p50>p95 impossibilities, cross-panel coherence — then loops remediation (max 2 iterations, then an honest report).
 
-<div align="center"><img src="docs/assets/architecture.svg" alt="Pipeline" width="100%"/></div>
+<div align="center"><img src="docs/assets/architecture.svg" alt="Pipeline" width="100%"/>
+<sub><i>Diagram, not a screenshot. Every box is a script in <code>scripts/</code>.</i></sub></div>
 
 ## The six blueprints
 

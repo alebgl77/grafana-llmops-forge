@@ -47,6 +47,7 @@ class Signals:
         self.providers_seen = entry.get("providers_seen", [])
         groups = sorted(entry.get("group_labels", []), key=lambda g: g["cardinality"])
         self.group_label = groups[0]["label"] if groups else None
+        self.group_card = groups[0]["cardinality"] if groups else 0
 
     def find(self, substr: str, suffix: str | None = None) -> str | None:
         cands = [n for n in self.names if substr in n]
@@ -369,7 +370,9 @@ class Board:
         return p
 
     def ts(self, title, ds, exprs, w=12, h=8, unit=None, stacked=False, desc="",
-           exemplar=False, trace_link=None, dstype=None):
+           exemplar=False, trace_link=None, dstype=None, topk=0):
+        if topk:
+            exprs = [((f"topk({topk}, {e[0]})" if e[0] else None), e[1]) for e in exprs]
         targets = [{"refId": chr(65 + i), "expr": e[0], "legendFormat": e[1],
                     "range": True, "instant": False,
                     **({"exemplar": True} if exemplar else {})}
@@ -378,6 +381,7 @@ class Board:
             return None
         p = self.panel("timeseries", title, w, h, ds, targets, unit, desc,
                        dstype=dstype)
+        p["maxDataPoints"] = 500   # borne le coût de requête sur les longues plages
         if trace_link:
             p["links"] = [trace_link]
         if stacked:
@@ -435,6 +439,9 @@ def tempo_link(tempo_uid: str | None, traceql: str, title: str = "Voir les trace
                    + urllib.parse.quote(panes, safe="")}
 
 
+CARDINALITY_LIMIT = 300   # au-delà, un group-by fabrique plus de séries que de sens
+
+
 class Ctx:
     def __init__(self, cap: dict, registry: dict):
         self.cap = cap
@@ -453,6 +460,9 @@ class Ctx:
             n.startswith("llm:cost") for n in self.q["recorded"].s.names)
         self.exemplars = any(m.get("exemplars") for m in dss.get("prometheus", []))
         self.org_id = 1
+        for qq in self.q.values():
+            if qq.s.group_card > CARDINALITY_LIMIT:
+                qq.s.group_label = None   # cardinalité subie : pas de group-by
         self.primary = self.q.get("otel_genai") or self.q.get("litellm")
         seen = self.primary.s.models_seen if self.primary else []
         self.matched, self.unmatched = match_models(seen, registry)
@@ -503,7 +513,8 @@ def bp_finops(ctx: Ctx) -> Board | None:
     if q.s.dialect == "litellm" and getattr(q, "spend", None) and q.s.group_label:
         b.ts("Dépense par équipe (USD/s)", ds,
              [(f"sum by({q.s.group_label})(rate({q.spend}[{RATE}]))",
-               "{{" + q.s.group_label + "}}")], 12, 8, "currencyUSD", stacked=True)
+               "{{" + q.s.group_label + "}}")], 12, 8, "currencyUSD", stacked=True,
+             topk=12)
     elif q.s.model_label:
         ti = q.tokens_rate("input", by=q.s.model_label)
         b.ts("Tokens input par modèle (proxy de coût)", ds,
@@ -605,7 +616,7 @@ def bp_agents(ctx: Ctx) -> Board | None:
          desc="chat / embeddings / invoke_agent / execute_tool…")
     b.ts("Appels par outil (execute_tool)", ds,
          [(f'sum by(gen_ai_tool_name)(rate({q.dur}_count{{{op}="execute_tool"}}[{RATE}]))',
-           "{{gen_ai_tool_name}}")], 12, 8, "reqps", stacked=True,
+           "{{gen_ai_tool_name}}")], 12, 8, "reqps", stacked=True, topk=15,
          exemplar=ctx.exemplars,
          trace_link=tempo_link(ctx.tempo,
                                '{span.gen_ai.operation.name="execute_tool"}',
@@ -614,7 +625,7 @@ def bp_agents(ctx: Ctx) -> Board | None:
     if q.tok:
         b.ts("Tokens par agent / s", ds,
              [(f"sum by(gen_ai_agent_name)(rate({q.tok}_sum[{RATE}]))",
-               "{{gen_ai_agent_name}}")], 12, 8, "short", stacked=True)
+               "{{gen_ai_agent_name}}")], 12, 8, "short", stacked=True, topk=12)
     b.ts("Latence embeddings p95 (pipeline RAG)", ds,
          [(q.pXX(q.dur, 0.95, f'{{{op}="embeddings"}}'), "p95 embeddings")],
          12, 8, "s", exemplar=ctx.exemplars,
@@ -663,7 +674,9 @@ def bp_adoption(ctx: Ctx) -> Board | None:
                   "économique = arbitrage FinOps qui fonctionne.")
     if rr_by_g:
         b.ts(f"Trafic par {g}", ds, [(rr_by_g, "{{" + g + "}}")], 12, 9,
-             "reqps", stacked=True)
+             "reqps", stacked=True, topk=12,
+             desc=(f"Top 12 sur {q.s.group_card} valeurs de {g}."
+                   if q.s.group_card > 12 else ""))
     b.row_break()
     if g and q.s.dialect == "otel_genai" and q.tok:
         b.table("Top consommateurs (tokens, période)", ds,
@@ -779,7 +792,7 @@ def bp_governance(ctx: Ctx) -> Board:
         lbl = (ctx.loki.get("labels") or ["service_name"])[0]
         b.ts("Preuve de journalisation (volume de logs)", ctx.loki["uid"],
              [(f'sum by({lbl})(rate({{{lbl}=~".+"}}[{RATE}]))', "{{" + lbl + "}}")],
-             12, 8, "short", dstype="loki",
+             12, 8, "short", dstype="loki", topk=12,
              desc="Art. 12 (journalisation) / Art. 26§6 (rétention ≥ 6 mois par le "
                   "déployeur). Vérifier la rétention Loki ≥ 4320h.")
     b.row_break()
