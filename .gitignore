@@ -1,9 +1,10 @@
-__pycache__/
+!dist/*.skill
 *.pyc
-capability_map.json
-model_registry.local.json
-generated_dashboards/
-selftest_output/
-visual_audit/
 *.skill
 .env
+__pycache__/
+capability_map.json
+generated_dashboards/
+model_registry.local.json
+selftest_output/
+visual_audit/
