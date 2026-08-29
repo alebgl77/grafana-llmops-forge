@@ -67,6 +67,20 @@ def _esc(v: str) -> str:
     return re.sub(r'([\\"])', r"\\\1", v)
 
 
+RE2_META = set(r".+*?()[]{}|\\^$")
+
+
+def _rx(s: str) -> str:
+    r"""Échappement compatible RE2 *à travers* la couche chaîne de PromQL.
+
+    Deux pièges empilés, tous deux trouvés par le contrôle live et invisibles
+    hors ligne : `re.escape` produit `\-`, que RE2 rejette ; et un `\.` simple
+    est consommé par le littéral entre guillemets avant d'atteindre la regex,
+    d'où un backslash doublé.
+    """
+    return "".join(("\\\\" + c) if c in RE2_META else c for c in s)
+
+
 def _norm(s: str) -> str:
     return re.sub(r"[^a-z0-9]", "", s.lower())
 
@@ -781,7 +795,7 @@ def bp_governance(ctx: Ctx) -> Board:
         for r, lbl in regions:
             ids = [_esc(it["seen"]) for it in ctx.matched if it["reg"].get("region") == r]
             if ids and q.s.model_label:
-                rx = "|".join(re.escape(i) for i in ids)
+                rx = "|".join(_rx(i) for i in ids)
                 exprs.append((q.req_rate(sel=f'{{{q.s.model_label}=~"{rx}"}}'), lbl))
         if exprs:
             b.ts("Trafic par souveraineté du fournisseur", ds, exprs, 12, 8,

@@ -275,6 +275,41 @@ mdp = [p.get("maxDataPoints") for b in bs.values() for p in b["panels"]
 check("maxDataPoints posé sur toutes les séries temporelles",
       mdp and all(v == 500 for v in mdp), str(set(mdp)))
 
+# --------------------------------------------- 11. échappement regex PromQL/RE2
+print("\n[11] Echappement regex PromQL (bug trouve par le controle live)")
+from forge_dashboards import _rx
+BS = chr(92)
+r = _rx("mistral-small-3.2")
+check("tiret NON echappe (RE2 rejette le backslash-tiret)", BS + "-" not in r, r)
+check("point echappe en double (la chaine PromQL consomme un niveau)",
+      r == "mistral-small-3" + BS * 2 + ".2", r)
+check("metacaracteres RE2 couverts",
+      _rx("a+b(c)") == "a" + BS*2 + "+b" + BS*2 + "(c" + BS*2 + ")", _rx("a+b(c)"))
+r2, d2 = run_forge(forge_dashboards.selftest_capability(), "audit_re2")
+rx_exprs = [e for _, e in all_exprs(load_boards(d2)["governance"]) if "=~" in e]
+check("aucune sequence backslash-tiret dans les regex generees",
+      not any(BS + "-" in e for e in rx_exprs), str(rx_exprs[:1]))
+
+# ------------------------------------------- 12. cohérence doc / réalité
+print("\n[12] Coherence documentation")
+_readme = open(os.path.join(SK, "README.md")).read()
+_ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()
+check("badge CI dynamique (pas un compteur fige)",
+      "img.shields.io/github/actions/workflow/status" in _readme
+      and "img.shields.io/badge/CI-" not in _readme, "badge statique residuel")
+check("aucun compte de tests fige dans README/CI",
+      not re.search(r"\\d+ checks", _readme + _ci),
+      str(re.findall(r"[^ ]* \\d+ checks", _readme + _ci)[:2]))
+_fd = open(os.path.join(SK, "scripts", "forge_dashboards.py")).read()
+_bp = len(re.findall(r"^def bp_", _fd, re.M))
+_rows = sum(_readme.count(f"| {e}") for e in "💰🛡🤖📈⚡✅⚖")
+check(f"blueprints code ({_bp}) = lignes tableau README ({_rows})", _bp == _rows == 7)
+check("references citees par README existent toutes",
+      all(os.path.exists(os.path.join(SK, p))
+          for p in re.findall(r"\\(((?:references|docs|scripts|tests|demo)/[\\w./-]+)\\)", _readme)),
+      str([p for p in re.findall(r"\\(((?:references|docs|scripts|tests|demo)/[\\w./-]+)\\)", _readme)
+           if not os.path.exists(os.path.join(SK, p))]))
+
 print("\n" + ("=" * 60))
 print(f"RÉSULTAT : {'✅ AUDIT PROPRE' if not FAIL else '❌ ' + str(len(FAIL)) + ' échec(s)'}")
 for f in FAIL:

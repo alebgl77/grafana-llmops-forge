@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.2.1] — 2026-08-30
+### Fixed
+- **Échappement regex PromQL** (bug trouvé par le nouveau contrôle live, invisible hors ligne) : `re.escape` produisait `\-`, rejeté par RE2, et un `\.` simple était consommé par le littéral chaîne du matcher avant d'atteindre la regex. Le panel « Trafic par souveraineté » était cassé pour tout modèle contenant un tiret ou un point — c'est-à-dire presque tous.
+
+### Added
+- `tests/live_query_check.py` : sonde un vrai Prometheus, construit la capability map à partir de ce qu'il y trouve, lance la forge et **exécute chaque expression générée** (63 sur la stack de démo). Le harnais hors ligne valide la structure ; celui-ci valide la sémantique.
+
+### Verified on real data
+- 63/63 expressions renvoient des données ; recording rules auto-détectées (dialecte `recorded`) et coût basculé en O(1) : `(sum(llm:cost_usd_per_second) or vector(0)) * 86400` → 337,36 USD/jour, ventilé 🇪🇺 3,12 / 🇺🇸 329,63 / 🌏 4,61.
+
 ## [1.2.0] — 2026-08-30
 ### Fixed (bugs réels, tous couverts par des tests de non-régression)
 - **L'alerte « signal perdu » était muette quand le signal se perdait vraiment** : `noDataState: OK` faisait taire la règle si la datasource devenait injoignable. Passée à `Alerting`.

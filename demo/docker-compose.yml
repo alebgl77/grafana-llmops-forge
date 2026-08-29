@@ -27,7 +27,7 @@ services:
       GF_SECURITY_ADMIN_PASSWORD: admin
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
-      GF_INSTALL_PLUGINS: grafana-image-renderer
+      GF_INSTALL_PLUGINS: ${GF_PLUGINS-grafana-image-renderer}
       GF_FEATURE_TOGGLES_ENABLE: publicDashboards
     volumes:
       - ./provisioning:/etc/grafana/provisioning:ro

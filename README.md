@@ -6,8 +6,8 @@
 
 **Point it at any Grafana. Get a complete AI/LLM observability suite — discovered, generated, deployed, and *visually verified*.**
 
-[![CI](https://img.shields.io/badge/CI-41%2F41%20checks-3fb950?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![Python](https://img.shields.io/badge/python-3.8%2B%20·%20stdlib%20only-3776AB?logo=python&logoColor=white)](#-security-model)
+[![CI](https://img.shields.io/github/actions/workflow/status/alebgl77/grafana-llmops-forge/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](../../actions/workflows/ci.yml)
+[![Python](https://img.shields.io/badge/python-3.9%2B%20·%20stdlib%20only-3776AB?logo=python&logoColor=white)](#-security-model)
 [![Zero deps](https://img.shields.io/badge/dependencies-0-3fb950)](#-security-model)
 [![Grafana](https://img.shields.io/badge/Grafana-9%20→%2013%2B%20·%20OSS%20·%20Cloud%20·%20Enterprise-F46800?logo=grafana&logoColor=white)](references/grafana_api_compat.md)
 [![Agent Skill](https://img.shields.io/badge/format-Agent%20Skill%20(open%20standard)-d2a8ff)](https://agentskills.io)
@@ -113,7 +113,7 @@ Skills execute code — [a 2026 Snyk audit found 36% of published skills had at 
 - **No secret leakage.** The token is never logged, never embedded in dashboards, never placed in URLs.
 - **No prompt-content capture.** `gen_ai.input/output.messages` stay off by default; the docs treat enabling them as a GDPR decision, not a flag.
 - **Idempotent & reversible.** Deterministic UIDs, one folder, `overwrite` semantics — delete the folder, it's gone.
-- **Offline-testable.** `--selftest` + `tests/audit_harness.py` (41 checks, 4 instance topologies) run with zero network — plus a real end-to-end run against the demo stack. That's the CI.
+- **Offline-testable.** `--selftest` + `tests/audit_harness.py` (4 simulated instance topologies plus regression tests) runs with zero network, `tests/live_query_check.py` executes every generated query against a real Prometheus, and the demo stack gives a full end-to-end deploy. That's the CI — the badge above is the real workflow status, not a decorative one.
 
 ## Repo layout
 
@@ -133,7 +133,8 @@ references/
   visual_verification.md      # vision checklist, failure signatures → fixes
   grafana_api_compat.md       # 3 API generations, editions matrix, schema v2 notes
 demo/                         # docker-compose stack: Grafana + Prometheus + synthetic LLM emitter
-tests/audit_harness.py        # 41 offline checks across 4 instance topologies + regressions
+tests/live_query_check.py     # runs every generated query against a real Prometheus
+tests/audit_harness.py        # offline checks across 4 instance topologies + regressions
 ```
 
 ## FAQ

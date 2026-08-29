@@ -7,23 +7,43 @@ jobs:
   audit:
     runs-on: ubuntu-latest
     strategy:
-      matrix: {python: ["3.8", "3.12"]}
+      matrix: {python: ["3.9", "3.13"]}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "${{ matrix.python }}"}
       - name: Offline selftest (7 blueprints, zero network)
         run: cd scripts && python forge_dashboards.py --selftest --with-alerts
-      - name: Audit harness (41 checks, 4 topologies + v1.2 regressions)
+      - name: Audit harness (4 topologies + regressions)
         run: python tests/audit_harness.py
       - name: Registry JSON is valid & priced models have sources
         run: python -c "import json; r=json.load(open('references/model_registry.json')); assert r['models'] and r['_meta']['sources']; print(len(r['models']),'models OK')"
+
+  live-queries:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Start synthetic emitter + real Prometheus
+        run: |
+          python demo/emitter.py --port 9109 --seed-minutes 20 &
+          sleep 6
+          V=$(curl -s https://api.github.com/repos/prometheus/prometheus/releases/latest | python -c "import sys,json;print(next(a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if 'linux-amd64.tar.gz' in a['name']))")
+          curl -sL "$V" -o p.tgz && tar xzf p.tgz && mv prometheus-*linux-amd64 prom
+          mkdir -p /tmp/rules
+          printf 'global: {scrape_interval: 5s, evaluation_interval: 5s}\nrule_files: ["/tmp/rules/*.yml"]\nscrape_configs:\n  - job_name: e\n    static_configs: [{targets: ["localhost:9109"]}]\n' > /tmp/prom.yml
+          ./prom/prometheus --config.file=/tmp/prom.yml --storage.tsdb.path=/tmp/tsdb --web.listen-address=:9090 &
+          sleep 35
+      - name: Every generated query must return data
+        run: python tests/live_query_check.py --prometheus http://localhost:9090
 
   e2e:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Boot demo stack (Grafana + Prometheus + synthetic LLM metrics)
+        env: {GF_PLUGINS: ""}          # renderer inutile ici, évite un install réseau au boot
         run: docker compose -f demo/docker-compose.yml up -d
       - name: Wait for Grafana and first scrapes
         run: |
