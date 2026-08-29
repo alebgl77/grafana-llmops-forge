@@ -6,7 +6,7 @@
 
 **Point it at any Grafana. Get a complete AI/LLM observability suite — discovered, generated, deployed, and *visually verified*.**
 
-[![CI](https://img.shields.io/badge/CI-27%2F27%20checks-3fb950?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
+[![CI](https://img.shields.io/badge/CI-41%2F41%20checks-3fb950?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.8%2B%20·%20stdlib%20only-3776AB?logo=python&logoColor=white)](#-security-model)
 [![Zero deps](https://img.shields.io/badge/dependencies-0-3fb950)](#-security-model)
 [![Grafana](https://img.shields.io/badge/Grafana-9%20→%2013%2B%20·%20OSS%20·%20Cloud%20·%20Enterprise-F46800?logo=grafana&logoColor=white)](references/grafana_api_compat.md)
@@ -23,6 +23,8 @@
 Your teams ship LLM features. Your CFO asks what they cost. Your board asks about the **EU AI Act**. Your SREs get paged about latency on a system nobody instrumented. And your Grafana — the tool you already trust — shows none of it.
 
 `grafana-llmops-forge` fixes that with **one prerequisite: a reachable Grafana** (URL + service-account token). Everything else is discovered, not assumed.
+
+> **Not the same thing as Grafana Cloud AI Observability.** Grafana shipped its own AI/agent observability (public preview, April 2026) — it's excellent, it's **Cloud-only**, and it asks you to adopt *their* SDK. This works on **self-hosted OSS**, on whatever telemetry you already emit, and adds the two things a European CIO actually gets asked about: **cost by provider sovereignty** and **EU AI Act evidence**. See the [FAQ](#faq).
 
 ```bash
 export GRAFANA_URL=https://grafana.your-company.com GRAFANA_TOKEN=glsa_...
@@ -58,9 +60,24 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 | 🤖 **Agents & RAG** | *What do our agents do, where do they fail?* | invoke/tool rates, per-tool errors, tokens per agent, embeddings latency, **TraceQL panel** (Tempo) |
 | 📈 **Adoption** | *Who actually adopted what?* | active teams, **new adopters (7d)**, model mix over time, top token consumers — shadow AI shows up here |
 | ⚡ **Inference (self-hosted)** | *Do our GPUs hold, at what cost vs API?* | vLLM TTFT/TPOT, queue, **KV-cache saturation**, preemptions, GPU util/VRAM, API-price benchmark table |
+| ✅ **Quality & Evals** | *Is the output any good, and is it drifting?* | eval score p50/p10, score per model, guardrail blocks, eval volume (a system can be green on latency and wrong on content) |
 | ⚖ **EU AI Act Governance** | *What do we show an auditor?* | regulatory timeline (July 2026, post-Omnibus), logging evidence (Art. 12/26§6), **auto model inventory** (region/license/GPAI), incident watch (Art. 73) |
 
-Plus **5 provisioned SLO alerts**: error ratio >5%, telemetry signal lost, daily budget breach (`--daily-budget`), TTFT p95 >3s, vLLM KV-cache >92%.
+Blueprints only materialize when the underlying signals exist — no empty panels, ever.
+
+Plus **provisioned SLO alerts** built the way SREs actually want them: **multi-window burn-rate** on the error budget (5m/1h page, 30m/6h ticket, `--slo-target`), telemetry-signal-lost (with `noDataState: Alerting` — the alert that catches a dead pipeline must not go quiet when the pipeline dies), daily budget breach, TTFT p95, vLLM KV-cache saturation, and eval-score drop.
+
+### Cost that scales
+
+By default the forge composes cost from token counters × a bundled price registry. That's fine to bootstrap and slow past ~15 models. So every run also writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. Load it into Prometheus and your FinOps panels go from a 2N-term sum to `sum(llm:cost_usd_per_second)` — unlimited models, O(1) queries, and price updates without regenerating a single dashboard. The forge detects the recorded metric on the next discovery run and switches automatically.
+
+## Try it in 60 seconds (no Grafana needed)
+
+```bash
+make demo    # Grafana + Prometheus + a synthetic LLM metrics emitter, then the full pipeline
+```
+
+Spins up the stack, discovers it, forges and deploys all applicable dashboards with alerts, loads the generated cost recording rules, and prints the URLs (admin/admin). `make shots` captures every panel; `make demo-down` removes everything. This is also the integration test — it runs the exact code path a production instance would.
 
 ## Quick start
 
@@ -95,7 +112,7 @@ Skills execute code — [a 2026 Snyk audit found 36% of published skills had at 
 - **No secret leakage.** The token is never logged, never embedded in dashboards, never placed in URLs.
 - **No prompt-content capture.** `gen_ai.input/output.messages` stay off by default; the docs treat enabling them as a GDPR decision, not a flag.
 - **Idempotent & reversible.** Deterministic UIDs, one folder, `overwrite` semantics — delete the folder, it's gone.
-- **Offline-testable.** `--selftest` + `tests/audit_harness.py` (27 checks, 4 instance topologies) run with zero network. That's the CI.
+- **Offline-testable.** `--selftest` + `tests/audit_harness.py` (41 checks, 4 instance topologies) run with zero network — plus a real end-to-end run against the demo stack. That's the CI.
 
 ## Repo layout
 
@@ -114,10 +131,13 @@ references/
   eu_ai_act_observability.md  # article → signal → panel mapping, deployer checklist
   visual_verification.md      # vision checklist, failure signatures → fixes
   grafana_api_compat.md       # 3 API generations, editions matrix, schema v2 notes
-tests/audit_harness.py        # 27 offline checks across 4 instance topologies
+demo/                         # docker-compose stack: Grafana + Prometheus + synthetic LLM emitter
+tests/audit_harness.py        # 41 offline checks across 4 instance topologies + regressions
 ```
 
 ## FAQ
+
+**Why not Grafana Cloud's own AI Observability?** Use it if you're on Cloud and happy to instrument with Grafana's SDK — it does evaluations and conversation replay well. This project targets the other case: self-hosted OSS/Enterprise, telemetry you already emit (OTel, LiteLLM, vLLM — no SDK migration), plus cost attribution by provider sovereignty and an EU AI Act evidence layer, which no vendor ships. They compose fine: nothing here conflicts with the Grafana plugins.
 
 **Does it overwrite my existing dashboards?** No — everything lives in its own folder with `llmops-forge`-tagged, deterministically-UID'd dashboards. Re-running updates in place.
 
@@ -125,14 +145,23 @@ tests/audit_harness.py        # 27 offline checks across 4 instance topologies
 
 **My models aren't in the registry.** They appear in an "unpriced models" panel instead of being billed wrong. Add a price or alias to `model_registry.json`, re-forge. (The matcher scores by specificity — `gpt-5.4-mini` will never be billed at `gpt-5.4` rates; there's a test for that.)
 
+**Can I publish the generated dashboards?** Yes — `--export-portable` emits JSON with `__inputs`/`${DS_PROMETHEUS}` placeholders, the format grafana.com/dashboards requires.
+
+**Multiple Prometheus (prod + staging)?** Discovery flags it and the forge tells you which one it picked; pin it with `--datasource <uid|name>`.
+
 **Is the AI Act dashboard legal advice?** No, and it says so on the dashboard. It's the *evidence layer* your counsel will ask you for.
 
 ## Roadmap
 
 - [ ] Native schema-v2 output (tabs/conditional layouts) for Grafana 13+ as-code shops
 - [ ] Cache-savings & budget burn-down panels (specs in `dashboard_blueprints.md`)
+- [ ] Conversation-level cost attribution via exemplars (click a cost spike → the exact agent run)
 - [ ] OpenAI/Gemini usage-API pollers for orgs with zero telemetry
 - [ ] Terraform/Grafana-as-code export mode
+
+## Support
+
+Issues and discussions are the place for bugs and questions — I read everything. If your organisation needs this wired into a real platform (multi-tenant Grafana, AI Act evidence pack for an audit, FinOps governance across business units), I do that professionally: [ia-b2b.fr](https://ia-b2b.fr).
 
 ## Contributing
 

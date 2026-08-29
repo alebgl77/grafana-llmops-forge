@@ -1,6 +1,6 @@
 ---
 name: grafana-llmops-forge
-description: Runs end-to-end AI/LLM observability on any Grafana (OSS, Cloud, Enterprise) with a single prerequisite — a reachable Grafana instance. Auto-discovers the instance (version, APIs, datasources), detects which LLM telemetry dialects are actually present (OpenTelemetry GenAI gen_ai.*, LiteLLM, vLLM, TGI, GPU/DCGM, eval scores), then generates and deploys dashboards — FinOps and multi-provider cost by sovereignty (US/EU/Asia), gateway SLOs, agent and RAG tracing, internal adoption, quality evaluations, EU AI Act governance, self-hosted inference — plus burn-rate SLO alerts, cost recording rules, and a visual verification pass on the rendered dashboards. Use this skill whenever the user mentions Grafana, dashboards, AI or LLM monitoring or observability, token costs, AI FinOps, LLMOps, agents or RAG, model adoption, AI Act compliance, or Prometheus/Loki/Tempo applied to AI — even without the word dashboard. Also use it to audit an existing Grafana or an AI stack that emits nothing yet.
+description: Pilote l'observabilité IA/LLM de bout en bout sur Grafana (OSS, Cloud, Enterprise) avec un seul prérequis — une instance Grafana accessible. Auto-découverte (version, APIs, datasources), détection des signaux LLM présents (OTel GenAI gen_ai.*, LiteLLM, vLLM, TGI, GPU/DCGM), génération et déploiement automatiques de dashboards — FinOps & coûts multi-providers (US/EU/Asie), gateway, tracing agents & RAG, adoption interne, gouvernance EU AI Act, inference self-hosted — alerting SLO, registre de modèles avec pricing, puis contrôle visuel du rendu réel (captures renderer/navigateur inspectées par vision). Utilise ce skill dès que l'utilisateur mentionne Grafana, un dashboard, du monitoring/observabilité IA ou LLM, des coûts de tokens, du FinOps IA, du LLMOps, des agents ou du RAG, l'adoption de modèles, la conformité AI Act, ou Prometheus/Loki/Tempo appliqués à l'IA — même sans le mot « dashboard ». Vaut aussi pour auditer un Grafana existant ou une stack IA qui n'émet encore rien.
 ---
 
 # Grafana LLMOps Forge
@@ -45,10 +45,6 @@ Produit la capability map : version/édition/namespace, disponibilité des APIs 
 
 Lire `references/model_registry.json`. Si `_meta.verified_at` date de plus de 30 jours ET que la recherche web est disponible : rafraîchir les prix des modèles effectivement détectés dans la capability map (pas tout le registre) depuis les URLs de `_meta.sources`, puis écrire un `model_registry.local.json` à côté de la capability map. Le générateur charge le fichier local en priorité. Sans accès web : utiliser le seed tel quel — les dashboards de coûts affichent la date du registre dans leur description.
 
-### Phase 2bis — Recording rules de coût (fortement recommandé)
-
-La forge écrit `prometheus_rules_llmops.yml` à chaque exécution : les prix deviennent des séries (`llm:price_*_usd_per_token{<label_modèle>=…}`) et le coût une métrique agrégée (`llm:cost_usd_per_second`) jointe par vector matching. Copier ce fichier dans les `rule_files` de Prometheus puis recharger : au run suivant, `discover.py` détecte le dialecte `recorded` et les panels de coût passent d'une somme de 2N termes à une requête O(1) — nombre de modèles illimité, tarifs modifiables sans regénérer les dashboards. Sans installation, la composition à la volée reste active (plafond 40 modèles).
-
 ### Phase 3 — Sélection des blueprints
 
 Six blueprints. Choisir selon la demande + la capability map (ne pas demander à l'utilisateur de re-choisir ce qu'il a déjà exprimé) :
@@ -60,7 +56,6 @@ Six blueprints. Choisir selon la demande + la capability map (ne pas demander à
 | Agents & RAG (traces, tools, workflows) | `agents` | otel + Tempo idéalement ; otel seul = version métriques |
 | Adoption interne (équipes, apps, mix modèles) | `adoption` | otel ou litellm |
 | Inference self-hosted (vLLM/TGI + GPU) | `inference` | vllm/tgi/ollama ou DCGM détectés |
-| Qualité & évaluations | `quality` | scores d'éval détectés (RAGAS, juge LLM, garde-fous) |
 | Gouvernance EU AI Act | `governance` | toujours activable (fonctionne dégradé) |
 
 ### Phase 4 — Forge et déploiement
@@ -72,14 +67,9 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints finops,governance --deploy
 # Vérification sans écriture :
 python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints auto --dry-run
-# Options utiles :
-#   --slo-target 0.995      cible SLO du burn-rate (défaut 0.99)
-#   --cost-mode recorded    forcer les recording rules (défaut: auto-détecté)
-#   --export-portable       JSON ${DS_*} publiables (grafana.com/dashboards)
-#   --datasource <uid|nom>  cibler une datasource précise (prod vs staging)
 ```
 
-Le script génère les JSON (schéma classique v41 — compatible OSS/Cloud/Enterprise de la v9 à la v13, déployé via l'API legacy, fallback API resource K8s-style si nécessaire), crée le folder, upsert les dashboards, provisionne les alertes SLO (`--with-alerts` : burn-rate d'erreur sur deux fenêtres 5m/1h et 30m/6h selon la méthode SRE, TTFT p95, budget quotidien, saturation KV cache, chute de score d'évaluation, et perte de signal — cette dernière avec `noDataState: Alerting`, sans quoi elle resterait muette précisément quand la télémétrie meurt), écrit `deploy_manifest.json` puis imprime les URLs. Toujours relayer les URLs finales à l'utilisateur.
+Le script génère les JSON (schéma classique v41 — compatible OSS/Cloud/Enterprise de la v9 à la v13, déployé via l'API legacy, fallback API resource K8s-style si nécessaire), crée le folder, upsert les dashboards, provisionne les alertes SLO (`--with-alerts` : taux d'erreur burn-rate, TTFT p95, budget quotidien, saturation KV cache, absence de signal), écrit `deploy_manifest.json` puis imprime les URLs. Toujours relayer les URLs finales à l'utilisateur.
 
 ### Phase 4b — Contrôle visuel (vision) — obligatoire après tout déploiement
 
@@ -114,8 +104,6 @@ Les scripts couvrent le noyau déterministe. Pour étendre (panels supplémentai
 - **Contenu des prompts** : ne jamais encourager la capture de `gen_ai.input.messages`/`output.messages` par défaut (données sensibles). Si l'utilisateur la veut : opt-in explicite + renvoyer aux précautions de `instrumentation_guide.md`.
 - **Rendu absent** : `/render/...` en 404 = plugin grafana-image-renderer non installé (installation en une ligne dans `visual_verification.md` §5) ; basculer sur `--engine playwright` en attendant. Derrière un SSO/proxy où le Bearer ne passe pas : `GRAFANA_COOKIE`.
 - **Captures sensibles** : les PNG d'audit contiennent coûts, équipes, modèles — stockage local, partage à bon escient, purge après audit si l'environnement l'exige.
-- **Multi-datasource** : la forge n'utilise qu'une datasource par dialecte. Si `discover.py` en signale plusieurs (prod + staging), demander laquelle et relancer avec `--datasource`.
-- **Exemplars** : si Tempo existe mais que la datasource Prometheus ne route pas les exemplars, le signaler — c'est la navigation métrique → trace qui manque, pas un détail cosmétique.
 - **Ne jamais** stocker le token dans un dashboard, un fichier de config commité, ou l'afficher dans une sortie.
 
 ## Auto-test hors ligne

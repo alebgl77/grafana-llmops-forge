@@ -1,0 +1,33 @@
+name: Registry freshness
+on:
+  schedule: [{cron: "0 7 1 * *"}]   # 1er du mois
+  workflow_dispatch:
+permissions: {contents: read, issues: write}
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - id: age
+        run: |
+          python - <<'PY' >> $GITHUB_OUTPUT
+          import json, datetime
+          m = json.load(open("references/model_registry.json"))["_meta"]
+          d = (datetime.date.today() - datetime.date.fromisoformat(m["verified_at"])).days
+          print(f"days={d}")
+          print(f"stale={'true' if d > 45 else 'false'}")
+          PY
+      - if: steps.age.outputs.stale == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const days = "${{ steps.age.outputs.days }}";
+            const title = `Refresh model price registry (${days} days old)`;
+            const {data: open} = await github.rest.issues.listForRepo({
+              ...context.repo, state: "open", labels: "registry"});
+            if (open.some(i => i.title.startsWith("Refresh model price registry"))) return;
+            await github.rest.issues.create({...context.repo, title, labels: ["registry"],
+              body: `LLM prices move quarterly. \`_meta.verified_at\` is ${days} days old.\n\n`
+                  + `Check the official pages listed in \`_meta.sources\`, update the models `
+                  + `you use, bump \`verified_at\`. Takes ~10 minutes and keeps every FinOps `
+                  + `dashboard honest.`});

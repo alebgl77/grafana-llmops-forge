@@ -5,6 +5,7 @@ import pathlib
 SK = str(pathlib.Path(__file__).resolve().parent.parent)
 SC = f"{SK}/scripts"
 sys.path.insert(0, SC)
+import forge_dashboards
 import tempfile; os.chdir(tempfile.gettempdir())
 FAIL = []
 
@@ -14,6 +15,7 @@ def check(name, cond, detail=""):
         FAIL.append(f"{name}: {detail}")
 
 def run_forge(cap, outdir, bps="auto", extra=()):
+    shutil.rmtree(f"/tmp/{outdir}", ignore_errors=True)   # pas de résidu inter-run
     cpath = f"/tmp/{outdir}.json"
     json.dump(cap, open(cpath, "w"))
     r = subprocess.run([sys.executable, f"{SC}/forge_dashboards.py",
@@ -25,7 +27,8 @@ def run_forge(cap, outdir, bps="auto", extra=()):
 def load_boards(d):
     out = {}
     for f in os.listdir(d):
-        if f.endswith(".json") and not f.startswith(("alert_", "deploy_")):
+        if (f.endswith(".json") and not f.endswith(".portable.json")
+                and not f.startswith(("alert_", "deploy_"))):
             out[f[:-5]] = json.load(open(os.path.join(d, f)))
     return out
 
@@ -72,7 +75,7 @@ check("spend = litellm natif (pas de composition registre)",
 bad = [(t, e, w) for b in bs.values() for t, e in all_exprs(b) if (w := promql_sane(e))]
 check("PromQL sain (aucune expr)", not bad, str(bad[:2]))
 al = [f for f in os.listdir(d) if f.startswith("alert_")]
-check("alertes exportées (litellm: erreurs+signal+budget)", len(al) == 3, str(al))
+check("alertes litellm (burn×2 + signal + budget)", len(al) == 4, str(sorted(al)))
 man = json.load(open(f"{d}/deploy_manifest.json"))
 check("manifeste cohérent", len(man["dashboards"]) == 4 and man["deployed"] is False)
 
@@ -148,12 +151,20 @@ class FakeClient:
                 "gen_ai_token_type": ["input", "output"],
                 "service_name": ["app-a", "app-b"]}.get(label, [])
     def loki_labels(self, ds): return ["service_name", "level"]
+    def has_exemplar_link(self, ds): return ds.get("uid") == "p1"
+    def contact_points(self): return []
+    def org_id(self): return 3
 cap = discover.build_capability_map(FakeClient())
 sig = cap["signals"]["p1"]["otel_genai"]
 check("dialecte otel détecté + modèle", sig["model_label"] == "gen_ai_request_model")
 check("token_type_label sondé", sig.get("token_type_label") == "gen_ai_token_type")
 check("gap Tempo signalé", any("Tempo" in g for g in cap["gaps"]))
 check("labels Loki filtrés", "service_name" in cap["datasources"]["loki"][0]["labels"])
+check("exemplars détectés sur la datasource", cap["datasources"]["prometheus"][0]["exemplars"])
+check("gap recording rules signalé", any("Recording rules" in g for g in cap["gaps"]))
+cap2 = discover.build_capability_map(FakeClient(), ds_filter="inexistante")
+check("filtre --datasource inconnu → gap explicite",
+      any("--datasource" in g for g in cap2["gaps"]))
 
 # ------------------------------------------------------------------ 6. invariants
 print("\n[6] Invariants unitaires")
@@ -192,6 +203,51 @@ check("SKILL.md < 500 lignes", txt.count("\n") < 500, str(txt.count("\n")))
 refs = re.findall(r"references/[a-z_]+\.(?:md|json)", txt)
 missing = [f for f in set(refs) if not os.path.exists(f"{SK}/{f}")]
 check("toutes les références citées existent", not missing, str(missing))
+
+# ------------------------------------------------- 9. correctifs v1.2 (régressions)
+print("\n[9] Correctifs v1.2")
+import subprocess as sp, glob as gl
+r, d = run_forge(json.load(open(f"{SK}/scripts/_st.json")) if os.path.exists(f"{SK}/scripts/_st.json") else __import__('sys').modules['forge_dashboards'].selftest_capability(), "audit_v12", extra=("--export-portable",))
+check("forge selftest-like exit 0", r.returncode == 0, r.stderr[-200:])
+bs = load_boards(d)
+check("7 blueprints dont quality", "quality" in bs and len(bs) == 7, str(sorted(bs)))
+al = {f: json.load(open(os.path.join(d, f))) for f in os.listdir(d) if f.startswith("alert_")}
+sl = [a for a in al.values() if "Signal perdu" in a["title"]]
+check("signal-lost alerte sur NoData (bug v1.1)",
+      sl and sl[0]["noDataState"] == "Alerting", str([a["noDataState"] for a in sl]))
+burn = [a for a in al.values() if "Burn-rate" in a["title"]]
+check("burn-rate 2 fenêtres (rapide+lent)", len(burn) == 2, str(len(burn)))
+check("burn-rate sans $__rate_interval (invalide en alerting)",
+      all("$__rate_interval" not in a["data"][0]["model"]["expr"] for a in al.values()))
+check("toute alerte à base de rate() porte une fenêtre explicite",
+      all("[" in a["data"][0]["model"]["expr"]
+          for a in al.values() if "rate(" in a["data"][0]["model"]["expr"]))
+rules = os.path.join(d, "prometheus_rules_llmops.yml")
+check("recording rules émises", os.path.exists(rules))
+if os.path.exists(rules):
+    txt = open(rules).read()
+    check("prix + coût par vector matching",
+          "llm:price_input_usd_per_token" in txt and "group_left" in txt)
+port = gl.glob(os.path.join(d, "*.portable.json"))
+check("export portable avec __inputs", bool(port) and
+      all(json.load(open(p)).get("__inputs") for p in port), str(len(port)))
+gov = bs.get("governance", {})
+lk = [p for p in gov.get("panels", []) if "journalisation" in p.get("title", "")]
+check("panel Loki typé loki (bug v1.1)",
+      not lk or lk[0]["datasource"]["type"] == "loki",
+      str(lk[0]["datasource"] if lk else ""))
+gw = bs.get("gateway", {})
+ex = [t for p in gw.get("panels", []) for t in p.get("targets", []) if t.get("exemplar")]
+check("exemplars posés quand la datasource les route", bool(ex))
+# mode recorded : requêtes O(1)
+r2, d2 = run_forge(json.load(open(f"/tmp/audit_v12.json")), "audit_rec",
+                   extra=("--cost-mode", "recorded"))
+fin = load_boards(d2).get("finops", {})
+ex2 = [t["expr"] for p in fin.get("panels", []) for t in p.get("targets", [])
+       if "cost_usd" in t.get("expr", "")]
+check("mode recorded → llm:cost_usd_per_second", bool(ex2), "aucune expr recorded")
+check("recorded = expressions courtes", all(len(e) < 200 for e in ex2),
+      str(max((len(e) for e in ex2), default=0)))
 
 print("\n" + ("=" * 60))
 print(f"RÉSULTAT : {'✅ AUDIT PROPRE' if not FAIL else '❌ ' + str(len(FAIL)) + ' échec(s)'}")

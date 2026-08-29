@@ -1,0 +1,35 @@
+# Stack de démonstration grafana-llmops-forge : Grafana + Prometheus + un
+# émetteur de métriques LLM synthétiques. Aucune donnée réelle.
+#   make demo   → up + attente + forge + URLs
+services:
+  emitter:
+    image: python:3.12-slim
+    command: python /app/emitter.py --port 9109
+    volumes: ["./emitter.py:/app/emitter.py:ro"]
+    ports: ["9109:9109"]
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.retention.time=6h
+      - --web.enable-lifecycle
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./rules:/etc/prometheus/rules:ro
+    ports: ["9090:9090"]
+    depends_on: [emitter]
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_INSTALL_PLUGINS: grafana-image-renderer
+      GF_FEATURE_TOGGLES_ENABLE: publicDashboards
+    volumes:
+      - ./provisioning:/etc/grafana/provisioning:ro
+    ports: ["3000:3000"]
+    depends_on: [prometheus]

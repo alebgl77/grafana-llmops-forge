@@ -112,49 +112,51 @@ class Q:
     def by(self, label: str | None) -> str:
         return f" by({label})" if label else ""
 
-    def pXX(self, base: str, q: float, sel: str = "", by: str | None = None) -> str:
+    def pXX(self, base: str, q: float, sel: str = "", by: str | None = None,
+            w: str = RATE) -> str:
         grp = f"le,{by}" if by else "le"
         return (f"histogram_quantile({q}, sum by({grp})"
-                f"(rate({base}_bucket{sel}[{RATE}])))")
+                f"(rate({base}_bucket{sel}[{w}])))")
 
-    def req_rate(self, by: str | None = None, sel: str = "") -> str | None:
+    def req_rate(self, by: str | None = None, sel: str = "", w: str = RATE) -> str | None:
         d = self.s.dialect
         if d in ("otel_genai", "tgi") and getattr(self, "dur", None):
-            return f"sum{self.by(by)}(rate({self.dur}_count{sel}[{RATE}]))"
+            return f"sum{self.by(by)}(rate({self.dur}_count{sel}[{w}]))"
         if d == "litellm" and getattr(self, "req", None):
-            return f"sum{self.by(by)}(rate({self.req}{sel}[{RATE}]))"
+            return f"sum{self.by(by)}(rate({self.req}{sel}[{w}]))"
         if d == "vllm" and getattr(self, "e2e", None):
-            return f"sum{self.by(by)}(rate({self.e2e}_count{sel}[{RATE}]))"
+            return f"sum{self.by(by)}(rate({self.e2e}_count{sel}[{w}]))"
         return None
 
-    def err_rate(self, by: str | None = None) -> str | None:
+    def err_rate(self, by: str | None = None, w: str = RATE) -> str | None:
         d = self.s.dialect
         if d == "otel_genai" and self.dur:
-            return f'sum{self.by(by)}(rate({self.dur}_count{{error_type!=""}}[{RATE}]))'
+            return f'sum{self.by(by)}(rate({self.dur}_count{{error_type!=""}}[{w}]))'
         if d == "litellm" and getattr(self, "fail", None):
-            return f"sum{self.by(by)}(rate({self.fail}[{RATE}]))"
+            return f"sum{self.by(by)}(rate({self.fail}[{w}]))"
         return None
 
-    def error_ratio(self) -> str | None:
-        e, r = self.err_rate(), self.req_rate()
+    def error_ratio(self, w: str = RATE) -> str | None:
+        e, r = self.err_rate(w=w), self.req_rate(w=w)
         if e and r:
             return f"({e}) / clamp_min({r}, 1e-9)"
         return None
 
-    def tokens_rate(self, direction: str, by: str | None = None, sel_extra: str = "") -> str | None:
+    def tokens_rate(self, direction: str, by: str | None = None, sel_extra: str = "",
+                    w: str = RATE) -> str | None:
         d = self.s.dialect
         if d == "otel_genai" and self.tok:
             sel = f'{{{self.s.token_type_label}="{direction}"{sel_extra}}}'
-            return f"sum{self.by(by)}(rate({self.tok}_sum{sel}[{RATE}]))"
+            return f"sum{self.by(by)}(rate({self.tok}_sum{sel}[{w}]))"
         if d == "litellm":
             m = self.tok_in if direction == "input" else self.tok_out
             if m:
                 sel = f"{{{sel_extra.lstrip(',')}}}" if sel_extra else ""
-                return f"sum{self.by(by)}(rate({m}{sel}[{RATE}]))"
+                return f"sum{self.by(by)}(rate({m}{sel}[{w}]))"
         if d == "vllm":
             m = self.tok_prompt if direction == "input" else self.tok_gen
             if m:
-                return f"sum{self.by(by)}(rate({m}[{RATE}]))"
+                return f"sum{self.by(by)}(rate({m}[{w}]))"
         return None
 
 
@@ -204,12 +206,27 @@ def match_models(models_seen: list, registry: dict) -> tuple[list, list]:
     return matched, unmatched
 
 
-def cost_rate_expr(q: Q, matched: list, region: str | None = None,
-                   window: str = RATE, agg: str = "rate") -> str | None:
-    """Σ_modèles (tokens/s × prix/token), robuste aux séries absentes (or vector(0)).
+COST_RECORDED = "llm:cost_usd_per_second"
+PRICE_IN, PRICE_OUT = "llm:price_input_usd_per_token", "llm:price_output_usd_per_token"
+INLINE_MODEL_CAP = 40
 
-    litellm : spend natif en USD (prioritaire). otel : composition depuis le registre.
+
+def cost_rate_expr(q: Q, matched: list, region: str | None = None,
+                   window: str = RATE, agg: str = "rate",
+                   recorded: bool = False) -> str | None:
+    """Coût USD/s. Trois voies, par ordre de préférence :
+
+    1. recording rules `llm:cost_usd_per_second` (O(1) séries, prix modifiables
+       sans regénérer les dashboards, aucune limite de modèles) ;
+    2. spend natif de la passerelle LiteLLM (USD déjà agrégé) ;
+    3. composition à la volée depuis le registre (bootstrap ; coûteux au-delà
+       de ~15 modèles — d'où la voie 1).
     """
+    if recorded:
+        sel = f'{{region="{region}"}}' if region else ""
+        if agg == "increase":  # intégrer un taux enregistré sur la période
+            return f"sum(increase(({COST_RECORDED}{sel})[{window}:])) or vector(0)"
+        return f"sum({COST_RECORDED}{sel}) or vector(0)"
     if q.s.dialect == "litellm" and getattr(q, "spend", None):
         if region:
             return None  # la ventilation régionale passe par la voie otel/registre
@@ -217,7 +234,7 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
     if q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
         return None
     terms = []
-    for it in matched[:14]:
+    for it in matched[:INLINE_MODEL_CAP]:
         if region and it["reg"].get("region") != region:
             continue
         m, lbl = it["reg"], _esc(it["seen"])
@@ -230,6 +247,50 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
             terms.append(f'(sum({agg}({q.tok}_sum{sel}[{window}])) or vector(0)) '
                          f"* {price / 1e6:.9g}")
     return "(" + " + ".join(terms) + ")" if terms else None
+
+
+def emit_recording_rules(ctx, path: str) -> tuple[str, int]:
+    """Écrit un fichier de règles Prometheus : prix en métriques + coût agrégé.
+
+    Le prix devient une série (`llm:price_*_usd_per_token{<label_modèle>=...}`),
+    joignable par vector matching. Conséquences : nombre de modèles illimité,
+    requêtes de dashboard en O(1), et mise à jour tarifaire par simple reload
+    Prometheus — sans toucher aux dashboards.
+    """
+    q = ctx.primary
+    if not q or q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
+        return "", 0
+    ml, tt = q.s.model_label, q.s.token_type_label
+    L = ["# Généré par grafana-llmops-forge — recording rules coût LLM.",
+         f"# Registre vérifié le {ctx.verified}. Recharger Prometheus après copie",
+         "# (rule_files: - prometheus_rules_llmops.yml).",
+         "groups:", "  - name: llmops-forge-pricing", "    interval: 1m", "    rules:"]
+    n = 0
+    for it in ctx.matched:
+        m, seen = it["reg"], it["seen"]
+        lab = (f'{{{ml}: "{seen}", region: "{m.get("region","?")}", '
+               f'vendor: "{m.get("vendor","?")}"}}')
+        for rec, key in ((PRICE_IN, "input_per_mtok"), (PRICE_OUT, "output_per_mtok")):
+            if m.get(key) is None:
+                continue
+            L += [f"      - record: {rec}", f"        expr: {m[key] / 1e6:.12g}",
+                  f"        labels: {lab}"]
+            n += 1
+    if not n:
+        return "", 0
+    L += ["", "  - name: llmops-forge-cost", "    interval: 1m", "    rules:",
+          f"      - record: {COST_RECORDED}", "        expr: |",
+          f'          sum by({ml}, region, vendor) (',
+          f'            rate({q.tok}_sum{{{tt}="input"}}[5m])',
+          f"          ) * on({ml}) group_left(region, vendor) {PRICE_IN}",
+          "          or",
+          f'          sum by({ml}, region, vendor) (',
+          f'            rate({q.tok}_sum{{{tt}="output"}}[5m])',
+          f"          ) * on({ml}) group_left(region, vendor) {PRICE_OUT}"]
+    txt = "\n".join(L) + "\n"
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(txt)
+    return txt, n
 
 
 # --------------------------------------------------------------------------- #
@@ -283,15 +344,15 @@ class Board:
     def panel(self, ptype: str, title: str, w: int, h: int, ds_uid: str | None,
               targets: list | None = None, unit: str | None = None,
               description: str = "", options: dict | None = None,
-              overrides: dict | None = None) -> dict:
+              overrides: dict | None = None, dstype: str | None = None) -> dict:
         self._id += 1
         p = {"id": self._id, "type": ptype, "title": title,
              "gridPos": self._place(w, h), "description": description,
              "fieldConfig": {"defaults": {}, "overrides": []},
              "options": options or {}, "targets": targets or []}
         if ds_uid:
-            dstype = ("loki" if ptype == "logs" else
-                      "tempo" if ptype == "traces" else "prometheus")
+            dstype = dstype or ("loki" if ptype == "logs" else
+                                "tempo" if ptype == "traces" else "prometheus")
             p["datasource"] = {"type": dstype, "uid": ds_uid}
         if unit:
             p["fieldConfig"]["defaults"]["unit"] = unit
@@ -307,13 +368,18 @@ class Board:
         self.d["panels"].append(p)
         return p
 
-    def ts(self, title, ds, exprs, w=12, h=8, unit=None, stacked=False, desc=""):
+    def ts(self, title, ds, exprs, w=12, h=8, unit=None, stacked=False, desc="",
+           exemplar=False, trace_link=None, dstype=None):
         targets = [{"refId": chr(65 + i), "expr": e[0], "legendFormat": e[1],
-                    "range": True, "instant": False}
+                    "range": True, "instant": False,
+                    **({"exemplar": True} if exemplar else {})}
                    for i, e in enumerate(exprs) if e[0]]
         if not targets:
             return None
-        p = self.panel("timeseries", title, w, h, ds, targets, unit, desc)
+        p = self.panel("timeseries", title, w, h, ds, targets, unit, desc,
+                       dstype=dstype)
+        if trace_link:
+            p["links"] = [trace_link]
         if stacked:
             p["fieldConfig"]["defaults"]["custom"]["stacking"] = {"mode": "normal"}
             p["fieldConfig"]["defaults"]["custom"]["fillOpacity"] = 55
@@ -352,6 +418,23 @@ class Board:
 #  Contexte de génération                                                     #
 # --------------------------------------------------------------------------- #
 
+def tempo_link(tempo_uid: str | None, traceql: str, title: str = "Voir les traces",
+               major: int = 12) -> dict | None:
+    """Lien de panel vers Explore/Tempo. Format `panes` (Grafana >= 10)."""
+    if not tempo_uid or major < 10:
+        return None
+    import urllib.parse
+    panes = json.dumps({"a": {"datasource": tempo_uid,
+                              "queries": [{"refId": "A", "datasource":
+                                           {"type": "tempo", "uid": tempo_uid},
+                                           "queryType": "traceql", "query": traceql}],
+                              "range": {"from": "now-1h", "to": "now"}}},
+                       separators=(",", ":"))
+    return {"title": title, "targetBlank": True,
+            "url": "/explore?schemaVersion=1&panes="
+                   + urllib.parse.quote(panes, safe="")}
+
+
 class Ctx:
     def __init__(self, cap: dict, registry: dict):
         self.cap = cap
@@ -365,6 +448,11 @@ class Ctx:
         dss = cap.get("datasources", {})
         self.loki = (dss.get("loki") or [None])[0]
         self.tempo = ((dss.get("tempo") or [{}])[0] or {}).get("uid")
+        self.major = int(cap.get("instance", {}).get("major") or 12)
+        self.recorded = "recorded" in self.q and any(
+            n.startswith("llm:cost") for n in self.q["recorded"].s.names)
+        self.exemplars = any(m.get("exemplars") for m in dss.get("prometheus", []))
+        self.org_id = 1
         self.primary = self.q.get("otel_genai") or self.q.get("litellm")
         seen = self.primary.s.models_seen if self.primary else []
         self.matched, self.unmatched = match_models(seen, registry)
@@ -384,10 +472,14 @@ def bp_finops(ctx: Ctx) -> Board | None:
         return None
     b = Board(det_uid("ai-executive-finops"), "AI · Executive FinOps & Coûts",
               f"Coûts LLM multi-providers. Registre de prix vérifié le {ctx.verified} "
-              f"(USD/1M tokens). Généré par grafana-llmops-forge.", ["finops"])
+              f"(USD/1M tokens). Source du coût : "
+              f"{'recording rules (llm:cost_usd_per_second)' if ctx.recorded else 'composition à la volée'}. "
+              f"Généré par grafana-llmops-forge.", ["finops"])
     ds = q.s.ds_uid
-    spend_range = cost_rate_expr(q, ctx.matched, window="$__range", agg="increase")
-    spend_rate = cost_rate_expr(q, ctx.matched)
+    R = ctx.recorded
+    spend_range = cost_rate_expr(q, ctx.matched, window="$__range", agg="increase",
+                                 recorded=R)
+    spend_rate = cost_rate_expr(q, ctx.matched, recorded=R)
     b.stat("Dépense (période affichée)", ds, spend_range, 6, 5, "currencyUSD",
            "Somme sur l'intervalle du dashboard.")
     b.stat("Rythme de dépense / jour", ds,
@@ -402,7 +494,7 @@ def bp_finops(ctx: Ctx) -> Board | None:
     b.row_break()
     regions = [("eu", "🇪🇺 Providers UE"), ("us", "🇺🇸 Providers US"),
                ("asia", "🌏 Providers Asie")]
-    region_exprs = [(cost_rate_expr(q, ctx.matched, region=r), lbl)
+    region_exprs = [(cost_rate_expr(q, ctx.matched, region=r, recorded=R), lbl)
                     for r, lbl in regions]
     if any(e for e, _ in region_exprs):
         b.ts("Dépense par souveraineté (USD/s)", ds, region_exprs, 12, 8,
@@ -462,7 +554,12 @@ def bp_gateway(ctx: Ctx) -> Board | None:
     if dur:
         b.ts("Latence p50 / p95 / p99", ds,
              [(q.pXX(dur, 0.50, sel), "p50"), (q.pXX(dur, 0.95, sel), "p95"),
-              (q.pXX(dur, 0.99, sel), "p99")], 12, 8, "s")
+              (q.pXX(dur, 0.99, sel), "p99")], 12, 8, "s",
+             exemplar=ctx.exemplars,
+             trace_link=tempo_link(ctx.tempo, '{span.gen_ai.operation.name="chat"}',
+                                   "Traces des requêtes lentes", ctx.major),
+             desc=("Points d'exemplar cliquables → trace correspondante."
+                   if ctx.exemplars else ""))
     b.row_break()
     if q.s.dialect == "otel_genai" and dur:
         b.ts("Erreurs/s par type", ds,
@@ -508,7 +605,11 @@ def bp_agents(ctx: Ctx) -> Board | None:
          desc="chat / embeddings / invoke_agent / execute_tool…")
     b.ts("Appels par outil (execute_tool)", ds,
          [(f'sum by(gen_ai_tool_name)(rate({q.dur}_count{{{op}="execute_tool"}}[{RATE}]))',
-           "{{gen_ai_tool_name}}")], 12, 8, "reqps", stacked=True)
+           "{{gen_ai_tool_name}}")], 12, 8, "reqps", stacked=True,
+         exemplar=ctx.exemplars,
+         trace_link=tempo_link(ctx.tempo,
+                               '{span.gen_ai.operation.name="execute_tool"}',
+                               "Traces d\'appels d\'outils", ctx.major))
     b.row_break()
     if q.tok:
         b.ts("Tokens par agent / s", ds,
@@ -516,7 +617,9 @@ def bp_agents(ctx: Ctx) -> Board | None:
                "{{gen_ai_agent_name}}")], 12, 8, "short", stacked=True)
     b.ts("Latence embeddings p95 (pipeline RAG)", ds,
          [(q.pXX(q.dur, 0.95, f'{{{op}="embeddings"}}'), "p95 embeddings")],
-         12, 8, "s")
+         12, 8, "s", exemplar=ctx.exemplars,
+         trace_link=tempo_link(ctx.tempo, '{span.gen_ai.operation.name="embeddings"}',
+                               "Traces embeddings", ctx.major))
     if ctx.tempo:
         b.traces("Dernières traces d'agents (TraceQL)", ctx.tempo,
                  '{span.gen_ai.operation.name="invoke_agent"}',
@@ -676,7 +779,7 @@ def bp_governance(ctx: Ctx) -> Board:
         lbl = (ctx.loki.get("labels") or ["service_name"])[0]
         b.ts("Preuve de journalisation (volume de logs)", ctx.loki["uid"],
              [(f'sum by({lbl})(rate({{{lbl}=~".+"}}[{RATE}]))', "{{" + lbl + "}}")],
-             12, 8, "short",
+             12, 8, "short", dstype="loki",
              desc="Art. 12 (journalisation) / Art. 26§6 (rétention ≥ 6 mois par le "
                   "déployeur). Vérifier la rétention Loki ≥ 4320h.")
     b.row_break()
@@ -700,9 +803,63 @@ def bp_governance(ctx: Ctx) -> Board:
     return b
 
 
+def bp_quality(ctx: Ctx) -> Board | None:
+    """Signaux qualité (evals, guardrails). Généré uniquement s'ils existent."""
+    qe = ctx.q.get("evals")
+    if not qe:
+        return None
+    ds, names = qe.s.ds_uid, qe.s.names
+    b = Board(det_uid("ai-quality-evals"), "AI · Qualité & Évaluations",
+              "Scores d'évaluation, garde-fous et dérive qualité. Un système peut "
+              "être vert en latence et faux en sortie — c'est ce que ce dashboard "
+              "regarde. Généré par grafana-llmops-forge.", ["quality", "evals"])
+    ml = qe.s.model_label
+    sb = qe.s.find("score", "_bucket") or qe.s.find("evaluation", "_bucket")
+    score = sb or qe.s.find("score") or qe.s.find("evaluation")
+    guard = qe.s.find("guard") or qe.s.find("blocked")
+    if score:
+        base = score[:-len("_bucket")] if score.endswith("_bucket") else score
+        is_hist = f"{base}_bucket" in names
+        avg = (f"histogram_quantile(0.5, sum by(le)(rate({base}_bucket[{RATE}])))"
+               if is_hist else f"avg({score})")
+        b.stat("Score médian", ds, avg, 6, 5, "percentunit")
+        low = (f"histogram_quantile(0.1, sum by(le)(rate({base}_bucket[{RATE}])))"
+               if is_hist else f"min({score})")
+        b.stat("Décile bas (p10)", ds, low, 6, 5, "percentunit",
+               "La queue basse est le vrai signal : la moyenne masque les échecs.")
+    if guard:
+        b.stat("Blocages garde-fous / s", ds,
+               f"sum(rate({guard}[{RATE}]))" if guard.endswith("_total")
+               else f"sum({guard})", 6, 5, "short")
+    b.row_break()
+    if score and ml:
+        base = score[:-len("_bucket")] if score.endswith("_bucket") else score
+        if f"{base}_bucket" in names:
+            b.ts("Score par modèle (p50)", ds,
+                 [(f"histogram_quantile(0.5, sum by(le,{ml})"
+                   f"(rate({base}_bucket[{RATE}])))", "{{" + ml + "}}")],
+                 12, 8, "percentunit",
+                 desc="Une bascule de modèle qui fait baisser ce panel est un "
+                      "arbitrage coût/qualité à documenter.")
+    if score:
+        base = score[:-len("_bucket")] if score.endswith("_bucket") else score
+        cnt = f"{base}_count" if f"{base}_count" in names else None
+        if cnt:
+            b.ts("Volume d'évaluations / s", ds,
+                 [(f"sum(rate({cnt}[{RATE}]))", "évaluations")], 12, 8, "short",
+                 desc="Si ce volume tombe à zéro, vos scores affichés sont périmés.")
+    b.text("Ce que ce dashboard ne prouve pas",
+           "Un score d'évaluation mesure ce que votre évaluateur sait mesurer. "
+           "Documentez la méthode (juge LLM ? jeu de référence ? échantillonnage ?) "
+           "à côté de ces courbes — sans quoi la métrique se retourne contre vous "
+           "en revue. Pour l'AI Act, ces signaux alimentent la surveillance "
+           "post-commercialisation (Art. 72), pas la conformité à eux seuls.", 24, 5)
+    return b
+
+
 BLUEPRINTS = {"finops": bp_finops, "gateway": bp_gateway, "agents": bp_agents,
               "adoption": bp_adoption, "inference": bp_inference,
-              "governance": bp_governance}
+              "quality": bp_quality, "governance": bp_governance}
 
 
 # --------------------------------------------------------------------------- #
@@ -710,15 +867,20 @@ BLUEPRINTS = {"finops": bp_finops, "gateway": bp_gateway, "agents": bp_agents,
 # --------------------------------------------------------------------------- #
 
 def _rule(uid_name, title, prom_uid, expr, threshold, op, folder_uid,
-          summary, severity="warning", for_="10m", nodata="OK"):
-    return {"uid": det_uid(uid_name, "alr"), "title": title, "orgID": 1,
+          summary, severity="warning", for_="10m", nodata="OK", org_id=1,
+          runbook=""):
+    ann = {"summary": summary}
+    if runbook:
+        ann["__dashboardUid__"] = ""
+        ann["runbook_url"] = runbook
+    return {"uid": det_uid(uid_name, "alr"), "title": title, "orgID": org_id,
             "folderUID": folder_uid, "ruleGroup": "llmops-slo",
             "condition": "C", "for": for_, "noDataState": nodata,
             "execErrState": "Error",
             "labels": {"severity": severity, "origin": "llmops-forge"},
-            "annotations": {"summary": summary},
+            "annotations": ann,
             "data": [
-                {"refId": "A", "relativeTimeRange": {"from": 900, "to": 0},
+                {"refId": "A", "relativeTimeRange": {"from": 21600, "to": 0},
                  "datasourceUid": prom_uid,
                  "model": {"refId": "A", "expr": expr, "range": True,
                            "intervalMs": 60000, "maxDataPoints": 500}},
@@ -732,47 +894,113 @@ def _rule(uid_name, title, prom_uid, expr, threshold, op, folder_uid,
             ]}
 
 
-def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float) -> list:
-    rules = []
+def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
+                 slo_target: float = 0.99) -> list:
+    """Règles SLO. Fenêtres explicites (pas de $__rate_interval : l'intervalle
+    d'une règle d'alerte n'est pas celui d'un panel), et burn-rate multi-fenêtres
+    pour le taux d'erreur — un seuil unique sur la dernière valeur alerte trop
+    tard sur les pannes lentes et trop souvent sur les pics inoffensifs."""
+    rules, org = [], ctx.org_id
     q = ctx.primary
+    budget = max(1 - slo_target, 1e-4)
     if q:
-        ratio = q.error_ratio()
-        if ratio:
-            rules.append(_rule("llm-error-ratio", "LLM · Taux d'erreur > 5 %",
-                               q.s.ds_uid, ratio, 0.05, "gt", folder_uid,
-                               "Le trafic LLM dépasse 5 % d'erreurs sur 10 min.",
-                               "critical"))
-        rr = q.req_rate()
+        # --- burn-rate 2 fenêtres (Google SRE) : page rapide + ticket lent
+        for name, fast, slow, factor, sev, dur in (
+                ("llm-burn-fast", "5m", "1h", 14.4, "critical", "2m"),
+                ("llm-burn-slow", "30m", "6h", 6.0, "warning", "15m")):
+            r_fast, r_slow = q.error_ratio(w=fast), q.error_ratio(w=slow)
+            if not (r_fast and r_slow):
+                continue
+            thr = factor * budget
+            rules.append(_rule(
+                name, f"LLM · Burn-rate {'rapide' if factor > 10 else 'lent'} "
+                      f"({fast}/{slow}) — budget d'erreur SLO {slo_target:.1%}",
+                q.s.ds_uid,
+                f"min(({r_fast}) > {thr:.6g}) and min(({r_slow}) > {thr:.6g})",
+                0, "gt", folder_uid,
+                f"Le budget d'erreur du SLO {slo_target:.1%} se consomme "
+                f"{factor}× trop vite sur {fast} ET {slow}.",
+                sev, dur, "OK", org))
+        # --- signal perdu : NoData DOIT alerter, c'est le cas qu'on veut attraper
+        rr = q.req_rate(w="10m")
         if rr:
-            rules.append(_rule("llm-signal-lost", "LLM · Signal perdu (pipeline télémétrie)",
-                               q.s.ds_uid, f"({rr}) or vector(0)", 1e-9, "lt",
-                               folder_uid,
-                               "Plus aucun trafic LLM mesuré : instrumentation ou "
-                               "collecteur probablement en panne.", "warning", "15m"))
-        spend = cost_rate_expr(q, ctx.matched)
+            rules.append(_rule(
+                "llm-signal-lost", "LLM · Signal perdu (pipeline télémétrie)",
+                q.s.ds_uid, f"({rr}) or vector(0)", 1e-9, "lt", folder_uid,
+                "Plus aucun trafic LLM mesuré, ou datasource injoignable : "
+                "instrumentation ou collecteur probablement en panne.",
+                "warning", "15m", "Alerting", org))
+        spend = cost_rate_expr(q, ctx.matched, window="10m", recorded=ctx.recorded)
         if spend:
-            rules.append(_rule("llm-daily-budget", "LLM · Budget quotidien dépassé",
-                               q.s.ds_uid, f"({spend}) * 86400", daily_budget, "gt",
-                               folder_uid,
-                               f"Rythme de dépense > {daily_budget} USD/jour.",
-                               "warning", "30m"))
+            rules.append(_rule(
+                "llm-daily-budget", "LLM · Budget quotidien dépassé", q.s.ds_uid,
+                f"({spend}) * 86400", daily_budget, "gt", folder_uid,
+                f"Rythme de dépense > {daily_budget} USD/jour.",
+                "warning", "30m", "OK", org))
         ttft = getattr(q, "ttft", None)
         if ttft:
-            rules.append(_rule("llm-ttft-p95", "LLM · TTFT p95 > 3 s",
-                               q.s.ds_uid, q.pXX(ttft, 0.95), 3, "gt", folder_uid,
-                               "Le premier token met > 3 s (p95) : saturation probable."))
+            rules.append(_rule(
+                "llm-ttft-p95", "LLM · TTFT p95 > 3 s", q.s.ds_uid,
+                q.pXX(ttft, 0.95, w="10m"), 3, "gt", folder_uid,
+                "Le premier token met > 3 s (p95) : saturation probable.",
+                "warning", "10m", "OK", org))
     qv = ctx.q.get("vllm")
     if qv and qv.kv:
-        rules.append(_rule("vllm-kv-cache", "vLLM · KV cache > 92 %",
-                           qv.s.ds_uid, f"max({qv.kv})", 0.92, "gt", folder_uid,
-                           "Saturation KV cache : préemptions et latence en vue.",
-                           "critical", "5m"))
+        rules.append(_rule(
+            "vllm-kv-cache", "vLLM · KV cache > 92 %", qv.s.ds_uid,
+            f"max({qv.kv})", 0.92, "gt", folder_uid,
+            "Saturation KV cache : préemptions et latence en vue.",
+            "critical", "5m", "OK", org))
+    qe = ctx.q.get("evals")
+    if qe:
+        sc = (qe.s.find("score", "_bucket") or qe.s.find("evaluation", "_bucket"))
+        if sc:
+            base = sc[:-len("_bucket")]
+            rules.append(_rule(
+                "llm-quality-drop", "LLM · Score d'évaluation p50 < 0.7",
+                qe.s.ds_uid,
+                f"histogram_quantile(0.5, sum by(le)(rate({base}_bucket[30m])))",
+                0.7, "lt", folder_uid,
+                "La qualité médiane des réponses évaluées passe sous le seuil.",
+                "warning", "30m", "OK", org))
     return rules
 
 
 # --------------------------------------------------------------------------- #
 #  Validation, self-test, CLI                                                 #
 # --------------------------------------------------------------------------- #
+
+def to_portable(dash: dict) -> dict:
+    """Rend le dashboard importable par n'importe qui : UID de datasource
+    remplacés par des ${DS_*} déclarés en __inputs. Prérequis de publication
+    sur grafana.com/dashboards, le premier canal de découverte des admins."""
+    d = json.loads(json.dumps(dash))
+    found, inputs = {}, []
+    TYPES = {"prometheus": "DS_PROMETHEUS", "loki": "DS_LOKI", "tempo": "DS_TEMPO"}
+    def walk(node):
+        if isinstance(node, dict):
+            ds = node.get("datasource")
+            if isinstance(ds, dict) and ds.get("uid") and ds.get("type") in TYPES:
+                name = TYPES[ds["type"]]
+                found[name] = ds["type"]
+                node["datasource"] = {"type": ds["type"], "uid": "${%s}" % name}
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+    walk(d)
+    for name, typ in sorted(found.items()):
+        inputs.append({"name": name, "label": typ.capitalize(), "type": "datasource",
+                       "pluginId": typ, "pluginName": typ.capitalize(),
+                       "description": f"Datasource {typ} portant vos signaux LLM"})
+    d["__inputs"] = inputs
+    d["__requires"] = [{"type": "grafana", "id": "grafana", "name": "Grafana",
+                        "version": "9.0.0"}]
+    d["uid"] = ""      # laisser Grafana attribuer à l'import
+    d["id"] = None
+    return d
+
 
 def validate(board: Board) -> list:
     errs, ids = [], set()
@@ -796,7 +1024,8 @@ def selftest_capability() -> dict:
     return {"instance": {"url": "http://selftest", "version": "13.0.0",
                          "major": 13, "edition": "oss", "namespace": "default",
                          "apis": {"legacy": True, "resource": True}},
-            "datasources": {"prometheus": [{"uid": prom, "name": "Prom"}],
+            "datasources": {"prometheus": [{"uid": prom, "name": "Prom",
+                                            "exemplars": True}],
                             "loki": [{"uid": "loki-1", "name": "Loki",
                                       "labels": ["service_name"]}],
                             "tempo": [{"uid": "tempo-1", "name": "Tempo"}],
@@ -843,6 +1072,13 @@ def selftest_capability() -> dict:
                                      "vllm:generation_tokens_total"],
                     "model_label": "model_name",
                     "models_seen": ["meta-llama/Llama-4-Maverick"]},
+                "evals": {
+                    "metric_names": ["gen_ai_evaluation_score_bucket",
+                                     "gen_ai_evaluation_score_sum",
+                                     "gen_ai_evaluation_score_count",
+                                     "guardrail_blocked_total"],
+                    "model_label": "gen_ai_request_model",
+                    "models_seen": ["gpt-5.4"]},
                 "gpu_dcgm": {"metric_names": ["DCGM_FI_DEV_GPU_UTIL",
                                               "DCGM_FI_DEV_FB_USED",
                                               "DCGM_FI_DEV_POWER_USAGE"]}}},
@@ -859,6 +1095,13 @@ def main() -> int:
     ap.add_argument("--with-alerts", action="store_true")
     ap.add_argument("--daily-budget", type=float, default=100.0,
                     help="Seuil d'alerte budget USD/jour (défaut 100)")
+    ap.add_argument("--slo-target", type=float, default=0.99,
+                    help="Cible SLO pour le burn-rate (défaut 0.99)")
+    ap.add_argument("--cost-mode", choices=["auto", "recorded", "inline"],
+                    default="auto",
+                    help="auto: recording rules si détectées, sinon composition")
+    ap.add_argument("--export-portable", action="store_true",
+                    help="Écrit aussi des JSON portables (${DS_*}) publiables")
     ap.add_argument("--folder", default=FOLDER_TITLE_DEFAULT)
     ap.add_argument("--out-dir", default="generated_dashboards")
     ap.add_argument("--registry", default=None)
@@ -875,6 +1118,15 @@ def main() -> int:
             cap = json.load(f)
 
     ctx = Ctx(cap, load_registry(args.registry))
+    if args.cost_mode == "recorded":
+        ctx.recorded = True
+    elif args.cost_mode == "inline":
+        ctx.recorded = False
+    if args.deploy and not args.dry_run:
+        try:
+            ctx.org_id = GrafanaClient(insecure=args.insecure).org_id()
+        except SystemExit:
+            pass
     wanted = (list(BLUEPRINTS) if args.blueprints == "auto"
               else [b.strip() for b in args.blueprints.split(",")])
     boards, skipped, errors = [], [], []
@@ -903,6 +1155,10 @@ def main() -> int:
         path = os.path.join(args.out_dir, f"{name}.json")
         with open(path, "w", encoding="utf-8") as f:
             json.dump(board.d, f, indent=2, ensure_ascii=False)
+        if args.export_portable:
+            pp = os.path.join(args.out_dir, f"{name}.portable.json")
+            with open(pp, "w", encoding="utf-8") as f:
+                json.dump(to_portable(board.d), f, indent=2, ensure_ascii=False)
         manifest["dashboards"].append(
             {"blueprint": name, "uid": board.d["uid"], "title": board.d["title"],
              "url": None,
@@ -923,7 +1179,11 @@ def main() -> int:
             manifest["dashboards"][i]["url"] = client.dashboard_url(res, board.d)
             print(f"  ↗ {manifest['dashboards'][i]['url']}")
         if args.with_alerts:
-            rules = build_alerts(ctx, folder["uid"], args.daily_budget)
+            rules = build_alerts(ctx, folder["uid"], args.daily_budget,
+                                 args.slo_target)
+            if not client.contact_points():
+                print("  ⚠ aucun contact point configuré : les alertes se "
+                      "déclencheront sans destinataire (Alerting → Contact points).")
             for r in rules:
                 try:
                     client.upsert_alert_rule(r)
@@ -936,11 +1196,21 @@ def main() -> int:
                           f"export : {fb} (import manuel possible)")
     elif args.with_alerts:
         folder_uid = det_uid(args.folder, "fold")
-        for r in build_alerts(ctx, folder_uid, args.daily_budget):
+        for r in build_alerts(ctx, folder_uid, args.daily_budget, args.slo_target):
             fb = os.path.join(args.out_dir, f"alert_{r['uid']}.json")
             with open(fb, "w", encoding="utf-8") as f:
                 json.dump(r, f, indent=2, ensure_ascii=False)
             print(f"[ok] alerte (non déployée) → {fb}")
+
+    rules_path = os.path.join(args.out_dir, "prometheus_rules_llmops.yml")
+    _, nprices = emit_recording_rules(ctx, rules_path)
+    if nprices:
+        print(f"[ok] recording rules ({nprices} prix) → {rules_path}"
+              + ("" if ctx.recorded else
+                 "\n     ↳ copier dans Prometheus (rule_files) puis relancer "
+                 "discover+forge : les panels de coût passeront en O(1)."))
+    elif os.path.exists(rules_path):
+        os.remove(rules_path)
 
     with open(os.path.join(args.out_dir, "deploy_manifest.json"), "w",
               encoding="utf-8") as f:

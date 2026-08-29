@@ -152,6 +152,25 @@ class GrafanaClient:
             pass
         return "oss"
 
+    def org_id(self) -> int:
+        """Org courante du token — ne jamais supposer 1 (multi-org Enterprise/Cloud)."""
+        try:
+            return int(self.get("/api/org").get("id", 1))
+        except (GrafanaError, ValueError, TypeError):
+            return 1
+
+    @staticmethod
+    def has_exemplar_link(ds: dict) -> bool:
+        """La datasource sait-elle router un exemplar vers Tempo ?"""
+        dest = (ds.get("jsonData") or {}).get("exemplarTraceIdDestinations") or []
+        return any(d.get("datasourceUid") or d.get("datasourceUID") for d in dest)
+
+    def contact_points(self) -> list:
+        try:
+            return self.get("/api/v1/provisioning/contact-points") or []
+        except GrafanaError:
+            return []
+
     def namespace(self) -> str:
         """Namespace des APIs resource : 'default' (self-hosted) ou 'stacks-<id>' (Cloud)."""
         if self._namespace:

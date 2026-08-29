@@ -28,6 +28,9 @@ DIALECT_SIGNATURES = {
     "gpu_dcgm":   r"DCGM_FI_DEV_.*",               # NVIDIA DCGM exporter
     "gpu_smi":    r"nvidia_smi_.*|nvidia_gpu_.*",  # exporters nvidia-smi alternatifs
     "langfuse":   r"langfuse_.*",                  # Langfuse self-hosted
+    "recorded":   r"llm:.*",                       # recording rules émises par la forge
+    "evals":      r"gen_ai_evaluation_.*|ragas_.*|langfuse_score.*|deepeval_.*|"
+                  r"trulens_.*|openlit_.*guard.*|guardrail_.*",
 }
 
 # Labels de modèle candidats, par dialecte (le premier trouvé gagne).
@@ -37,6 +40,8 @@ MODEL_LABEL_CANDIDATES = {
     "vllm":       ["model_name", "model"],
     "tgi":        ["model_id", "model"],
     "ollama":     ["model"],
+    "recorded":   ["gen_ai_request_model", "model"],
+    "evals":      ["gen_ai_request_model", "model", "evaluator"],
 }
 PROVIDER_LABEL_CANDIDATES = {
     "otel_genai": ["gen_ai_provider_name", "gen_ai_system"],
@@ -83,7 +88,7 @@ def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
     return found
 
 
-def build_capability_map(client: GrafanaClient) -> dict:
+def build_capability_map(client: GrafanaClient, ds_filter: str | None = None) -> dict:
     cap = {
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "instance": {
@@ -109,6 +114,12 @@ def build_capability_map(client: GrafanaClient) -> dict:
             raise
 
     proms = client.prometheus_like() if all_ds else []
+    if ds_filter:
+        proms = [d for d in proms
+                 if ds_filter in (d.get("uid", ""), d.get("name", ""))]
+        if not proms:
+            cap["gaps"].append(f"--datasource « {ds_filter} » ne correspond à aucune "
+                               "datasource Prometheus de cette instance.")
     for ds in all_ds:
         meta = {"uid": ds.get("uid"), "name": ds.get("name"), "type": ds.get("type"),
                 "default": ds.get("isDefault", False)}
@@ -131,8 +142,31 @@ def build_capability_map(client: GrafanaClient) -> dict:
         labels = client.loki_labels(ds)
         meta["labels"] = [l for l in labels if l in LOKI_AI_HINT_LABELS] or labels[:20]
 
+    # exemplars : routage métrique → trace configuré côté datasource ?
+    for meta in cap["datasources"]["prometheus"]:
+        ds = next((d for d in all_ds if d.get("uid") == meta["uid"]), {})
+        meta["exemplars"] = client.has_exemplar_link(ds)
+
     # ------------------------------------------------------------------ Gaps
     dialects = {d for s in cap["signals"].values() for d in s}
+    llm_ds = [uid for uid, sig in cap["signals"].items()
+              if set(sig) & {"otel_genai", "litellm", "vllm", "tgi", "ollama"}]
+    if len(llm_ds) > 1:
+        cap["gaps"].append(
+            f"{len(llm_ds)} datasources portent des signaux LLM ({', '.join(llm_ds)}) : "
+            "la forge n'en utilise qu'une par dialecte. Cibler explicitement avec "
+            "--datasource <uid|nom> (ex. prod vs staging).")
+    if "recorded" not in dialects and dialects & {"otel_genai", "litellm"}:
+        cap["gaps"].append(
+            "Recording rules de coût absentes : les panels FinOps composent le coût "
+            "à la volée (lent au-delà de ~15 modèles). Installer le fichier "
+            "prometheus_rules_llmops.yml généré par la forge.")
+    if cap["datasources"]["tempo"] and not any(
+            m.get("exemplars") for m in cap["datasources"]["prometheus"]):
+        cap["gaps"].append(
+            "Tempo présent mais aucune datasource Prometheus ne route les exemplars : "
+            "configurer exemplarTraceIdDestinations pour cliquer d'un pic de latence "
+            "vers la trace correspondante.")
     if not cap["datasources"]["prometheus"]:
         cap["gaps"].append("Aucune datasource Prometheus/Mimir : brancher un backend "
                            "métriques est le prérequis n°1 (voir instrumentation_guide.md).")
@@ -175,12 +209,14 @@ def summarize(cap: dict) -> str:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="capability_map.json")
+    ap.add_argument("--datasource", default=None,
+                    help="Restreindre la découverte à une datasource (uid ou nom)")
     ap.add_argument("--insecure", action="store_true",
                     help="Ignorer la vérification TLS (labs uniquement)")
     args = ap.parse_args()
 
     client = GrafanaClient(insecure=args.insecure)
-    cap = build_capability_map(client)
+    cap = build_capability_map(client, args.datasource)
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(cap, f, indent=2, ensure_ascii=False)
     print(summarize(cap))

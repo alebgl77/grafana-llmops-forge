@@ -12,9 +12,46 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "${{ matrix.python }}"}
-      - name: Offline selftest (6 blueprints, zero network)
+      - name: Offline selftest (7 blueprints, zero network)
         run: cd scripts && python forge_dashboards.py --selftest --with-alerts
-      - name: Audit harness (27 checks, 4 topologies)
+      - name: Audit harness (41 checks, 4 topologies + v1.2 regressions)
         run: python tests/audit_harness.py
       - name: Registry JSON is valid & priced models have sources
         run: python -c "import json; r=json.load(open('references/model_registry.json')); assert r['models'] and r['_meta']['sources']; print(len(r['models']),'models OK')"
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Boot demo stack (Grafana + Prometheus + synthetic LLM metrics)
+        run: docker compose -f demo/docker-compose.yml up -d
+      - name: Wait for Grafana and first scrapes
+        run: |
+          for i in $(seq 1 60); do curl -sf http://localhost:3000/api/health && break; sleep 2; done
+          sleep 25
+      - name: Discover, forge and deploy for real
+        env: {GRAFANA_URL: "http://localhost:3000", GRAFANA_USER: admin, GRAFANA_PASSWORD: admin}
+        run: |
+          python scripts/discover.py --out cap.json
+          cat cap.json | python -c "import json,sys; c=json.load(sys.stdin); print('dialects:', sorted({d for s in c['signals'].values() for d in s}))"
+          python scripts/forge_dashboards.py --capability cap.json --blueprints auto --deploy --with-alerts --export-portable
+      - name: Assert dashboards are live and queryable
+        env: {GRAFANA_URL: "http://localhost:3000"}
+        run: |
+          python - <<'PY'
+          import base64, json, urllib.request
+          auth = base64.b64encode(b"admin:admin").decode()
+          def get(p):
+              r = urllib.request.Request("http://localhost:3000"+p,
+                                         headers={"Authorization": "Basic "+auth})
+              return json.load(urllib.request.urlopen(r))
+          ds = get("/api/search?tag=llmops-forge")
+          assert len(ds) >= 5, f"expected >=5 dashboards, got {len(ds)}"
+          for d in ds:
+              full = get("/api/dashboards/uid/"+d["uid"])
+              assert full["dashboard"]["panels"], d["title"]
+          print(f"{len(ds)} dashboards live:", [d["title"] for d in ds])
+          PY
+      - name: Teardown
+        if: always()
+        run: docker compose -f demo/docker-compose.yml down -v

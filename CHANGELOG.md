@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.2.0] — 2026-08-30
+### Fixed (bugs réels, tous couverts par des tests de non-régression)
+- **L'alerte « signal perdu » était muette quand le signal se perdait vraiment** : `noDataState: OK` faisait taire la règle si la datasource devenait injoignable. Passée à `Alerting`.
+- **Panel Loki de gouvernance typé `prometheus`** : type de datasource désormais explicite (cassait aussi l'export portable).
+- **`orgID: 1` en dur** dans les règles d'alerte → org réelle lue via `/api/org` (multi-org Enterprise/Cloud).
+- **`$__rate_interval` dans les règles d'alerte** → fenêtres explicites, l'intervalle d'une règle n'étant pas celui d'un panel.
+- Multi-datasource silencieux : `discover.py` signale les instances portant plusieurs sources LLM, `--datasource` permet de trancher.
+
+### Added
+- **Recording rules de coût** : prix en séries + `llm:cost_usd_per_second` joint par vector matching. Panels FinOps en O(1), nombre de modèles illimité (plafond inline relevé 14 → 40), tarifs modifiables sans regénérer les dashboards. Détection automatique du mode (`--cost-mode auto|recorded|inline`).
+- **Alerting burn-rate multi-fenêtres** (5m/1h critique, 30m/6h avertissement) sur le budget d'erreur, `--slo-target`.
+- **7e blueprint « Qualité & Évaluations »** (scores RAGAS / juge LLM, garde-fous, volume d'évals) + alerte de chute de score.
+- **Exemplars et liens métrique → trace Tempo** sur les panels de latence, avec détection du routage exemplar côté datasource.
+- **`--export-portable`** : JSON avec `__inputs`/`${DS_*}`, format requis par grafana.com/dashboards.
+- **Stack de démo** `make demo` : Grafana + Prometheus + émetteur de métriques LLM synthétiques (stdlib), utilisée aussi comme **test end-to-end réel en CI**.
+- Avertissement si aucun contact point n'est configuré (alertes sans destinataire).
+- Workflow mensuel de fraîcheur du registre de prix.
+
+### Changed
+- Description du skill en anglais (le déclenchement suivait mal les requêtes anglophones) ; version française conservée dans `docs/SKILL.fr.md`.
+- Harnais d'audit : 27 → 41 contrôles.
+
 ## [1.1.0] — 2026-07-23
 ### Added
 - Visual verification layer: `visual_audit.py` (native renderer + Playwright fallback, DOM pre-scan), vision checklist & remediation protocol (`references/visual_verification.md`), `deploy_manifest.json`.
