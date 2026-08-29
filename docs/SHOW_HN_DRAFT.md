@@ -1,73 +1,109 @@
-# Show HN — prêt à coller
+# Show HN — texte final, prêt à coller
 
-Publier : mardi ou mercredi, 15h00-17h00 CET (= 9h-11h ET, fenêtre de trafic HN la plus dense).
-URL : https://news.ycombinator.com/submit
+Fenêtre : mardi ou mercredi, 15h00-17h00 CET (= 9h-11h ET, pic de trafic HN).
+Soumission : https://news.ycombinator.com/submit
 
-## Titre (choisir A ou B, A par défaut)
+## Titre (A par défaut)
 
-A. `Show HN: Point it at any Grafana, get LLM FinOps + EU AI Act dashboards`
-B. `Show HN: I turned Grafana into an AI observability suite that verifies its own dashboards`
+A. `Show HN: Point it at any Grafana, get LLM FinOps and EU AI Act dashboards`
+B. `Show HN: A dashboard generator that runs every query it writes against a real Prometheus`
 
-Règles HN : pas de majuscules criardes, pas de "!", rester factuel — les deux respectent ça.
+A vend le résultat, B vend la méthode. A pour le volume, B pour les commentaires d'ingénieurs. Pas de majuscules criardes, pas de point d'exclamation.
 
-## URL soumise
+## URL
+
 https://github.com/alebgl77/grafana-llmops-forge
 
-## Premier commentaire (à poster IMMÉDIATEMENT après soumission, sinon le post part sans contexte)
+## Premier commentaire — À POSTER IMMÉDIATEMENT après la soumission
+
+Sans lui, le post part sans contexte et meurt. Coller tel quel :
 
 ```
-Hi HN, author here.
+Author here.
 
-The trigger: I kept seeing "LLM observability" dashboards that were really
-just static JSON assuming metric names that don't match what your actual
-OTel/LiteLLM/vLLM exporter emits. So this is a forge, not a template pack —
-it probes your Grafana's real datasources first, captures the metric names
-that are actually present, and only generates panels that will return data.
+The itch: every "LLM observability dashboard" I found was static JSON that
+assumed metric names. But OTel exporters disagree on suffixes, LiteLLM speaks
+USD natively while OTel gives you raw token counters, and vLLM has its own
+prefix entirely. Import someone else's dashboard and half the panels say
+No data.
 
-Three things I think are worth a look even if you don't run Grafana:
+So this isn't a template pack, it's a generator. It probes your Grafana's
+datasources first, captures the metric names that actually exist, and only
+emits panels whose queries will return something. No signals at all is a
+valid outcome: you get an instrumentation gap report with exact configs
+instead of a wall of empty graphs.
 
-1. It found its own billing bug. The cost-composition engine matches
-   observed model names against a price registry. First version used
-   substring matching — "gpt-5.4-mini" matched "gpt-5.4" and got billed at
-   5.5x the wrong price. An offline audit harness (4 simulated instance
-   topologies, 27 checks) caught it before anyone's dashboard would've lied
-   to them. Fixed with a specificity scorer, regression-tested.
+Two bugs it found in itself are more interesting than the feature list, and
+each one taught me which layer of testing was missing.
 
-2. Zero dependencies, on purpose. A Snyk audit of published Claude skills
-   this year found ~36% had at least one security flaw. This is stdlib-only
-   Python (~2000 lines) specifically so it can be read in one sitting.
-   Playwright is opt-in, only for the visual-audit fallback.
+1. It billed a model at 5.5x the wrong price. Cost is composed by matching
+   observed model names against a price registry. The first version used
+   substring matching, so "gpt-5.4-mini" matched "gpt-5.4" and got billed at
+   the big model's rate. Nobody would have noticed: the dashboard would just
+   have been confidently wrong, forever. An offline harness that renders the
+   blueprints against four simulated instance topologies caught it. Fixed
+   with a specificity scorer; there's a regression test.
 
-3. It checks its own rendering. API 200 means the JSON was accepted, not
-   that the panel renders sensibly. After deploy it captures every panel
-   (native Grafana renderer or a headless browser) and an AI vision pass
-   checks for "No data" panels, impossible values (p50 > p95), and
-   cross-panel coherence (tokens/s > 0 but cost = 0 → model didn't match
-   the registry) — then loops remediation before calling it done.
+2. Then a bug that harness structurally could not catch. PromQL label
+   matchers are quoted strings, so a regex inside one gets unescaped twice:
+   Python's re.escape emits a backslash-hyphen, which RE2 rejects outright,
+   and a single backslash-dot is eaten by the string literal before the regex
+   engine ever sees it. The generated JSON was perfectly valid. The queries
+   looked syntactically plausible. They just errored at query time. The panel
+   affected was the sovereignty split on the EU AI Act board — the one thing
+   you would put in front of an auditor — and it was broken for every model
+   name containing a hyphen or a dot, which is nearly all of them.
 
-It works as a plain 3-command CLI or as a Claude Agent Skill (open
-agentskills.io standard). Happy to answer anything about the PromQL
-composition, the EU AI Act mapping, or why I didn't just use LLM-generated
-images for the README (spoiler: hand-built SVGs, dark-mode native, felt
-more honest for a dev tool).
+   The fix wasn't the escaping, it was the missing test class. The repo now
+   downloads a real Prometheus, feeds it a synthetic LLM workload, runs the
+   whole pipeline and executes every generated expression against real data.
+   63 of 63 return data, and that's a CI job. Structure is not semantics, and
+   I had been testing only structure.
+
+That principle got generalised: after deploying, it screenshots every panel
+(native Grafana renderer, headless browser fallback) and does a vision pass
+looking for No data panels, impossible values like p50 above p95, and
+cross-panel incoherence such as tokens/s above zero while cost sits at zero,
+which means a model didn't match the registry. HTTP 200 means the JSON was
+accepted, not that the render is right.
+
+Other things people might care about: zero dependencies, stdlib only, about
+2000 lines, deliberately readable in one sitting given that a Snyk audit this
+year found roughly a third of published agent skills had at least one flaw.
+Cost scales through generated Prometheus recording rules, so prices become
+series and the FinOps panels collapse to one O(1) query instead of a 2N-term
+sum. It works as a plain CLI or as an agent skill.
+
+make demo boots Grafana, Prometheus and a synthetic workload and deploys the
+whole thing in about a minute if you want to poke at it before reading code.
+
+Happy to go into the PromQL composition, the AI Act article-to-signal
+mapping, or why the README diagrams are hand-drawn SVGs explicitly labelled
+as illustrations rather than fake screenshots.
 ```
 
-## Réponses pré-écrites pour les questions attendues
+## Réponses pré-écrites
 
-**"Why not [Langfuse/Helicone/Arize]?"**
-> Different layer. Those are LLM-specific observability platforms you adopt instead of what you have. This assumes you already run Grafana (most platform teams do) and turns it into the AI observability surface — no new tool, no new login, no new vendor relationship for the security review.
+**« Grafana Cloud ships AI Observability already »** — la question la plus probable
+> Yes, and it's good — Agent Observability went public preview in April 2026. Two differences that matter for who I built this for: it's Cloud-only, and it asks you to adopt their SDK. This runs on self-hosted OSS against whatever you already emit. It also does two things no vendor ships: cost attribution by provider sovereignty, which EU procurement teams are actively asking for, and an AI Act evidence layer. They compose fine — nothing here conflicts with the Grafana plugins.
 
-**"Does this send data anywhere?"**
-> No. It talks only to your Grafana instance (which talks to your own Prometheus/Loki/Tempo). No telemetry, no phone-home, no third-party API calls except the optional price-registry refresh (a plain web search you can skip).
+**« Why not Langfuse / Helicone / Arize? »**
+> Different layer. Those are platforms you adopt instead of what you have. This assumes you already run Grafana — most platform teams do — and turns it into the AI surface. No new tool, no new login, no new vendor security review.
 
-**"Grafana Cloud rate limits?"**
-> One API call per dashboard on deploy; visual audit does one render call per panel. Negligible even on free tier.
+**« Does it phone home? »**
+> No. It talks to your Grafana, which talks to your own Prometheus/Loki/Tempo. No telemetry, no third-party calls, except an optional price-registry refresh you can skip.
 
-**"License?"**
-> MIT.
+**« Is the AI Act part legal advice? »**
+> No, and the dashboard says so on itself. It is the evidence layer your counsel will ask for: logging continuity, retention posture, an auto-built inventory of the models you actually consume, and incident watch.
+
+**« Prompt contents in telemetry? »**
+> Off by default, and the docs treat turning it on as a GDPR decision rather than a flag.
+
+**« License, cost? »** MIT, free, no hosted tier, no upsell inside the tool.
 
 ## Après publication
 
-- Répondre à chaque commentaire < 30 min pendant les 3 premières heures (fenêtre où HN décide si ça monte).
-- Si un commentaire trouve un vrai bug : le corriger en live, pousser, répondre avec le lien du commit. HN adore ça, c'est plus fort que n'importe quel argument marketing.
-- Ne PAS poster sur r/grafana etc. le même jour — laisser HN respirer 24-48h avant les autres canaux (évite l'air de spam cross-posté, cf. playbook).
+- Répondre sous 30 minutes pendant trois heures : c'est la fenêtre où HN décide si ça monte.
+- Si un commentaire trouve un vrai bug : corriger en direct, pousser, répondre avec le lien du commit. Rien ne convainc autant sur HN.
+- Ne pas cross-poster sur Reddit le même jour. Laisser 24 à 48 h (voir LAUNCH_PLAYBOOK).
+- Si le post ne décolle pas : ne pas le resoumettre. Enchaîner sur r/grafana avec l'angle « générateur qui ne crée que des panels que vos métriques peuvent réellement alimenter ».
