@@ -89,6 +89,11 @@ jobs:
         run: |
           python tests/value_invariants.py --prometheus http://localhost:9090 \
             --wait-for-rules 240
+      - name: Diagnose on failure — compose ps + container logs
+        if: failure()
+        run: |
+          docker compose -f demo/docker-compose.yml ps -a
+          docker compose -f demo/docker-compose.yml logs --tail=150
 
   e2e:
     permissions: {contents: read}  # lecture du dépôt uniquement
@@ -132,6 +137,11 @@ jobs:
               assert full["dashboard"]["panels"], d["title"]
           print(f"{len(ds)} dashboards live:", [d["title"] for d in ds])
           PY
+      - name: Diagnose on failure — compose ps + container logs
+        if: failure()
+        run: |
+          docker compose -f demo/docker-compose.yml ps -a
+          docker compose -f demo/docker-compose.yml logs --tail=150
       - name: Teardown
         if: always()
         run: docker compose -f demo/docker-compose.yml down -v
