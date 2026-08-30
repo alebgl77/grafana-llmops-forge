@@ -524,6 +524,12 @@ _runs = [(n, r) for n, d in _docs.items() for j in d["jobs"].values()
 _inj = [(n, r[:60]) for n, r in _runs if re.search(r"\$\{\{\s*(github|inputs|steps)\.", r)]
 check("aucune interpolation d'expression dans un bloc run (injection de script)",
       not _inj, str(_inj[:1]))
+_ci_txt = _txt.get("ci.yml", "")
+_blind = re.findall(r"sleep (\d+)", _ci_txt)
+check("aucune attente longue en dur dans la CI (attendre l'etat, pas une duree)",
+      all(int(s) <= 30 for s in _blind), f"sleep {[s for s in _blind if int(s) > 30]}")
+check("les invariants attendent la materialisation des regles",
+      "--wait-for-rules" in _ci_txt)
 check("dependabot suit les actions epinglees",
       os.path.exists(os.path.join(SK, ".github", "dependabot.yml")))
 check("CODEOWNERS present (revue obligatoire des chemins sensibles)",
@@ -800,11 +806,17 @@ def _against_fake(mode, args):
                             mode, str(port)], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
     try:
-        for _ in range(30):
+        _up = False
+        for _ in range(120):          # jusqu'a 30s : un runner froid est lent
             try:
-                _s = _sk.create_connection(("127.0.0.1", port), 0.2); _s.close(); break
+                _s = _sk.create_connection(("127.0.0.1", port), 0.25)
+                _s.close(); _up = True; break
             except OSError:
-                _tm.sleep(0.1)
+                _tm.sleep(0.25)
+        if not _up:
+            # sans ce garde, on interrogeait un port mort et l'echec etait
+            # attribue au produit plutot qu'au harnais
+            raise RuntimeError(f"fake_grafana n'a pas demarre sur le port {port}")
         env = dict(os.environ, GRAFANA_URL=f"http://127.0.0.1:{port}", GRAFANA_TOKEN="x")
         cap = f"/tmp/fk_{mode}.json"
         subprocess.run([sys.executable, os.path.join(SC, "discover.py"), "--out", cap],

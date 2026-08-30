@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import time
 import urllib.parse
 import urllib.request
 
@@ -51,6 +52,11 @@ def scalar(base: str, expr: str, at: float | None = None):
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prometheus", default="http://localhost:9090")
+    ap.add_argument("--wait-for-rules", type=float, default=210,
+                    help="Secondes d'attente de la matérialisation des recording "
+                         "rules. Prometheus décale la première évaluation d'un "
+                         "groupe jusqu'à l'intervalle du groupe : attendre une "
+                         "durée devinée est un pile ou face, on attend la série.")
     ap.add_argument("--tolerance", type=float, default=0.25,
                     help="Écart relatif toléré entre les deux chemins de coût. "
                          "Large à dessein : deux expressions rate() évaluées à "
@@ -94,7 +100,14 @@ def main() -> int:
           (tin or 0) > (tout or 0), f"in={tin} out={tout}")
 
     print("--- convergence des deux chemins de coût ---")
-    _rec = q(b, "sum(llm:cost_usd_per_second)")
+    deadline = time.time() + a.wait_for_rules
+    _rec = q(b, f"sum({COST})")
+    while not _rec and time.time() < deadline:
+        time.sleep(5)
+        _rec = q(b, f"sum({COST})")
+    if _rec:
+        waited = a.wait_for_rules - (deadline - time.time())
+        print(f"  (recording rules matérialisées après {waited:.0f}s)")
     recorded = float(_rec[0]["value"][1]) if _rec else None
     # La série enregistrée date de la dernière évaluation de la règle (jusqu'à
     # un intervalle de retard). Comparer à un calcul « maintenant » mesurerait
@@ -103,7 +116,8 @@ def main() -> int:
     at = float(_rec[0]["value"][0]) if _rec else None
     if recorded is None:
         check("recording rules chargées", False,
-              "llm:cost_usd_per_second absent — charger le fichier de règles")
+              f"{COST} absent après {a.wait_for_rules:.0f}s — le fichier de "
+              "règles est-il bien monté, et le groupe évalué ?")
     else:
         # même formule, composée à la volée depuis le registre de prix enregistré
         inline = scalar(
