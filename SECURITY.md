@@ -36,7 +36,7 @@ Two other targets give different numbers, for reasons worth knowing:
 | `AST4` subprocess call ×7 | `tests/` | The harness runs the CLI it tests. Rewriting the tests to avoid subprocess would make them less faithful, not safer. |
 | `SC2` external fetch | `.github/workflows/ci.yml` | A bounded retry loop waiting for the local Grafana container to answer. Replacing it with a fixed `sleep` would remove the finding and make CI flakier. |
 | `SSRF2` internal request | `.github/workflows/ci.yml` | The CI assertion that queries `localhost:3000` to prove the dashboards deployed. |
-| `PE3` credential access | `.gitignore` | The pattern `*.env`, in a rule whose purpose is to stop anyone committing one. |
+| `PE3` credential access | `.gitignore` | The `.env` patterns, in the rules whose purpose is to stop anyone committing a secrets file. We deliberately widened them — `*.env` alone does not cover `.env.local` or `.env.production` — and accepted the extra finding: a missed ignore rule leaks credentials, a false positive costs a line of documentation. |
 
 We stopped there deliberately. Two earlier attempts to push the repository score
 lower made the project worse: a `make` target rewritten to please a rule

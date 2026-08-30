@@ -1,11 +1,41 @@
-__pycache__/
-*.pyc
+# --- Sorties des outils du dépôt -------------------------------------------
+# Chemins non ancrés : les mêmes artefacts sont produits à la racine et sous
+# demo/ selon le --out-dir passé à la forge.
 capability_map.json
 model_registry.local.json
 generated_dashboards/
 selftest_output/
 visual_audit/
-*.env
-env/
+demo/generated/
+demo/shots/
+# (demo/rules/.gitkeep reste suivi : *.yml ne le matche pas)
+demo/rules/*.yml
+
+# --- Artefact de build ------------------------------------------------------
+# Le .skill est construit par tools/package.py et publié en asset de release,
+# jamais committé : rien ne prouverait qu'une archive versionnée correspond aux
+# sources lisibles (cf. SECURITY.md).
+/dist/
 *.skill
-dist/
+
+# --- Secrets ----------------------------------------------------------------
+# Les trois motifs sont nécessaires : `*.env` ne couvre pas `.env.local`, et
+# `.env` seul ne couvre ni `secrets.env` ni les variantes par environnement.
+.env
+.env.*
+*.env
+
+# --- Python -----------------------------------------------------------------
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# --- Éditeurs et systèmes de fichiers ---------------------------------------
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

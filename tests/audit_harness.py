@@ -447,6 +447,35 @@ _md = [p["options"]["content"] for p in _gov.get("panels", []) if p["type"] == "
 check("pipe neutralise dans les tableaux markdown",
       all("pipe|in|md" not in m for m in _md))
 
+# ------------------------------------------------- 17. couverture du .gitignore
+print("\n[17] Couverture du .gitignore")
+def _ignored(p):
+    return subprocess.run(["git", "check-ignore", "-q", p], cwd=SK).returncode == 0
+_outputs = ["capability_map.json", "demo/capability_map.json",
+            "generated_dashboards/finops.json", "demo/generated/finops.json",
+            "demo/generated/prometheus_rules_llmops.yml",
+            "demo/rules/prometheus_rules_llmops.yml", "demo/shots/d/full.png",
+            "selftest_output/f.json", "scripts/selftest_output/f.json",
+            "visual_audit/audit_manifest.json", "dist/x.skill",
+            "model_registry.local.json", "scripts/__pycache__/x.pyc"]
+_missed = [p for p in _outputs if not _ignored(p)]
+check("toute sortie d'outil est ignoree", not _missed, str(_missed))
+_secrets = [".env", ".env.local", ".env.production", "secrets.env", "demo/.env"]
+_leaky = [p for p in _secrets if not _ignored(p)]
+check("toutes les variantes de fichier de secrets sont ignorees", not _leaky, str(_leaky))
+_keep = ["SKILL.md", "scripts/forge_dashboards.py", "tools/package.py",
+         "demo/emitter.py", "demo/docker-compose.yml", "demo/rules/.gitkeep",
+         "tests/audit_harness.py", "Makefile"]
+_lost = [p for p in _keep if _ignored(p)]
+check("aucun fichier du projet ignore a tort", not _lost, str(_lost))
+check("aucun fichier suivi n'est masque par un motif",
+      not subprocess.run(["git", "ls-files", "-i", "-c", "--exclude-standard"],
+                         cwd=SK, capture_output=True, text=True).stdout.strip())
+_gi = open(os.path.join(SK, ".gitignore")).read().splitlines()
+_inline = [l for l in _gi if re.search(r"\S\s+#", l) and not l.lstrip().startswith("#")]
+check("aucun commentaire en fin de ligne (git ne les interprete pas)",
+      not _inline, str(_inline[:1]))
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()
