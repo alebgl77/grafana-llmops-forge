@@ -1,4 +1,4 @@
-"""Émetteur de métriques LLM synthétiques — sert /metrics au format Prometheus.
+"""Émetteur de métriques LLM synthétiques : sert /metrics au format Prometheus.
 
 Simule une plateforme IA d'entreprise plausible : plusieurs modèles US/EU/Asie,
 des agents et des outils, une passerelle LiteLLM, un vLLM self-hosted et des GPU.

@@ -1,16 +1,16 @@
-# Bibliothèque de requêtes — PromQL / LogQL / TraceQL par dialecte
+# Bibliothèque de requêtes : PromQL / LogQL / TraceQL par dialecte
 
 Requêtes prêtes à coller dans de nouveaux panels. Convention : remplacer les noms
 de métriques par les **noms réels** de la capability map (les suffixes d'unité
-varient selon l'exporter). `$__rate_interval` partout — jamais de fenêtre en dur.
+varient selon l'exporter). `$__rate_interval` partout, jamais de fenêtre en dur.
 
 ## Sommaire
 1. [OTel GenAI (gen_ai_*)](#otel)
 2. [LiteLLM (litellm_*)](#litellm)
 3. [vLLM (vllm:*)](#vllm)
 4. [GPU DCGM](#gpu)
-5. [LogQL — AI Act & debug](#logql)
-6. [TraceQL — agents & RAG](#traceql)
+5. [LogQL : AI Act & debug](#logql)
+6. [TraceQL : agents & RAG](#traceql)
 7. [Anti-patterns](#antipatterns)
 
 <a name="otel"></a>
@@ -39,7 +39,7 @@ histogram_quantile(0.95, sum by(le, gen_ai_provider_name)
 # Tokens output/s par modèle
 sum by(gen_ai_request_model)(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="output"}[$__rate_interval]))
 
-# Taille moyenne de prompt (tokens/appel) — détecte la dérive de contexte
+# Taille moyenne de prompt (tokens/appel) : détecte la dérive de contexte
 sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="input"}[$__rate_interval]))
 / clamp_min(sum(rate(gen_ai_client_token_usage_token_count{gen_ai_token_type="input"}[$__rate_interval])), 1e-9)
 
@@ -55,7 +55,7 @@ sum(rate(gen_ai_client_operation_duration_seconds_count{gen_ai_request_model=~"o
 <a name="litellm"></a>
 ## 2. LiteLLM (passerelle)
 
-Le spend est **natif en USD** — toujours le préférer au calcul par registre.
+Le spend est **natif en USD** : toujours le préférer au calcul par registre.
 Labels usuels : `model`, `api_provider`, `team`, `hashed_api_key`, `end_user`.
 
 ```promql
@@ -111,7 +111,7 @@ sum(DCGM_FI_DEV_POWER_USAGE)                         # watts (→ coût énergie
 ```
 
 <a name="logql"></a>
-## 5. LogQL — preuves AI Act & debug
+## 5. LogQL : preuves AI Act & debug
 
 ```logql
 # Volume de logs par système (preuve de journalisation Art. 12)
@@ -129,7 +129,7 @@ Rétention Art. 26§6 (≥ 6 mois) : se vérifie dans la **config** Loki
 rappelle dans la description du panel.
 
 <a name="traceql"></a>
-## 6. TraceQL — agents & RAG (Tempo)
+## 6. TraceQL : agents & RAG (Tempo)
 
 ```traceql
 # Workflows d'agents

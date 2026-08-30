@@ -18,7 +18,7 @@ datasources:
       # POST avoids URL-length limits: composed cost expressions get long.
       httpMethod: POST
       # MUST match the scrape interval. Grafana derives $__rate_interval from
-      # it, and every generated panel uses $__rate_interval — leave it unset and
+      # it, and every generated panel uses $__rate_interval; leave it unset and
       # Grafana assumes 15s, which silently skews every rate() on a slower
       # scrape.
       timeInterval: 10s

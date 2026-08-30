@@ -20,7 +20,7 @@ jobs:
       - name: Offline selftest (7 blueprints, zero network)
         run: cd scripts && python forge_dashboards.py --selftest --with-alerts
       - name: Audit harness (4 topologies + regressions)
-        # pyyaml is a harness dependency only — the shipped scripts are stdlib
+        # pyyaml is a harness dependency only; the shipped scripts are stdlib
         # and the harness itself asserts that.
         run: |
           pip install --quiet pyyaml
@@ -46,7 +46,7 @@ jobs:
           EOF
           ../prometheus-${PROM_VER}.linux-amd64/promtool check rules /tmp/crd.yml
 
-      - name: Workflows are code — lint them too
+      - name: Workflows are code, lint them too
         if: matrix.python == '3.13'
         run: |
           pip install --quiet zizmor==1.29.0
@@ -89,7 +89,7 @@ jobs:
         run: |
           python tests/value_invariants.py --prometheus http://localhost:9090 \
             --wait-for-rules 240
-      - name: Diagnose on failure — compose ps + container logs
+      - name: Diagnose on failure (compose ps + container logs)
         if: failure()
         run: |
           docker compose -f demo/docker-compose.yml ps -a
@@ -137,7 +137,7 @@ jobs:
               assert full["dashboard"]["panels"], d["title"]
           print(f"{len(ds)} dashboards live:", [d["title"] for d in ds])
           PY
-      - name: Diagnose on failure — compose ps + container logs
+      - name: Diagnose on failure (compose ps + container logs)
         if: failure()
         run: |
           docker compose -f demo/docker-compose.yml ps -a

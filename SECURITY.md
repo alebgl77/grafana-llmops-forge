@@ -4,7 +4,7 @@
 
 **Reporting**: open a private security advisory on GitHub (Security → Advisories → Report a vulnerability). Please do not open public issues for vulnerabilities. Expect an initial response within 72 hours.
 
-**Scope**: the scripts in `scripts/`, the SKILL.md instructions, and the CI workflow. Model prices in the registry are data, not code — wrong prices are bugs, not vulnerabilities.
+**Scope**: the scripts in `scripts/`, the SKILL.md instructions, and the CI workflow. Model prices in the registry are data, not code: wrong prices are bugs, not vulnerabilities.
 
 ## Third-party scanning
 
@@ -16,7 +16,7 @@ container image versions throughout the documentation.
 
 ### Scanning the repository vs. scanning the deliverable
 
-**Scan the extracted skill directory — that is what an agent loads, and it
+**Scan the extracted skill directory: that is what an agent loads, and it
 reports zero findings.** `make scan` builds the package and does exactly that.
 
 Two other targets give different numbers, for reasons worth knowing:
@@ -36,7 +36,7 @@ Two other targets give different numbers, for reasons worth knowing:
 | `AST4` subprocess call ×7 | `tests/` | The harness runs the CLI it tests. Rewriting the tests to avoid subprocess would make them less faithful, not safer. |
 | `SC2` external fetch | `.github/workflows/ci.yml` | A bounded retry loop waiting for the local Grafana container to answer. Replacing it with a fixed `sleep` would remove the finding and make CI flakier. |
 | `SSRF2` internal request | `.github/workflows/ci.yml` | The CI assertion that queries `localhost:3000` to prove the dashboards deployed. |
-| `PE3` credential access | `.gitignore` | The `.env` patterns, in the rules whose purpose is to stop anyone committing a secrets file. We deliberately widened them — `*.env` alone does not cover `.env.local` or `.env.production` — and accepted the extra finding: a missed ignore rule leaks credentials, a false positive costs a line of documentation. |
+| `PE3` credential access | `.gitignore` | The `.env` patterns, in the rules whose purpose is to stop anyone committing a secrets file. We deliberately widened them (`*.env` alone does not cover `.env.local` or `.env.production`) and accepted the extra finding: a missed ignore rule leaks credentials, a false positive costs a line of documentation. |
 
 We stopped there deliberately. Two earlier attempts to push the repository score
 lower made the project worse: a `make` target rewritten to please a rule

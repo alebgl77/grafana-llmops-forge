@@ -1,4 +1,4 @@
-"""Client Grafana universel — OSS / Cloud / Enterprise, Grafana 9 → 13+.
+"""Client Grafana universel : OSS / Cloud / Enterprise, Grafana 9 → 13+.
 
 Zéro dépendance externe (stdlib uniquement) : portable partout où Python 3.8+ existe.
 Auth : GRAFANA_TOKEN (service account, recommandé) ou GRAFANA_USER/GRAFANA_PASSWORD.
@@ -119,7 +119,7 @@ class GrafanaClient:
 
     # Pas de méthode delete() : le client ne peut physiquement pas supprimer un
     # dashboard, un dossier, une datasource ni une règle. La garantie de rayon de
-    # souffle devient structurelle plutôt que conventionnelle — un comité de
+    # souffle devient structurelle plutôt que conventionnelle ; un comité de
     # changement peut le vérifier en lisant ce fichier. Le retour arrière est une
     # action de l'exploitant (README, « What it touches »).
 
@@ -156,7 +156,7 @@ class GrafanaClient:
         return "oss"
 
     def org_id(self) -> int:
-        """Org courante du token — ne jamais supposer 1 (multi-org Enterprise/Cloud)."""
+        """Org courante du token ; ne jamais supposer 1 (multi-org Enterprise/Cloud)."""
         try:
             return int(self.get("/api/org").get("id", 1))
         except (GrafanaError, ValueError, TypeError):
@@ -228,7 +228,7 @@ class GrafanaClient:
             raise
 
     def prom_metric_names(self, ds: dict, match: str) -> list:
-        """Noms de métriques matchant un sélecteur — le cœur du discovery-first."""
+        """Noms de métriques matchant un sélecteur ; le cœur du discovery-first."""
         try:
             r = self.ds_proxy(ds, "api/v1/label/__name__/values",
                               params={"match[]": f'{{__name__=~"{match}"}}'})

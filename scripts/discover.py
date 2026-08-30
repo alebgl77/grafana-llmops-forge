@@ -23,7 +23,7 @@ from grafana_client import GrafanaClient, GrafanaError
 # "myapp_gen_ai_..." (option `namespace` des exporters OTel Collector, ou
 # préfixe ajouté par metric_relabel_configs). D'où le `.*` de tête.
 # Et `[._]` couvre translation_strategy: NoTranslation, qui conserve les points
-# du nom OTel (`gen_ai.client.token.usage`) — légal depuis Prometheus 3.x.
+# du nom OTel (`gen_ai.client.token.usage`), légal depuis Prometheus 3.x.
 # Les deux cas ont été reproduits sur une instance réelle avant correction.
 _P = r".*"          # tolérance préfixe / namespace
 _S = r"[._]"        # séparateur : underscore classique ou point UTF-8
@@ -213,7 +213,7 @@ def summarize(cap: dict) -> str:
         for dial, info in sigs.items():
             extra = ""
             if info.get("models_seen"):
-                extra = f" — {len(info['models_seen'])} modèle(s) vus"
+                extra = f" : {len(info['models_seen'])} modèle(s) vus"
             lines.append(f"  [{uid}] dialecte {dial}: "
                          f"{len(info['metric_names'])} métriques{extra}")
     for g in cap["gaps"]:

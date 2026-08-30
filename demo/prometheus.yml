@@ -4,7 +4,7 @@ global:
   scrape_interval: 10s
   scrape_timeout: 5s
   evaluation_interval: 15s
-  # In a real deployment, identify the source — Mimir, Thanos and federated
+  # In a real deployment, identify the source: Mimir, Thanos and federated
   # setups need it to disambiguate series across clusters.
   # external_labels:
   #   cluster: demo

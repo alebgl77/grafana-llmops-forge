@@ -1,11 +1,11 @@
-# Governance frameworks — one telemetry layer, three readings
+# Governance frameworks: one telemetry layer, three readings
 
 Verified 30 August 2026. Support for compliance evidence; **not a legal opinion
 and not a certification**. Say so to the user, every time.
 
 The three regimes a CIO is likely to be held to differ in vocabulary, in legal
 force, and in what they oblige. They agree almost entirely on **what has to be
-observable**. Build the runtime layer once and it pays into all three — which is
+observable**. Build the runtime layer once and it pays into all three, which is
 the whole argument of the governance dashboard.
 
 `--framework eu-ai-act,iso-42001,nist-rmf` (the default) renders all three
@@ -25,12 +25,12 @@ readings; pass one to keep the board focused.
 
 ## 2. What each framework actually is
 
-**EU AI Act** (Reg. (EU) 2024/1689) — binding law, extraterritorial, penalties up
+**EU AI Act** (Reg. (EU) 2024/1689): binding law, extraterritorial, penalties up
 to 35 M€ or 7 % of turnover. Obligations depend on your role (provider vs
 deployer) and on risk class. Timeline and current status in
 `eu_ai_act_observability.md`.
 
-**ISO/IEC 42001:2023** — a certifiable AI management system standard, published
+**ISO/IEC 42001:2023**: a certifiable AI management system standard, published
 December 2023, international and sector-neutral. Certification audits clauses
 4–10 plus the Annex A controls you declare applicable (38 controls, nine groups
 A.2–A.10), in two stages, valid three years with annual surveillance. Stage 2 is
@@ -39,9 +39,9 @@ A.6.2.8 (event logs) want operational evidence.
 
 > Annex A numbering varies between secondary sources. Confirm every reference
 > against your own copy of the standard before it enters a Statement of
-> Applicability — the text is paywalled and cannot be verified from here.
+> Applicability: the text is paywalled and cannot be verified from here.
 
-**NIST AI RMF 1.0** (NIST AI 100-1, January 2023) — voluntary, US de facto
+**NIST AI RMF 1.0** (NIST AI 100-1, January 2023): voluntary, US de facto
 reference, four functions (GOVERN, MAP, MEASURE, MANAGE) and roughly seventy
 subcategories. NIST AI 600-1, the Generative AI Profile (July 2024), adds twelve
 GenAI-specific risk categories mapped back to the same four functions.
@@ -54,7 +54,7 @@ is measured, that incidents surface.
 
 Does not prove: a management system exists (ISO clauses 4–10 are organisational
 work no tool performs), that a risk assessment was done, that human oversight is
-effective, that retention is configured — retention is a backend setting the
+effective, that retention is configured; retention is a backend setting the
 dashboard can only point at.
 
 Be explicit with the user on both halves. A governance dashboard oversold is
@@ -64,7 +64,7 @@ where that gets discovered.
 ## 4. Beyond these three
 
 Colorado AI Act, California transparency rules, Korea's AI Framework Act,
-Japan's soft-law approach, Brazil's PL 2338, China's GenAI measures — all
+Japan's soft-law approach, Brazil's PL 2338, China's GenAI measures all
 converge on the same observable primitives (inventory, logging, monitoring,
 incident handling). Adding one is a row in the crosswalk table and a markdown
 panel in `FRAMEWORKS`, not new instrumentation.

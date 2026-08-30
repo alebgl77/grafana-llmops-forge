@@ -4,7 +4,7 @@
 prouve que ce quelque chose est cohérent : des quantiles ordonnés, des ratios
 bornés, et surtout les deux chemins de calcul du coût (composition à la volée
 vs recording rules) qui doivent converger. Un tableau de bord plausible et faux
-est le mode de défaillance propre à l'observabilité — c'est celui-ci qu'on
+est le mode de défaillance propre à l'observabilité ; c'est celui-ci qu'on
 attrape ici.
 
     python3 tests/value_invariants.py --prometheus http://localhost:9090
@@ -22,7 +22,7 @@ FAILS = []
 
 
 def check(name, ok, detail=""):
-    print(("  ✅ " if ok else "  ❌ ") + name + ("" if ok else f" — {detail}"))
+    print(("  ✅ " if ok else "  ❌ ") + name + ("" if ok else f" : {detail}"))
     if not ok:
         FAILS.append(name)
 
@@ -73,7 +73,7 @@ def main() -> int:
 
     # Ce script tourne juste après un `docker compose restart prometheus` :
     # le temps du redémarrage, l'API ne répond pas, q() renvoie None et les
-    # premières sections échouaient dans le vide — cinq ❌ pendant que la
+    # premières sections échouaient dans le vide : cinq ❌ pendant que la
     # section coût, seule à attendre, passait. On attend donc la condition la
     # plus forte AVANT la première assertion : les recording rules
     # matérialisées. Elles n'existent que si l'API répond, si les scrapes
@@ -86,7 +86,7 @@ def main() -> int:
         _rec = q(b, f"sum({COST})")
     if _rec:
         waited = a.wait_for_rules - (deadline - time.time())
-        print(f"(stack prête — recording rules matérialisées "
+        print(f"(stack prête : recording rules matérialisées "
               f"après {waited:.0f}s)")
 
     print("--- quantiles ordonnés ---")
@@ -126,7 +126,7 @@ def main() -> int:
     at = float(_rec[0]["value"][0]) if _rec else None
     if recorded is None:
         check("recording rules chargées", False,
-              f"{COST} absent après {a.wait_for_rules:.0f}s — le fichier de "
+              f"{COST} absent après {a.wait_for_rules:.0f}s ; le fichier de "
               "règles est-il bien monté, et le groupe évalué ?")
     else:
         # même formule, composée à la volée depuis le registre de prix enregistré

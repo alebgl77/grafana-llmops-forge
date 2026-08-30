@@ -1,4 +1,4 @@
-# Vérification visuelle — protocole vision
+# Vérification visuelle : protocole vision
 
 La forge valide le JSON et l'API valide l'ingestion ; **seule la vision valide
 le rendu**. Ce protocole s'applique aux PNG produits par `visual_audit.py`.
@@ -14,7 +14,7 @@ sans verdict visuel quand la capture est possible.
 | Avant remise du dashboard governance (pièce d'audit) | tous les panels du dashboard | **oui** |
 | Après avoir comblé un gap d'instrumentation | dashboards impactés par le nouveau signal | oui |
 | Après modification du registre de prix | finops (échelles $ plausibles) | oui |
-| Vérification de paramétrage (datasource, règle d'alerte, variable) | page concernée — **Playwright uniquement** (le renderer ne rend que les dashboards) | à la demande |
+| Vérification de paramétrage (datasource, règle d'alerte, variable) | page concernée, **Playwright uniquement** (le renderer ne rend que les dashboards) | à la demande |
 | Instance de prod inconnue / premier contact | 1 dashboard témoin avant de générer les 6 | recommandé |
 
 ## 2. Séquence
@@ -30,7 +30,7 @@ visibles), puis les `panel_XX_*.png` de tout panel douteux. Sur Playwright, les
 `dom_findings` du manifeste priorisent l'inspection (« No data » ×3 → aller
 voir ces trois panels en premier).
 
-## 3. Checklist vision — par capture
+## 3. Checklist vision, par capture
 
 **Déterministe (échec net) :**
 - Panel « No data » / « N/A » alors que la capability map a détecté le signal.
@@ -86,7 +86,7 @@ headless côté serveur : c'est bien le rendu réel de l'interface.
 
 ## 6. Vérification de paramétrage (au-delà des dashboards)
 
-Playwright uniquement — capturer ces URLs avec le même header d'auth :
+Playwright uniquement ; capturer ces URLs avec le même header d'auth :
 `/connections/datasources` (datasources saines), `/alerting/list` (règles forge
 présentes et évaluées), `/dashboards?tag=llmops-forge` (inventaire). Même
 checklist : état attendu visible, aucun badge d'erreur.
@@ -96,13 +96,13 @@ checklist : état attendu visible, aucun badge d'erreur.
 1. Verdict par dashboard : ✅ conforme / ⚠ dégradé (fonctionne, lisibilité ou
    signal partiel) / ❌ défaillant.
 2. Pour chaque ⚠/❌ : diagnostiquer via §4, corriger **à la source** (registre,
-   capability map re-sondée, code forge) — jamais dans l'UI Grafana.
+   capability map re-sondée, code forge), jamais dans l'UI Grafana.
 3. Re-forge → re-déploiement → re-capture **des seuls dashboards corrigés**.
 4. Maximum 2 itérations ; au-delà, livrer le verdict honnête avec captures à
    l'appui et le plan de correction restant.
 5. Restitution : tableau verdicts + 1 phrase de preuve par dashboard
    (« finops : dépense 87 $/j cohérente avec 61 M tokens gpt-5.4 »).
 
-Confidentialité : les PNG peuvent contenir noms d'équipes, coûts, modèles —
+Confidentialité : les PNG peuvent contenir noms d'équipes, coûts, modèles :
 les stocker localement, ne les partager qu'à bon escient, les purger après
 audit si l'environnement l'exige.

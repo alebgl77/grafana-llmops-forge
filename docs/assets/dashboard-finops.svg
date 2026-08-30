@@ -69,9 +69,9 @@
       <g class="ax"><text y="224">00:00</text><text x="160" y="224">06:00</text><text x="330" y="224">12:00</text><text x="500" y="224">18:00</text><text x="660" y="224">now</text></g>
     </g>
     <g transform="translate(50,286)" class="lg">
-      <circle cx="5" cy="-4" r="5" fill="#2ea043"/><text x="16">EU · Mistral — $9.10</text>
-      <circle cx="195" cy="-4" r="5" fill="#388bfd"/><text x="206">US · OpenAI, Anthropic, Google — $71.40</text>
-      <circle cx="520" cy="-4" r="5" fill="#F46800"/><text x="531">Asia · DeepSeek, Qwen — $37.80</text>
+      <circle cx="5" cy="-4" r="5" fill="#2ea043"/><text x="16">EU · Mistral: $9.10</text>
+      <circle cx="195" cy="-4" r="5" fill="#388bfd"/><text x="206">US · OpenAI, Anthropic, Google: $71.40</text>
+      <circle cx="520" cy="-4" r="5" fill="#F46800"/><text x="531">Asia · DeepSeek, Qwen: $37.80</text>
     </g>
   </g>
 
@@ -97,7 +97,7 @@
   <!-- top modèles -->
   <g transform="translate(16,514)">
     <rect width="1208" height="164" class="panel"/>
-    <text x="14" y="24" class="pt">Top models (tokens, range) — registry verified 2026-07-12</text>
+    <text x="14" y="24" class="pt">Top models (tokens, range) · registry verified 2026-07-12</text>
     <g font-size="12" fill="#c9d1d9" font-family="ui-monospace,monospace">
       <g fill="#6e7681"><text x="24" y="52">MODEL</text><text x="380" y="52">REGION</text><text x="520" y="52">TOKENS</text><text x="700" y="52">COST</text><text x="880" y="52">SHARE</text></g>
       <line x1="14" y1="62" x2="1194" y2="62" stroke="#2c3236"/>

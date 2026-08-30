@@ -1,15 +1,15 @@
 """Audit visuel : capture le rendu réel des dashboards pour inspection par vision.
 
 Deux moteurs, sélection automatique :
-  renderer   — /render/... natif Grafana (plugin grafana-image-renderer ; inclus
+  renderer   : /render/... natif Grafana (plugin grafana-image-renderer ; inclus
                sur Grafana Cloud). PNG côté serveur, zéro dépendance locale.
-  playwright — vrai navigateur headless (auth par header Bearer, mode kiosk),
+  playwright : vrai navigateur headless (auth par header Bearer, mode kiosk),
                avec pré-scan DOM ("No data", erreurs de panel) avant la vision.
                Requiert : pip install playwright && playwright install chromium
 
 Les PNG produits sont ensuite LUS PAR CLAUDE (vision) avec la checklist de
 references/visual_verification.md. Ce script capture et pré-diagnostique ;
-il ne juge pas la cohérence sémantique — c'est le rôle de la vision.
+il ne juge pas la cohérence sémantique ; c'est le rôle de la vision.
 
 Usage :
     python3 visual_audit.py --dashboards generated_dashboards --out visual_audit
@@ -95,7 +95,7 @@ def capture_renderer(client: GrafanaClient, dash: dict, out: str, args) -> dict:
             open(p, "wb").write(data)
             res["files"].append(p)
     except GrafanaError as e:
-        res["warnings"].append(f"rendu pleine page indisponible ({e.status}) — "
+        res["warnings"].append(f"rendu pleine page indisponible ({e.status}) ; "
                                "captures par panel uniquement")
     for pan in dash.get("panels", []):
         if pan["type"] not in VISION_PANEL_TYPES:
@@ -194,7 +194,7 @@ def main() -> int:
     if args.list_only:
         for d in plan:
             vis = [p for p in d.get("panels", []) if p["type"] in VISION_PANEL_TYPES]
-            print(f"{d['uid']}  « {d['title']} »  — full + {len(vis)} panel(s)")
+            print(f"{d['uid']}  « {d['title']} » : full + {len(vis)} panel(s)")
         return 0
 
     client = GrafanaClient(insecure=args.insecure)
@@ -203,7 +203,7 @@ def main() -> int:
         engine = "renderer" if renderer_available(client, plan[0]["uid"]) else "playwright"
         print(f"Moteur sélectionné : {engine}"
               + ("" if engine == "renderer"
-                 else "  (renderer natif absent — voir visual_verification.md §renderer)"))
+                 else "  (renderer natif absent ; voir visual_verification.md §renderer)"))
 
     manifest = {"engine": engine, "grafana": client.base,
                 "time": {"from": args.time_from, "to": args.time_to},
@@ -235,7 +235,7 @@ def main() -> int:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
     print(f"\nManifeste → {mpath}")
     print("SUITE OBLIGATOIRE : ouvrir les PNG (vision) et appliquer la checklist "
-          "de references/visual_verification.md — commencer par full.png de "
+          "de references/visual_verification.md ; commencer par full.png de "
           "chaque dashboard, puis les panels signalés douteux.")
     return 0
 

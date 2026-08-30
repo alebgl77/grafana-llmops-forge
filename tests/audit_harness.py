@@ -1,4 +1,4 @@
-"""Harnais d'audit grafana-llmops-forge — vérifie les chemins hors selftest."""
+"""Harnais d'audit grafana-llmops-forge : vérifie les chemins hors selftest."""
 import json, os, re, subprocess, sys, shutil
 import pathlib
 
@@ -18,7 +18,7 @@ import tempfile; os.chdir(tempfile.gettempdir())
 FAIL = []
 
 def check(name, cond, detail=""):
-    print(("  ✅ " if cond else "  ❌ ") + name + (f" — {detail}" if detail and not cond else ""))
+    print(("  ✅ " if cond else "  ❌ ") + name + (f" : {detail}" if detail and not cond else ""))
     if not cond:
         FAIL.append(f"{name}: {detail}")
 
@@ -699,7 +699,7 @@ _svgs = [f for f in os.listdir(_A) if f.endswith(".svg")]
 check(f"{len(_svgs)} visuels vectoriels presents", len(_svgs) >= 4, str(_svgs))
 # Les glyphes geometriques de base (fleches, coches) sont dans toutes les
 # polices. Le risque est l'emoji couleur, qui exige une police dediee et
-# tombe en tofu sans elle — c'est ce que la revue visuelle avait attrape.
+# tombe en tofu sans elle ; c'est ce que la revue visuelle avait attrape.
 def _emoji(txt):
     return sorted({c for c in txt
                    if ord(c) >= 0x1F000 or 0x1F1E6 <= ord(c) <= 0x1F1FF

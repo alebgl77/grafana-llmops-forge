@@ -5,8 +5,8 @@
 #   make demo                       # the same, then discovers and forges
 #
 # Portability notes, because this is the file people copy first:
-#   - no `version:` key — obsolete in Compose v2 and rejected by some parsers
-#   - no `platform:` pin — images are multi-arch, so this runs unchanged on
+#   - no `version:` key: obsolete in Compose v2 and rejected by some parsers
+#   - no `platform:` pin: images are multi-arch, so this runs unchanged on
 #     Apple Silicon, Graviton and x86
 #   - `mem_limit`/`cpus` rather than `deploy.resources`, which Compose ignores
 #     outside Swarm

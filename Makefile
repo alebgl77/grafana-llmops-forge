@@ -31,7 +31,7 @@ demo-down: ## Tout arrêter et nettoyer
 
 package: ## Construire le .skill (nettoie le bytecode avant copie)
 	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]; [p.unlink() for p in pathlib.Path('.').rglob('*.pyc')]" 
-	@echo "arbre nettoyé — packager depuis skill-creator"
+	@echo "arbre nettoyé ; packager depuis skill-creator"
 
 scan: ## Analyse de sécurité du LIVRABLE (NVIDIA SkillSpector)
 	python3 tools/package.py

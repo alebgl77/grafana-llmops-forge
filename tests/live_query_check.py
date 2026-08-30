@@ -154,7 +154,7 @@ def main() -> int:
     dialects = sorted(cap["signals"]["live"])
     print(f"Dialectes vus dans Prometheus : {dialects}")
     if not dialects:
-        print("Aucun signal — l'émetteur tourne-t-il ?", file=sys.stderr)
+        print("Aucun signal : l'émetteur tourne-t-il ?", file=sys.stderr)
         return 1
     json.dump(cap, open(a.capability, "w"), indent=2)
 

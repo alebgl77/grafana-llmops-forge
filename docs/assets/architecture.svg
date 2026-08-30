@@ -18,7 +18,7 @@
     .flow{stroke:#8b949e;stroke-width:2;fill:none;marker-end:url(#ar)}
   </style>
   <rect width="1260" height="600" fill="#0d1117"/>
-  <text x="620" y="36" text-anchor="middle" fill="#e6edf3" font-size="20" font-weight="800">grafana-llmops-forge — pipeline</text>
+  <text x="620" y="36" text-anchor="middle" fill="#e6edf3" font-size="20" font-weight="800">grafana-llmops-forge: pipeline</text>
 
   <!-- Grafana instance -->
   <rect x="40" y="70" width="220" height="120" class="box" rx="10"/>
@@ -67,7 +67,7 @@
 
   <!-- deploy -->
   <rect x="440" y="360" width="360" height="64" class="box" rx="10"/>
-  <text x="620" y="386" text-anchor="middle" class="t">④ deploy — legacy API, resource-API fallback</text>
+  <text x="620" y="386" text-anchor="middle" class="t">④ deploy: legacy API, resource-API fallback</text>
   <text x="620" y="408" text-anchor="middle" class="s">folder « AI Observability » · overwrite-safe · English by default (--locale)</text>
   <path class="flow" d="M620 312 V356"/>
 

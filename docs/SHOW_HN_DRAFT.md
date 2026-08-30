@@ -1,4 +1,4 @@
-# Show HN — texte final, prêt à coller
+# Show HN : texte final, prêt à coller
 
 Fenêtre : mardi ou mercredi, 15h00-17h00 CET (= 9h-11h ET, pic de trafic HN).
 Soumission : https://news.ycombinator.com/submit
@@ -14,7 +14,7 @@ A vend le résultat, B vend la méthode. A pour le volume, B pour les commentair
 
 https://github.com/alebgl77/grafana-llmops-forge
 
-## Premier commentaire — À POSTER IMMÉDIATEMENT après la soumission
+## Premier commentaire, à poster immédiatement après la soumission
 
 Sans lui, le post part sans contexte et meurt. Coller tel quel :
 
@@ -50,8 +50,8 @@ each one taught me which layer of testing was missing.
    and a single backslash-dot is eaten by the string literal before the regex
    engine ever sees it. The generated JSON was perfectly valid. The queries
    looked syntactically plausible. They just errored at query time. The panel
-   affected was the sovereignty split on the EU AI Act board — the one thing
-   you would put in front of an auditor — and it was broken for every model
+   affected was the sovereignty split on the EU AI Act board (the one thing
+   you would put in front of an auditor), and it was broken for every model
    name containing a hyphen or a dot, which is nearly all of them.
 
    The fix wasn't the escaping, it was the missing test class. The repo now
@@ -80,8 +80,8 @@ The governance board reads the same telemetry against the EU AI Act, ISO/IEC
 sounds: the frameworks differ in vocabulary and legal force but agree almost
 entirely on what has to be observable, so the same log volume evidences Art. 12,
 A.6.2.8 and MANAGE 4.1. The measured panels are identical either way. The board
-also states what it does not prove — a management system, a risk assessment,
-effective human oversight — because a governance dashboard oversold is worse
+also states what it does not prove (a management system, a risk assessment,
+effective human oversight), because a governance dashboard oversold is worse
 than none.
 
 Dashboards render in English by default, French with --locale; adding a language
@@ -98,11 +98,11 @@ as illustrations rather than fake screenshots.
 
 ## Réponses pré-écrites
 
-**« Grafana Cloud ships AI Observability already »** — la question la plus probable
-> Yes, and it's good — Agent Observability went public preview in April 2026. Two differences that matter for who I built this for: it's Cloud-only, and it asks you to adopt their SDK. This runs on self-hosted OSS against whatever you already emit. It also does two things no vendor ships: cost attribution by provider sovereignty, which EU procurement teams are actively asking for, and an AI Act evidence layer. They compose fine — nothing here conflicts with the Grafana plugins.
+**« Grafana Cloud ships AI Observability already »** : la question la plus probable
+> Yes, and it's good: Agent Observability went public preview in April 2026. Two differences that matter for who I built this for: it's Cloud-only, and it asks you to adopt their SDK. This runs on self-hosted OSS against whatever you already emit. It also does two things no vendor ships: cost attribution by provider sovereignty, which EU procurement teams are actively asking for, and an AI Act evidence layer. They compose fine; nothing here conflicts with the Grafana plugins.
 
 **« Why not Langfuse / Helicone / Arize? »**
-> Different layer. Those are platforms you adopt instead of what you have. This assumes you already run Grafana — most platform teams do — and turns it into the AI surface. No new tool, no new login, no new vendor security review.
+> Different layer. Those are platforms you adopt instead of what you have. This assumes you already run Grafana, which most platform teams do, and turns it into the AI surface. No new tool, no new login, no new vendor security review.
 
 **« Does it phone home? »**
 > No. It talks to your Grafana, which talks to your own Prometheus/Loki/Tempo. No telemetry, no third-party calls, except an optional price-registry refresh you can skip.

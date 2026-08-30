@@ -4,7 +4,7 @@
 Le paquet est un artefact de build : il n'est pas versionné. Il est produit ici,
 par la CI au moment d'une release, et attaché à la release GitHub. Un dépôt qui
 committe son propre zip exécutable donne exactement la forme que les scanners de
-chaîne d'approvisionnement cherchent — et à raison, puisque rien ne garantit
+chaîne d'approvisionnement cherchent, et à raison, puisque rien ne garantit
 alors que l'archive corresponde aux sources lisibles.
 
 Le bytecode est exclu sans condition : un `__pycache__` oublié dans l'arbre de
