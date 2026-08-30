@@ -74,6 +74,13 @@ def label_values(base: str, label: str, match: str) -> list:
         return []
 
 
+def msel_probe(metric: str) -> str:
+    """Un nom UTF-8 doit être quoté ; un nom classique s'écrit tel quel."""
+    import re as _re
+    return metric if _re.fullmatch(r"[a-zA-Z_:][a-zA-Z0-9_:]*", metric) \
+        else '{"' + metric + '"}'
+
+
 def build_map(base: str) -> dict:
     """Même logique que discover.py, mais directement contre Prometheus."""
     sig = {}
@@ -122,16 +129,28 @@ def main() -> int:
     a = ap.parse_args()
     base = a.prometheus.rstrip("/")
 
-    # Attendre que Prometheus ait effectivement ingéré du trafic : sans cela on
-    # mesure la lenteur du démarrage plutôt que la justesse des requêtes.
-    probe = 'count({__name__=~".*gen_ai[._].*|litellm.*|vllm:.*"})'
+    # La découverte d'abord : elle n'a besoin que d'un seul scrape (API de
+    # labels), et elle donne un NOM DE MÉTRIQUE RÉEL sur lequel sonder.
+    # Sonder par regex balayait tous les buckets d'histogramme et dépassait le
+    # délai de la requête, si bien que l'attente ne se terminait jamais.
     deadline = time.time() + a.wait_for_data
-    while not q(base, probe)[1] and time.time() < deadline:
-        time.sleep(3)
-    waited = a.wait_for_data - (deadline - time.time())
-    print(f"premières séries visibles après {waited:.0f}s")
-
     cap = build_map(base)
+    while not cap["signals"]["live"] and time.time() < deadline:
+        time.sleep(3)
+        cap = build_map(base)
+
+    # Puis attendre que rate() soit calculable : une série existe dès le premier
+    # scrape, mais rate() exige deux points dans sa fenêtre.
+    counters = [n for sig in cap["signals"]["live"].values()
+                for n in sig["metric_names"]
+                if n.endswith("_count") or n.endswith("_total")]
+    if counters:
+        probe = f"sum(rate({msel_probe(counters[0])}[2m])) > 0"
+        while not q(base, probe)[1] and time.time() < deadline:
+            time.sleep(3)
+    waited = a.wait_for_data - (deadline - time.time())
+    print(f"données exploitables après {waited:.0f}s")
+
     dialects = sorted(cap["signals"]["live"])
     print(f"Dialectes vus dans Prometheus : {dialects}")
     if not dialects:
