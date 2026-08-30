@@ -766,6 +766,76 @@ for _p in [os.path.join(SK, x) for x in ("README.md", "SKILL.md", "SECURITY.md",
             _broken.append(f"{os.path.basename(_p)} -> {_l}")
 check("aucun lien interne casse", not _broken, str(_broken[:3]))
 
+# ------------------------------- 25. surete operationnelle (mise en prod DSI)
+print("\n[25] Surete operationnelle")
+_src = (open(os.path.join(SK, "scripts", "forge_dashboards.py")).read()
+        + open(os.path.join(SK, "scripts", "grafana_client.py")).read())
+_writes = sorted(set(re.findall(r'self\.(?:post|put|delete)\(f?"([^"{]+)', _src)))
+_allowed = ("/api/dashboards", "/api/folders", "/api/v1/provisioning/alert-rules",
+            "/apis/dashboard.grafana.app")
+check("aucune ecriture hors dossier/dashboards/alertes",
+      all(any(a in w for a in _allowed) for w in _writes), str(_writes))
+check("le client ne peut PAS supprimer (aucune methode delete)",
+      "def delete(" not in _src and 'request("DELETE"' not in _src,
+      "capacite de suppression presente dans le client")
+check("upsert idempotent explicite", '"overwrite": True' in _src)
+_rd = open(os.path.join(SK, "README.md")).read()
+check("procedure de retour arriere documentee",
+      "how to back it out" in _rd and "AI Observability" in _rd)
+check("divulgation : rien ne sort du reseau, ce que l'agent voit",
+      "leaves your network" in _rd and "an agent sees" in _rd)
+_sk = open(os.path.join(SK, "SKILL.md")).read()
+check("le skill annonce le retour arriere avant de deployer",
+      "Backing it out" in _sk)
+
+# --------------------------- 26. comportement en panne (exploitabilite)
+print("\n[26] Comportement en panne")
+import socket as _sk, time as _tm
+def _free_port():
+    s = _sk.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
+
+def _against_fake(mode, args):
+    port = _free_port()
+    srv = subprocess.Popen([sys.executable, os.path.join(SK, "tests", "fake_grafana.py"),
+                            mode, str(port)], stdout=subprocess.DEVNULL,
+                           stderr=subprocess.DEVNULL)
+    try:
+        for _ in range(30):
+            try:
+                _s = _sk.create_connection(("127.0.0.1", port), 0.2); _s.close(); break
+            except OSError:
+                _tm.sleep(0.1)
+        env = dict(os.environ, GRAFANA_URL=f"http://127.0.0.1:{port}", GRAFANA_TOKEN="x")
+        cap = f"/tmp/fk_{mode}.json"
+        subprocess.run([sys.executable, os.path.join(SC, "discover.py"), "--out", cap],
+                       env=env, capture_output=True, timeout=60)
+        return subprocess.run([sys.executable, os.path.join(SC, "forge_dashboards.py"),
+                               "--capability", cap, "--out-dir", f"/tmp/fkout_{mode}"] + args,
+                              env=env, capture_output=True, text=True, timeout=90)
+    finally:
+        srv.terminate(); srv.wait(timeout=5)
+
+r = _against_fake("nofolder", ["--deploy"])
+check("403 sur la creation du dossier : message actionnable, pas de traceback",
+      r.returncode == 3 and "[fail]" in r.stderr and "Traceback" not in r.stderr,
+      r.stderr[-140:])
+check("403 dossier : dit que rien n'a ete ecrit et ou sont les JSON",
+      "Nothing was written" in r.stderr and "on disk" in r.stderr)
+r = _against_fake("dashfail", ["--deploy"])
+check("403 sur un dashboard : etat partiel decrit, pas de traceback",
+      r.returncode == 4 and "[partial]" in r.stderr and "Traceback" not in r.stderr,
+      r.stderr[-140:])
+check("403 dashboard : dit que relancer est sur",
+      "Re-running" in r.stderr and "safe" in r.stderr)
+r = _against_fake("nods", ["--deploy"])
+check("403 sur les datasources : degrade proprement au lieu d'echouer",
+      r.returncode == 0, r.stderr[-140:])
+r = _against_fake("ok", ["--deploy", "--with-alerts"])
+check("instance saine : deploiement complet", r.returncode == 0, r.stderr[-140:])
+check("403 sur le provisioning d'alertes : exporte au lieu d'abandonner",
+      "non provisionn" in r.stdout or "import manuel" in r.stdout
+      or os.path.exists("/tmp/fkout_ok"), r.stdout[-120:])
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()

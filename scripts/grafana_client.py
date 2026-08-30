@@ -117,8 +117,11 @@ class GrafanaClient:
     def put(self, path, payload=None, **kw):
         return self.request("PUT", path, payload=payload, **kw)
 
-    def delete(self, path, **kw):
-        return self.request("DELETE", path, **kw)
+    # Pas de méthode delete() : le client ne peut physiquement pas supprimer un
+    # dashboard, un dossier, une datasource ni une règle. La garantie de rayon de
+    # souffle devient structurelle plutôt que conventionnelle — un comité de
+    # changement peut le vérifier en lisant ce fichier. Le retour arrière est une
+    # action de l'exploitant (README, « What it touches »).
 
     # -------------------------------------------------------- Identité instance
     def health(self) -> dict:

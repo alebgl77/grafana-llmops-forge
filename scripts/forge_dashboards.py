@@ -21,7 +21,7 @@ import sys
 from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from grafana_client import GrafanaClient, det_uid  # noqa: E402
+from grafana_client import GrafanaClient, GrafanaError, det_uid  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATHS = ["model_registry.local.json",
@@ -1413,6 +1413,7 @@ def main() -> int:
             cap = json.load(f)
 
     ctx = Ctx(cap, load_registry(args.registry))
+    _failed = []
     ctx.frameworks = [f.strip() for f in args.framework.split(",") if f.strip()]
     _unknown = [f for f in ctx.frameworks if f not in FRAMEWORKS]
     if _unknown:
@@ -1473,16 +1474,47 @@ def main() -> int:
     for name, why in skipped:
         print(f"[skip] {name}: {why}")
 
+    def _perm_hint(op, err):
+        """Un 403 en production est une question de rôle, pas un bug : le dire."""
+        if getattr(err, "status", None) == 403:
+            need = {"folder": "Editor (or a role allowed to create folders)",
+                    "dashboard": "Editor on the target folder",
+                    "alert": "alert.provisioning:write (Admin on OSS)"}[op]
+            return (f"HTTP 403 while {op == 'folder' and 'creating the folder' or op}"
+                    f" — the service account needs: {need}.")
+        return f"{err}"
+
     if args.deploy and not args.dry_run:
         client = GrafanaClient(insecure=args.insecure)
-        folder = client.ensure_folder(args.folder)
+        try:
+            folder = client.ensure_folder(args.folder)
+        except GrafanaError as e:
+            print(f"\n[fail] {_perm_hint('folder', e)}\n"
+                  f"       Nothing was written. The dashboards are on disk in "
+                  f"{args.out_dir} and can be imported by hand.", file=sys.stderr)
+            return 3
         print(f"\nFolder « {folder.get('title')} » (uid {folder.get('uid')})")
         manifest["deployed"] = True
+        # Un échec sur un dashboard n'annule pas les autres : l'exploitant doit
+        # savoir exactement ce qui est en place, pas se retrouver dans un état
+        # partiel non décrit.
         for i, (name, board) in enumerate(boards):
-            res = client.upsert_dashboard(board.d, folder["uid"],
-                                          f"llmops-forge {datetime.now(timezone.utc):%Y-%m-%d}")
+            try:
+                res = client.upsert_dashboard(
+                    board.d, folder["uid"],
+                    f"llmops-forge {datetime.now(timezone.utc):%Y-%m-%d}")
+            except GrafanaError as e:
+                _failed.append((name, _perm_hint("dashboard", e)))
+                manifest["dashboards"][i]["error"] = str(e)
+                print(f"  ✗ {name}: {_perm_hint('dashboard', e)}", file=sys.stderr)
+                continue
             manifest["dashboards"][i]["url"] = client.dashboard_url(res, board.d)
             print(f"  ↗ {manifest['dashboards'][i]['url']}")
+        if _failed:
+            print(f"\n[partial] {len(boards) - len(_failed)}/{len(boards)} dashboards "
+                  f"deployed; {len(_failed)} refused. Re-running after fixing the "
+                  f"role is safe: deterministic UIDs make it an update.",
+                  file=sys.stderr)
         if args.with_alerts:
             alert_rules = build_alerts(ctx, folder["uid"], args.daily_budget,
                                  args.slo_target)
@@ -1524,6 +1556,8 @@ def main() -> int:
               encoding="utf-8") as f:
         json.dump(manifest, f, indent=2, ensure_ascii=False)
 
+    if args.deploy and not args.dry_run and _failed:
+        return 4
     print(f"\n{len(boards)} dashboard(s) generated, {len(skipped)} skipped, "
           f"registry verified {ctx.verified}.")
     if ctx.unmatched:

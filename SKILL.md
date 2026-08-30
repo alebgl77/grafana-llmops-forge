@@ -84,6 +84,10 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 
 The script generates the JSON (classic schema v41 — identical behaviour across OSS/Cloud/Enterprise from v9 to v13, deployed through the legacy API with a K8s-style resource-API fallback), creates the folder, upserts the dashboards, provisions SLO alerts (`--with-alerts`: two-window error burn-rate at 5m/1h and 30m/6h per the SRE method, TTFT p95, daily budget, KV-cache saturation, eval-score drop, and signal loss — that last one with `noDataState: Alerting`, without which it would stay silent precisely when telemetry dies), writes `deploy_manifest.json`, then prints the URLs. Always relay the final URLs to the user.
 
+**Backing it out.** Say this without being asked when deploying to a production instance: everything created lives in one folder, the tool has no delete path of its own, and removing that folder removes the whole deployment — dashboards and alert rules together. Generated recording rules are a separate file in Prometheus. The exact command is in the README under "What it touches".
+
+**What an agent sees.** The capability map carries metric names, model names and team or service label values from the instance. That is organisational metadata entering the conversation. If the user's policy restricts that, point out that the scripts run standalone as a CLI and need no model at all.
+
 ### Phase 4b — Visual check (vision) — mandatory after any deploy
 
 ```bash

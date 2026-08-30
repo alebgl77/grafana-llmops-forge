@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.6.0] — 2026-08-30
+### Fixed — exploitabilité en production
+- **Un 403 de permissions sortait une trace Python.** Un exploitant ne pouvait pas savoir qu'il s'agissait d'un rôle de jeton insuffisant, ni dans quel état il avait laissé l'instance. Message actionnable nommant le rôle requis, codes de sortie distincts (3 = rien écrit, 4 = déploiement partiel), et l'emplacement des JSON générés pour un import manuel.
+- **Un échec sur un dashboard annulait les suivants.** Le déploiement continue désormais, décrit précisément l'état atteint, et rappelle que relancer est sûr — les UID déterministes en font une mise à jour.
+- **Suppression de la méthode `delete()` du client**, jamais appelée. Un relecteur sécurité y voyait une capacité de suppression ; la garantie de rayon de souffle devient structurelle plutôt que conventionnelle.
+
+### Added
+- **Procédure de retour arrière documentée.** La question qu'un comité de changement pose en premier n'avait pas de réponse. Tout vit dans un dossier, l'outil n'a aucun chemin de suppression, retirer ce dossier retire tout le déploiement. Avec le tableau de ce qui est écrit et où.
+- **Divulgation explicite** : rien ne quitte le réseau hors rafraîchissement optionnel des prix ; et ce qu'un agent voit — la capability map contient des métadonnées organisationnelles, ce qui se contourne en exécutant les scripts en CLI pure.
+- `tests/fake_grafana.py` : instance simulée à pannes ciblées. Harnais sections [25] et [26] — rayon de souffle et comportement en panne — soit 161 contrôles au total.
+
 ## [1.5.2] — 2026-08-30
 ### Fixed — la documentation avait pris du retard sur le produit
 - **La description du SKILL.md ne mentionnait ni ISO 42001, ni NIST, ni les langues.** C'est le texte qui déclenche le skill : un DSI demandant des preuves ISO 42001 dans Grafana ne l'aurait pas activé. Défaut fonctionnel, pas cosmétique.

@@ -130,6 +130,47 @@ what they are:
 All of it runs in CI on every push, with no network access to anything but your
 own infrastructure.
 
+## What it touches, and how to back it out
+
+The question a change advisory board asks first. The answer is deliberately
+narrow — and the narrowness is enforced, not promised: `tests/audit_harness.py`
+fails the build if a write endpoint outside this list ever appears.
+
+| Operation | Where | Reversible by |
+|---|---|---|
+| Create a folder | `AI Observability`, one folder, nothing else | deleting that folder |
+| Upsert dashboards | inside that folder, deterministic UIDs, `overwrite: true` | deleting that folder |
+| Provision alert rules | inside that folder, UIDs prefixed `alr-` | deleting that folder |
+| Read | datasource metadata, metric and label names via the datasource proxy | — |
+
+**The tool has no delete path.** It never removes a dashboard, a datasource, a
+rule or a folder — by design, so a misfire cannot destroy anything you already
+had. Reversal is therefore an action *you* take, and it is a single one:
+
+```bash
+# Everything the forge created lives in one folder. Remove it and the deployment
+# is gone — dashboards, alert rules and all.
+curl -X DELETE -H "Authorization: Bearer $GRAFANA_TOKEN" \
+     "$GRAFANA_URL/api/folders/$(curl -s -H "Authorization: Bearer $GRAFANA_TOKEN" \
+     "$GRAFANA_URL/api/folders" | python3 -c \
+     "import sys,json;print(next(f['uid'] for f in json.load(sys.stdin) if f['title']=='AI Observability'))")"
+```
+
+Or delete it from the UI: Dashboards → AI Observability → Folder settings →
+Delete. Generated recording rules are separate: they are a file you copied into
+Prometheus, so removing them is removing that file and reloading.
+
+**What leaves your network: nothing.** The scripts talk only to your Grafana,
+which talks to your own Prometheus, Loki and Tempo. The one optional exception is
+the model-price refresh, a web search you can skip entirely — the bundled
+registry works offline and the dashboards display its verification date.
+
+**What an agent sees.** Used as a skill, Claude reads the capability map, which
+contains metric names, model names, and team or service label values from your
+instance. That is organisational metadata entering an LLM context; if your policy
+forbids it, run the scripts as a plain CLI — they are self-contained and need no
+model at all.
+
 ## 🔒 Security model
 
 Skills execute code — [a 2026 Snyk audit found 36% of published skills had at least one flaw](https://github.com/obviousworks/Claude-AI-skills-collection-2026#security). This repo is designed to be auditable in one sitting:
