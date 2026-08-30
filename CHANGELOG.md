@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0] — 2026-08-30
+### Changed — the product now speaks the language of its audience
+- **Generated dashboards, alerts and recording rules are English by default.**
+  Every panel title, description, legend and alert summary was French: a platform
+  team outside France deployed this and got `Dépense par souveraineté du fournisseur`
+  on its screens. The README and SKILL.md had been translated; the artefact itself
+  had not, which is the only part users actually see.
+- `--locale fr` restores the French labels from `references/locale.fr.json`.
+  Adding a language is a JSON file, not a code change.
+- Harness section [20] fails the build if any generated artefact contains
+  non-English labels again.
+
 ## [1.2.3] — 2026-08-30
 ### Fixed — deux défauts silencieux trouvés par des classes de test nouvelles
 - **Le coût des tokens de sortie disparaissait des recording rules.** La règle joignait les deux directions avec `or`, or `A or B` ne retourne de B que les séries *absentes* de A : les deux côtés portant les mêmes labels, tout le coût de sortie était écarté — un sous-comptage d'un facteur ~6 selon le modèle, sans la moindre erreur affichée. Décomposé en `llm:cost_usd_per_second:input` / `:output` / total, avec somme tolérante aux séries manquantes. Détecté en comparant les deux chemins de calcul du coût sur données réelles.

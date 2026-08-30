@@ -76,6 +76,7 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 #   --cost-mode recorded    force recording rules (default: auto-detected)
 #   --export-portable       ${DS_*} JSON, publishable on grafana.com/dashboards
 #   --datasource <uid|name> pin one datasource
+#   --locale fr             translate panel labels (default: English)
 ```
 
 The script generates the JSON (classic schema v41 — identical behaviour across OSS/Cloud/Enterprise from v9 to v13, deployed through the legacy API with a K8s-style resource-API fallback), creates the folder, upserts the dashboards, provisions SLO alerts (`--with-alerts`: two-window error burn-rate at 5m/1h and 30m/6h per the SRE method, TTFT p95, daily budget, KV-cache saturation, eval-score drop, and signal loss — that last one with `noDataState: Alerting`, without which it would stay silent precisely when telemetry dies), writes `deploy_manifest.json`, then prints the URLs. Always relay the final URLs to the user.
@@ -91,6 +92,14 @@ Engine auto-selection: native `/render/...` (image-renderer plugin; bundled on C
 ### Phase 5 — Gap report
 
 If requested blueprints are blocked by missing signals: read `references/instrumentation_guide.md` and produce an instrumentation plan ordered by value/effort (typically: 1. LiteLLM in front of providers → immediate spend; 2. OTel GenAI in the apps → agent traces; 3. DCGM if GPUs are on-prem). Give exact configs, not generalities.
+
+### Phase 5b — Language
+
+Generated dashboards, alerts and rules are **English by default** — that is what
+a platform team reads in Chicago, Singapore or São Paulo alike. `--locale fr`
+translates the labels for organisations that require French; the tables live in
+`references/locale.<code>.json` and adding a language is a JSON file, not a code
+change. Never hand-translate a panel title: the next forge run overwrites it.
 
 ### Phase 6 — Report back
 

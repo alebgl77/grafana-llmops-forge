@@ -115,6 +115,12 @@ Skills execute code — [a 2026 Snyk audit found 36% of published skills had at 
 - **Idempotent & reversible.** Deterministic UIDs, one folder, `overwrite` semantics — delete the folder, it's gone.
 - **Offline-testable.** `--selftest` + `tests/audit_harness.py` (4 simulated instance topologies plus regression tests) runs with zero network, `tests/live_query_check.py` executes every generated query against a real Prometheus, and the demo stack gives a full end-to-end deploy. That's the CI — the badge above is the real workflow status, not a decorative one.
 
+## Language
+
+Dashboards, alert rules and recording rules are generated in **English**.
+`--locale fr` renders them in French; other languages are a JSON file in
+`references/locale.<code>.json` away, with no change to the blueprint code.
+
 ## Repo layout
 
 ```
@@ -126,6 +132,7 @@ scripts/
   visual_audit.py             # render/Playwright capture + DOM pre-scan for vision review
 references/
   model_registry.json         # 30+ models: $/1M in·out·cached, context, sovereignty, GPAI
+  locale.fr.json              # label translations (--locale fr)
   query_library.md            # PromQL/LogQL/TraceQL per dialect, anti-patterns
   dashboard_blueprints.md     # panel-by-panel specs + optional extensions
   instrumentation_guide.md    # exact configs to close each gap

@@ -68,8 +68,9 @@ bs = load_boards(d)
 check("blueprints attendus", set(bs) == {"finops", "gateway", "adoption", "governance"},
       str(set(bs)))
 check("agents/inference skippés proprement",
-      "agents : signaux requis" in r.stdout and "inference : signaux requis" in r.stdout)
-sp = [e for t, e in all_exprs(bs["finops"]) if "Dépense (période" in t or "période" in t]
+      "agents: required signals" in r.stdout and "inference: required signals" in r.stdout,
+      r.stdout[-160:])
+sp = [e for t, e in all_exprs(bs["finops"]) if "Spend (selected range)" in t]
 check("spend = litellm natif (pas de composition registre)",
       sp and "litellm_spend_metric_total" in sp[0] and "2.5e" not in sp[0], str(sp[:1]))
 bad = [(t, e, w) for b in bs.values() for t, e in all_exprs(b) if (w := promql_sane(e))]
@@ -206,9 +207,9 @@ import zipfile as _zf
 _names = _zf.ZipFile(_pkg).namelist()
 check("aucun bytecode embarqué",
       not [n for n in _names if "__pycache__" in n or n.endswith(".pyc")])
-check("SKILL.md + 4 scripts + 7 références",
+check("SKILL.md + 4 scripts + les references embarquees",
       len([n for n in _names if n.endswith(".py")]) == 4
-      and len([n for n in _names if "/references/" in n]) == 7, str(len(_names)))
+      and len([n for n in _names if "/references/" in n]) >= 7, str(len(_names)))
 check("le paquet n'est pas versionné (artefact de build)",
       "dist/grafana-llmops-forge.skill" not in subprocess.run(
           ["git", "ls-files"], cwd=SK, capture_output=True, text=True).stdout)
@@ -237,10 +238,10 @@ check("forge selftest-like exit 0", r.returncode == 0, r.stderr[-200:])
 bs = load_boards(d)
 check("7 blueprints dont quality", "quality" in bs and len(bs) == 7, str(sorted(bs)))
 al = {f: json.load(open(os.path.join(d, f))) for f in os.listdir(d) if f.startswith("alert_")}
-sl = [a for a in al.values() if "Signal perdu" in a["title"]]
+sl = [a for a in al.values() if "signal-lost" in a["uid"]]
 check("signal-lost alerte sur NoData (bug v1.1)",
       sl and sl[0]["noDataState"] == "Alerting", str([a["noDataState"] for a in sl]))
-burn = [a for a in al.values() if "Burn-rate" in a["title"]]
+burn = [a for a in al.values() if "burn-" in a["uid"]]
 check("burn-rate 2 fenêtres (rapide+lent)", len(burn) == 2, str(len(burn)))
 check("burn-rate sans $__rate_interval (invalide en alerting)",
       all("$__rate_interval" not in a["data"][0]["model"]["expr"] for a in al.values()))
@@ -531,6 +532,23 @@ _logged = subprocess.run(
     ["grep", "-rnE", r"print\(.*(token|TOKEN|password|PASSWORD)", "--include=*.py",
      "scripts", "tools"], cwd=SK, capture_output=True, text=True).stdout.strip()
 check("aucun identifiant imprime sur la sortie", not _logged, _logged[:120])
+
+# ------------------------------------ 20. langue de sortie (audience mondiale)
+print("\n[20] Langue des artefacts generes")
+r, d = run_forge(forge_dashboards.selftest_capability(), "audit_lang",
+                 extra=("--with-alerts",))
+_ACCENTS = re.compile(r"[\u00e0-\u00ff]")
+_fr = []
+for _f in os.listdir(d):
+    if _f == "deploy_manifest.json":
+        continue
+    _blob = open(os.path.join(d, _f), encoding="utf-8").read()
+    _fr += [(_f, m[:60]) for m in re.findall(r'"([^"]{4,160})"', _blob)
+            if _ACCENTS.search(m)]
+check("dashboards, alertes et regles generes en anglais par defaut",
+      not _fr, str(_fr[:2]))
+check("table de localisation fr disponible",
+      os.path.exists(os.path.join(SK, "references", "locale.fr.json")))
 
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
