@@ -73,19 +73,6 @@ def _esc(v: str) -> str:
 
 
 RE2_META = set(r".+*?()[]{}|\\^$")
-
-
-def _rx(s: str) -> str:
-    r"""Échappement compatible RE2 *à travers* la couche chaîne de PromQL.
-
-    Deux pièges empilés, tous deux trouvés par le contrôle live et invisibles
-    hors ligne : `re.escape` produit `\-`, que RE2 rejette ; et un `\.` simple
-    est consommé par le littéral entre guillemets avant d'atteindre la regex,
-    d'où un backslash doublé.
-    """
-    return "".join(("\\\\" + c) if c in RE2_META else c for c in s)
-
-
 _LEGACY = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
 Q1, B1, B2 = chr(34), chr(123), chr(125)
 
@@ -107,6 +94,32 @@ def qlbl(label: str | None) -> str:
     if not label:
         return ""
     return label if _LEGACY.fullmatch(label) else '"' + label + '"'
+
+
+def _rx(s: str) -> str:
+    r"""Échappe une valeur pour une regex RE2 placée dans un littéral PromQL.
+
+    Deux couches empilées : la chaîne entre guillemets consomme un niveau
+    d'échappement avant que RE2 ne voie la regex. D'où le doublement. Et la
+    valeur vient d'un label applicatif : un guillemet non échappé permettrait
+    de sortir du sélecteur et d'injecter du PromQL arbitraire dans un panneau.
+    """
+    out = []
+    for c in s:
+        if c == '"':
+            out.append('\\"')            # ferme la chaîne : échappement chaîne seul
+        elif c == "\\":
+            out.append("\\" * 4)         # backslash littéral à travers les deux couches
+        elif c in RE2_META:
+            out.append("\\" * 2 + c)     # méta RE2, échappé pour la regex
+        else:
+            out.append(c)
+    return "".join(out)
+
+
+def _md(s: str) -> str:
+    """Neutralise ce qui casserait un tableau markdown de panneau texte."""
+    return s.replace("|", "\\|").replace("`", "'").replace("\n", " ")
 
 
 def _norm(s: str) -> str:
@@ -317,8 +330,9 @@ def emit_recording_rules(ctx, path: str) -> tuple[str, int]:
     n = 0
     for it in ctx.matched:
         m, seen = it["reg"], it["seen"]
-        lab = (f'{{{ml}: "{seen}", region: "{m.get("region","?")}", '
-               f'vendor: "{m.get("vendor","?")}"}}')
+        lab = ("{" + json.dumps(ml) + ": " + json.dumps(seen)
+               + ", region: " + json.dumps(m.get("region", "?"))
+               + ", vendor: " + json.dumps(m.get("vendor", "?")) + "}")
         for rec, key in ((PRICE_IN, "input_per_mtok"), (PRICE_OUT, "output_per_mtok")):
             if m.get(key) is None:
                 continue
@@ -327,14 +341,25 @@ def emit_recording_rules(ctx, path: str) -> tuple[str, int]:
             n += 1
     if not n:
         return "", 0
+    # Trois règles plutôt qu'une : `A or B` ne retourne de B que les séries
+    # ABSENTES de A. Les deux côtés portant les mêmes labels, un `or` faisait
+    # disparaître tout le coût des tokens de sortie — soit un sous-comptage
+    # d'un facteur ~6 selon le modèle. Détecté en comparant les deux chemins
+    # de calcul sur données réelles.
+    def _side(direction):
+        sel = B1 + qlbl(tt) + "=" + Q1 + direction + Q1 + B2
+        price = PRICE_IN if direction == "input" else PRICE_OUT
+        return [f'          sum by({ml_q}, region, vendor) (',
+                f"            rate({msel(q.tok + '_sum', sel)}[5m])",
+                f"          ) * on({ml_q}) group_left(region, vendor) {price}"]
+
+    L += [f"      - record: {COST_RECORDED}:input", "        expr: |"] + _side("input")
+    L += [f"      - record: {COST_RECORDED}:output", "        expr: |"] + _side("output")
+    # somme tolérante aux séries manquantes : `X or Y * 0` fabrique un zéro
+    # portant les labels de Y quand X n'existe pas pour ce modèle.
     L += [f"      - record: {COST_RECORDED}", "        expr: |",
-          f'          sum by({ml_q}, region, vendor) (',
-          f'            rate({msel(q.tok + "_sum", B1 + qlbl(tt) + "=" + Q1 + "input" + Q1 + B2)}[5m])',
-          f"          ) * on({ml_q}) group_left(region, vendor) {PRICE_IN}",
-          "          or",
-          f'          sum by({ml_q}, region, vendor) (',
-          f'            rate({msel(q.tok + "_sum", B1 + qlbl(tt) + "=" + Q1 + "output" + Q1 + B2)}[5m])',
-          f"          ) * on({ml_q}) group_left(region, vendor) {PRICE_OUT}"]
+          f"          ({COST_RECORDED}:input or {COST_RECORDED}:output * 0)",
+          f"          + ({COST_RECORDED}:output or {COST_RECORDED}:input * 0)"]
     txt = "\n".join(L) + "\n"
     with open(path, "w", encoding="utf-8") as f:
         f.write(txt)
@@ -581,7 +606,7 @@ def bp_finops(ctx: Ctx) -> Board | None:
         b.text("Modèles hors registre de prix",
                "Ces modèles sont observés mais **exclus du calcul de coût** "
                "(prix inconnu) :\n\n"
-               + "\n".join(f"- `{m}`" for m in ctx.unmatched[:20])
+               + "\n".join(f"- `{_md(m)}`" for m in ctx.unmatched[:20])
                + "\n\nAjouter leur prix dans `references/model_registry.json` "
                  "puis relancer la forge.", 24, 6)
     return b
@@ -851,12 +876,12 @@ def bp_governance(ctx: Ctx) -> Board:
         rows = []
         for it in ctx.matched:
             m = it["reg"]
-            rows.append(f"| `{it['seen']}` | {m.get('vendor','?')} | "
+            rows.append(f"| `{_md(it['seen'])}` | {_md(str(m.get('vendor','?')))} | "
                         f"{m.get('region','?').upper()} | "
                         f"{'open-weights' if m.get('open_weights') else 'propriétaire'} | "
                         f"{'oui' if m.get('gpai_in_scope', True) else '—'} |")
         for s in ctx.unmatched:
-            rows.append(f"| `{s}` | ? | ? | ? | à qualifier |")
+            rows.append(f"| `{_md(s)}` | ? | ? | ? | à qualifier |")
         b.text("Inventaire des modèles observés (base du registre AI Act)",
                "Modèles réellement utilisés (détection automatique) :\n\n"
                "| Modèle observé | Fournisseur | Région | Licence | GPAI |\n"

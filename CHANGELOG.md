@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.2.3] — 2026-08-30
+### Fixed — deux défauts silencieux trouvés par des classes de test nouvelles
+- **Le coût des tokens de sortie disparaissait des recording rules.** La règle joignait les deux directions avec `or`, or `A or B` ne retourne de B que les séries *absentes* de A : les deux côtés portant les mêmes labels, tout le coût de sortie était écarté — un sous-comptage d'un facteur ~6 selon le modèle, sans la moindre erreur affichée. Décomposé en `llm:cost_usd_per_second:input` / `:output` / total, avec somme tolérante aux séries manquantes. Détecté en comparant les deux chemins de calcul du coût sur données réelles.
+- **Injection PromQL via les noms de modèles.** Les noms viennent de labels applicatifs ; un nom contenant un guillemet s'échappait du sélecteur regex, et cassait le YAML des recording rules. `_rx` échappe désormais la couche chaîne, les labels YAML passent par `json.dumps`, et les noms sont neutralisés dans les tableaux markdown. 60 expressions issues de noms hostiles validées par le parseur Prometheus réel.
+
+### Added
+- `tests/value_invariants.py` : vérifie que les nombres sont cohérents entre eux, pas seulement présents — quantiles ordonnés, ratios bornés, convergence des deux chemins de coût, somme des régions égale au total. Branché en CI.
+- Harnais : entrées hostiles et structure des recording rules ancrées en non-régression.
+
 ## [1.2.2] — 2026-08-30
 ### Fixed — chemins d'export Prometheus (deux angles morts reproduits sur instance réelle)
 - **Préfixe de namespace invisible.** Les regex Prometheus sont ancrées : la signature `gen_ai_.*` ne matchait pas `myapp_gen_ai_...`, produit par l'option `namespace` des exporters OTel Collector ou par un `metric_relabel_configs`. La forge annonçait « aucun signal LLM » sur une stack parfaitement instrumentée. Signatures désormais tolérantes au préfixe.

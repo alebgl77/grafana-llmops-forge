@@ -348,14 +348,79 @@ if os.path.exists(_rp):
     check("un seul groupe (les groupes séparés s'évaluent en parallèle)",
           len(_g) == 1, str([x["name"] for x in _g]))
     _r = _g[0]["rules"]
-    check("prix déclarés AVANT la règle de coût qui les joint",
-          _r[-1]["record"].startswith("llm:cost")
-          and all("price" in x["record"] for x in _r[:-1]),
-          str([x["record"] for x in _r][-2:]))
-    check("coût joint les prix par vector matching",
-          "group_left" in _r[-1]["expr"] and "on(" in _r[-1]["expr"])
+    _prices = [i for i, x in enumerate(_r) if "price" in x["record"]]
+    _costs = [i for i, x in enumerate(_r) if x["record"].startswith("llm:cost")]
+    check("tous les prix déclarés AVANT toute règle de coût qui les joint",
+          _prices and _costs and max(_prices) < min(_costs),
+          f"dernier prix #{max(_prices) if _prices else '-'} / "
+          f"premier coût #{min(_costs) if _costs else '-'}")
+    _recs = [x["record"] for x in _r]
+    check("coût décomposé en input / output / total",
+          _recs[-3:] == ["llm:cost_usd_per_second:input",
+                         "llm:cost_usd_per_second:output",
+                         "llm:cost_usd_per_second"], str(_recs[-3:]))
+    check("input et output joignent les prix par vector matching",
+          all("group_left" in x["expr"] and "on(" in x["expr"] for x in _r[-3:-1]))
+    check("le total additionne les deux composantes (jamais un `or` seul, "
+          "qui absorberait le coût de sortie)",
+          "+" in _r[-1]["expr"] and _r[-1]["expr"].count("or") == 2,
+          _r[-1]["expr"][:90])
     check("chaque prix porte modèle + région + vendor",
-          all({"region", "vendor"} <= set(x.get("labels", {})) for x in _r[:-1]))
+          all({"region", "vendor"} <= set(_r[i].get("labels", {})) for i in _prices))
+
+# --------------------------- 15. entrées hostiles (labels applicatifs)
+print("\n[15] Entrees hostiles")
+import yaml as _y2
+_cap = forge_dashboards.selftest_capability()
+_pk = list(_cap["signals"])[0]
+_cap["signals"][_pk]["otel_genai"]["models_seen"] = [
+    'gpt-5.4"} or vector(99) #', "a" + chr(92) + "b", 'mod"el', "a{b}c",
+    "unicode-e", "x" * 180, "a|b.*c", "pipe|in|md", "gpt-5.4", "line\nbreak"]
+r, d = run_forge(_cap, "audit_hostile")
+check("noms de modeles hostiles : generation sans crash", r.returncode == 0,
+      r.stderr[-160:])
+
+def _balanced(e):
+    """Equilibre parentheses/accolades EN IGNORANT le contenu des chaines."""
+    depth = {"(": 0, "{": 0}
+    inq = False
+    i = 0
+    while i < len(e):
+        c = e[i]
+        if inq:
+            if c == chr(92):
+                i += 2
+                continue
+            if c == '"':
+                inq = False
+        elif c == '"':
+            inq = True
+        elif c in "({":
+            depth[c] += 1
+        elif c == ")":
+            depth["("] -= 1
+        elif c == "}":
+            depth["{"] -= 1
+        i += 1
+    return not inq and depth["("] == 0 and depth["{"] == 0
+
+_ex = [e for b in load_boards(d).values() for _, e in all_exprs(b)]
+check("expressions equilibrees hors chaines (pas d'evasion de selecteur)",
+      all(_balanced(e) for e in _ex),
+      str([e[:70] for e in _ex if not _balanced(e)][:1]))
+check("aucun saut de ligne injecte", not any(chr(10) in e for e in _ex))
+_rp = os.path.join(d, "prometheus_rules_llmops.yml")
+_ok = True
+if os.path.exists(_rp):
+    try:
+        _ok = _y2.safe_load(open(_rp)) is not None
+    except Exception:
+        _ok = False
+check("recording rules restent du YAML valide", _ok)
+_gov = load_boards(d).get("governance", {})
+_md = [p["options"]["content"] for p in _gov.get("panels", []) if p["type"] == "text"]
+check("pipe neutralise dans les tableaux markdown",
+      all("pipe|in|md" not in m for m in _md))
 
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()

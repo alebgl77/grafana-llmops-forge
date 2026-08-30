@@ -37,6 +37,15 @@ jobs:
           sleep 35
       - name: Every generated query must return data
         run: python tests/live_query_check.py --prometheus http://localhost:9090
+      - name: Load generated cost recording rules and let them evaluate
+        run: |
+          cp /tmp/live_forge/prometheus_rules_llmops.yml /tmp/rules/ 2>/dev/null || \
+            (python tests/live_query_check.py --prometheus http://localhost:9090 --out-dir /tmp/lf >/dev/null && cp /tmp/lf/prometheus_rules_llmops.yml /tmp/rules/)
+          pkill -f "prometheus --config" || true
+          ./prom/prometheus --config.file=/tmp/prom.yml --storage.tsdb.path=/tmp/tsdb --web.listen-address=:9090 &
+          sleep 100
+      - name: Values must be internally consistent
+        run: python tests/value_invariants.py --prometheus http://localhost:9090
 
   e2e:
     runs-on: ubuntu-latest
