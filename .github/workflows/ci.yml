@@ -21,6 +21,27 @@ jobs:
         run: cd scripts && python forge_dashboards.py --selftest --with-alerts
       - name: Audit harness (4 topologies + regressions)
         run: python tests/audit_harness.py
+      - name: Infrastructure YAML must lint and load
+        if: matrix.python == '3.13'
+        run: |
+          pip install --quiet yamllint==1.38.0
+          yamllint demo/ .github/
+          PROM_VER=3.14.0
+          BASE=https://github.com/prometheus/prometheus/releases/download
+          curl -sL "${BASE}/v${PROM_VER}/prometheus-${PROM_VER}.linux-amd64.tar.gz" -o p.tgz
+          echo "f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d  p.tgz" | sha256sum -c -
+          tar xzf p.tgz
+          ./prometheus-${PROM_VER}.linux-amd64/promtool check config demo/prometheus.yml
+          cd scripts && python forge_dashboards.py --selftest >/dev/null
+          ../prometheus-${PROM_VER}.linux-amd64/promtool check rules \
+            selftest_output/prometheus_rules_llmops.yml
+          python - <<'EOF'
+          import yaml
+          crd = yaml.safe_load(open("selftest_output/prometheusrule_llmops.yaml"))
+          yaml.safe_dump({"groups": crd["spec"]["groups"]}, open("/tmp/crd.yml", "w"))
+          EOF
+          ../prometheus-${PROM_VER}.linux-amd64/promtool check rules /tmp/crd.yml
+
       - name: Workflows are code — lint them too
         if: matrix.python == '3.13'
         run: |
@@ -29,7 +50,13 @@ jobs:
       - name: Package builds reproducibly and matches sources
         run: python tools/package.py && python tools/package.py --verify
       - name: Registry JSON is valid & priced models have sources
-        run: python -c "import json; r=json.load(open('references/model_registry.json')); assert r['models'] and r['_meta']['sources']; print(len(r['models']),'models OK')"
+        run: |
+          python - <<'PY'
+          import json
+          r = json.load(open("references/model_registry.json"))
+          assert r["models"] and r["_meta"]["sources"], "registry incomplete"
+          print(len(r["models"]), "models OK")
+          PY
 
   live-queries:
     permissions: {contents: read}  # lecture du dépôt uniquement
@@ -41,8 +68,8 @@ jobs:
         with: {python-version: "3.12"}
       - name: Start Prometheus + synthetic emitter (pinned images, no downloads)
         run: |
-          docker compose -f demo/docker-compose.yml up -d emitter prometheus
-          sleep 35
+          docker compose -f demo/docker-compose.yml up -d --wait emitter prometheus
+          sleep 15   # healthchecks cover readiness; this covers the first scrapes
       - name: Every generated query must return data
         run: python tests/live_query_check.py --prometheus http://localhost:9090
       - name: Load the generated cost recording rules and let them evaluate
@@ -61,22 +88,23 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
         with: {persist-credentials: false}
       - name: Boot demo stack (Grafana + Prometheus + synthetic LLM metrics)
-        env: {GF_PLUGINS: ""}          # renderer inutile ici, évite un install réseau au boot
-        run: docker compose -f demo/docker-compose.yml up -d
-      - name: Wait for Grafana and first scrapes
-        run: |
-          for i in $(seq 1 60); do
-            docker compose -f demo/docker-compose.yml exec -T grafana \
-              wget -q -O /dev/null http://localhost:3000/api/health && break
-            sleep 2
-          done
-          sleep 25
+        env: {GF_PLUGINS: ""}          # renderer not needed here; skips a network install at boot
+        run: docker compose -f demo/docker-compose.yml up -d --wait
+      - name: Wait for the first scrapes
+        # `up --wait` already blocked on every healthcheck; this only lets a few
+        # scrape cycles land so the queries have data to return.
+        run: sleep 25
       - name: Discover, forge and deploy for real
         env: {GRAFANA_URL: "http://localhost:3000", GRAFANA_USER: admin, GRAFANA_PASSWORD: admin}
         run: |
           python scripts/discover.py --out cap.json
-          cat cap.json | python -c "import json,sys; c=json.load(sys.stdin); print('dialects:', sorted({d for s in c['signals'].values() for d in s}))"
-          python scripts/forge_dashboards.py --capability cap.json --blueprints auto --deploy --with-alerts --export-portable
+          python - <<'PY'
+          import json
+          cap = json.load(open("cap.json"))
+          print("dialects:", sorted({d for s in cap["signals"].values() for d in s}))
+          PY
+          python scripts/forge_dashboards.py --capability cap.json \
+            --blueprints auto --deploy --with-alerts --export-portable
       - name: Assert dashboards are live and queryable
         env: {GRAFANA_URL: "http://localhost:3000"}
         run: |
@@ -84,8 +112,9 @@ jobs:
           import base64, json, urllib.request
           auth = base64.b64encode(b"admin:admin").decode()
           def get(p):
-              r = urllib.request.Request("http://localhost:3000"+p,
-                                         headers={"Authorization": "Basic "+auth})
+              r = urllib.request.Request(
+                  "http://localhost:3000" + p,
+                  headers={"Authorization": "Basic " + auth})
               return json.load(urllib.request.urlopen(r))
           ds = get("/api/search?tag=llmops-forge")
           assert len(ds) >= 5, f"expected >=5 dashboards, got {len(ds)}"

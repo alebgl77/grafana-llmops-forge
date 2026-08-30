@@ -1,4 +1,11 @@
 apiVersion: 1
+
+# Provisioned datasources are not editable in the UI by design: the file is the
+# source of truth, and a hand edit would be silently lost on restart.
+deleteDatasources:
+  - name: Prometheus
+    orgId: 1
+
 datasources:
   - name: Prometheus
     type: prometheus
@@ -6,6 +13,18 @@ datasources:
     access: proxy
     url: http://prometheus:9090
     isDefault: true
+    editable: false
     jsonData:
+      # POST avoids URL-length limits: composed cost expressions get long.
       httpMethod: POST
-      exemplarTraceIdDestinations: []
+      # MUST match the scrape interval. Grafana derives $__rate_interval from
+      # it, and every generated panel uses $__rate_interval — leave it unset and
+      # Grafana assumes 15s, which silently skews every rate() on a slower
+      # scrape.
+      timeInterval: 10s
+      prometheusType: Prometheus
+      prometheusVersion: 3.14.0
+      # Wire this to a Tempo datasource UID to make exemplars clickable:
+      # exemplarTraceIdDestinations:
+      #   - name: trace_id
+      #     datasourceUid: tempo

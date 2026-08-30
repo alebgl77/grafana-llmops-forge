@@ -550,6 +550,72 @@ check("dashboards, alertes et regles generes en anglais par defaut",
 check("table de localisation fr disponible",
       os.path.exists(os.path.join(SK, "references", "locale.fr.json")))
 
+# ------------------------------------------ 21. YAML d'infrastructure
+print("\n[21] YAML d'infrastructure")
+import yaml as _y4
+_yamls = [p for p in pathlib.Path(SK).rglob("*.y*ml") if ".git/" not in str(p)]
+_bad = []
+for _p in _yamls:
+    try:
+        _y4.safe_load(_p.read_text())
+    except Exception as _e:
+        _bad.append((_p.name, str(_e)[:60]))
+check(f"{len(_yamls)} fichiers YAML parsent", not _bad, str(_bad[:2]))
+
+_dc = _y4.safe_load(open(os.path.join(SK, "demo", "docker-compose.yml")))
+check("pas de cle 'version' (obsolete en Compose v2)", "version" not in _dc)
+_svc = _dc["services"]
+check("toute image est epinglee (jamais :latest)",
+      all(":" in s["image"] and not s["image"].endswith(":latest")
+          for s in _svc.values()),
+      str([s["image"] for s in _svc.values() if s["image"].endswith(":latest")]))
+check("chaque service a un healthcheck (up --wait deterministe)",
+      all("healthcheck" in s for s in _svc.values()),
+      str([n for n, s in _svc.items() if "healthcheck" not in s]))
+_ports = [p for s in _svc.values() for p in s.get("ports", [])]
+check("aucun port expose hors loopback",
+      all(str(p).startswith("127.0.0.1:") for p in _ports), str(_ports))
+check("no-new-privileges sur chaque service",
+      all("no-new-privileges:true" in s.get("security_opt", []) for s in _svc.values()))
+_deps = [(n, k, v) for n, s in _svc.items()
+         if isinstance(s.get("depends_on"), dict)
+         for k, v in s["depends_on"].items()]
+check("les dependances attendent la sante, pas le demarrage",
+      _deps and all(v.get("condition") == "service_healthy" for _, _, v in _deps))
+check("aucune cle deploy: (ignoree par Compose hors Swarm)",
+      not any("deploy" in s for s in _svc.values()))
+_named = {v.split(":")[0] for s in _svc.values() for v in s.get("volumes", [])
+          if not v.startswith("./")}
+check("volumes nommes declares au niveau racine",
+      _named <= set(_dc.get("volumes") or {}), str(_named))
+
+_pcfg = _y4.safe_load(open(os.path.join(SK, "demo", "prometheus.yml")))
+_ds = _y4.safe_load(open(os.path.join(SK, "demo", "provisioning",
+                                      "datasources", "prometheus.yml")))["datasources"][0]
+check("timeInterval de la datasource == scrape_interval "
+      "(sinon $__rate_interval fausse tous les panneaux)",
+      _ds["jsonData"]["timeInterval"] == _pcfg["global"]["scrape_interval"],
+      f'{_ds["jsonData"]["timeInterval"]} vs {_pcfg["global"]["scrape_interval"]}')
+check("datasource provisionnee non editable", _ds.get("editable") is False)
+check("requetes en POST (les expressions de cout sont longues)",
+      _ds["jsonData"]["httpMethod"] == "POST")
+
+# les regles generees : deux formats, contenu identique
+r, d = run_forge(forge_dashboards.selftest_capability(), "audit_yaml")
+_flat = os.path.join(d, "prometheus_rules_llmops.yml")
+_crd = os.path.join(d, "prometheusrule_llmops.yaml")
+check("format portable ET manifeste PrometheusRule emis",
+      os.path.exists(_flat) and os.path.exists(_crd))
+if os.path.exists(_crd):
+    _c = _y4.safe_load(open(_crd))
+    check("CRD conforme au Prometheus Operator",
+          _c["apiVersion"] == "monitoring.coreos.com/v1"
+          and _c["kind"] == "PrometheusRule" and _c["metadata"].get("labels"))
+    check("les deux formats portent exactement les memes regles",
+          _y4.safe_load(open(_flat))["groups"] == _c["spec"]["groups"])
+    check("en-tete documentant les backends cibles",
+          "Thanos" in open(_flat).read() and "Mimir" in open(_flat).read())
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()

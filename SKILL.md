@@ -47,7 +47,7 @@ Read `references/model_registry.json`. If `_meta.verified_at` is more than 30 da
 
 ### Phase 2b — Cost recording rules (strongly recommended)
 
-Every run writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_*_usd_per_token{<model_label>=…}`) and cost becomes an aggregate metric (`llm:cost_usd_per_second`) joined by vector matching. Copy that file into Prometheus `rule_files` and reload: on the next run `discover.py` detects the `recorded` dialect and cost panels drop from a 2N-term sum to an O(1) query — unlimited models, and prices updatable without regenerating dashboards. Without it, on-the-fly composition stays active (40-model ceiling).
+Every run writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_*_usd_per_token{<model_label>=…}`) and cost becomes an aggregate metric (`llm:cost_usd_per_second`) joined by vector matching. Two files are written: the portable rule file and a `PrometheusRule` manifest for Kubernetes clusters running the Prometheus Operator, which is where most enterprise deployments live. Same rules, different packaging — the loading recipe per backend (Mimir, Thanos, VictoriaMetrics, AMP, Google Managed Prometheus) is in `references/grafana_api_compat.md` §6. Copy the portable file into Prometheus `rule_files` and reload: on the next run `discover.py` detects the `recorded` dialect and cost panels drop from a 2N-term sum to an O(1) query — unlimited models, and prices updatable without regenerating dashboards. Without it, on-the-fly composition stays active (40-model ceiling).
 
 ### Phase 3 — Blueprint selection
 
@@ -77,6 +77,8 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 #   --export-portable       ${DS_*} JSON, publishable on grafana.com/dashboards
 #   --datasource <uid|name> pin one datasource
 #   --locale fr             translate panel labels (default: English)
+#   --rules-window 10m      rate() window; keep it ≥ 4× your scrape interval
+#   --rules-interval 2m     rule group evaluation interval
 ```
 
 The script generates the JSON (classic schema v41 — identical behaviour across OSS/Cloud/Enterprise from v9 to v13, deployed through the legacy API with a K8s-style resource-API fallback), creates the folder, upserts the dashboards, provisions SLO alerts (`--with-alerts`: two-window error burn-rate at 5m/1h and 30m/6h per the SRE method, TTFT p95, daily budget, KV-cache saturation, eval-score drop, and signal loss — that last one with `noDataState: Alerting`, without which it would stay silent precisely when telemetry dies), writes `deploy_manifest.json`, then prints the URLs. Always relay the final URLs to the user.

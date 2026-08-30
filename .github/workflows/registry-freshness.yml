@@ -8,7 +8,8 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check:
-    permissions: {contents: read, issues: write}  # lecture du dépôt uniquement ; ouvrir l'issue de rafraîchissement du registre
+    # read: checkout ; issues: open the registry-refresh reminder
+    permissions: {contents: read, issues: write}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
@@ -37,7 +38,10 @@ jobs:
               ...context.repo, state: "open", labels: "registry"});
             if (open.some(i => i.title.startsWith("Refresh model price registry"))) return;
             await github.rest.issues.create({...context.repo, title, labels: ["registry"],
-              body: `LLM prices move quarterly. \`_meta.verified_at\` is ${days} days old.\n\n`
-                  + `Check the official pages listed in \`_meta.sources\`, update the models `
-                  + `you use, bump \`verified_at\`. Takes ~10 minutes and keeps every FinOps `
-                  + `dashboard honest.`});
+              body: [
+                `LLM prices move quarterly. \`_meta.verified_at\` is ${days} days old.`,
+                "",
+                "Check the official pages listed in `_meta.sources`, update the",
+                "models you use, bump `verified_at`. Takes about ten minutes and",
+                "keeps every FinOps dashboard honest.",
+              ].join("\n")});

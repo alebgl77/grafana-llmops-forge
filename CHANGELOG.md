@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.4.0] — 2026-08-30
+### Added — les règles générées s'installent dans n'importe quelle plateforme
+- **Manifeste `PrometheusRule` émis à côté du fichier plat.** La majorité des déploiements d'entreprise tournent sous Kubernetes avec le Prometheus Operator, qui n'accepte pas un fichier de règles brut. Mêmes règles, deux emballages, validés identiques par promtool à chaque build.
+- **`--rules-window` et `--rules-interval`.** La fenêtre `rate()` était figée à 5 minutes : correct à 10 s de scrape, faux à 60 s. Et les backends managés (AMP, Mimir) refusent les groupes sous la minute.
+- En-tête du fichier de règles documentant la recette de chargement par backend : Prometheus, Thanos, Mimir/Cortex, VictoriaMetrics, AWS AMP, Grafana Cloud, Google Managed Prometheus.
+
+### Fixed — configuration d'infrastructure
+- **`timeInterval` de la datasource aligné sur `scrape_interval`.** Grafana en dérive `$__rate_interval`, que tous les panneaux générés utilisent ; laissé vide, Grafana suppose 15 s et fausse silencieusement chaque `rate()` sur une plateforme qui scrape plus lentement.
+- Compose modernisé : healthchecks sur les trois services et dépendances `service_healthy`, donc `up --wait` remplace les attentes aveugles ; ports liés à la loopback ; `no-new-privileges` ; limites mémoire ; volumes nommés ; `mem_limit` plutôt que `deploy:`, ignoré par Compose hors Swarm ; aucune image `:latest` ; multi-arch sans épinglage de plateforme.
+- Datasource provisionnée non éditable, requêtes en POST.
+
+### Added — vérification
+- Porte CI : `yamllint`, `promtool check config`, et `promtool check rules` sur **les deux** formats de règles.
+- Harnais section [21] : 16 invariants sur les YAML d'infrastructure.
+
 ## [1.3.0] — 2026-08-30
 ### Changed — the product now speaks the language of its audience
 - **Generated dashboards, alerts and recording rules are English by default.**

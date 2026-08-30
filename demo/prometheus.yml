@@ -1,8 +1,21 @@
+# Demo scrape configuration. The shape matters more than the values: the forge
+# reads whatever this produces, it does not require this file.
 global:
   scrape_interval: 10s
+  scrape_timeout: 5s
   evaluation_interval: 15s
+  # In a real deployment, identify the source — Mimir, Thanos and federated
+  # setups need it to disambiguate series across clusters.
+  # external_labels:
+  #   cluster: demo
+  #   environment: local
+
+# Generated cost rules land here (make demo copies them in).
+# Kubernetes users apply prometheusrule_llmops.yaml instead.
 rule_files:
-  - /etc/prometheus/rules/*.yml     # y déposer prometheus_rules_llmops.yml
+  - /etc/prometheus/rules/*.yml
+
 scrape_configs:
   - job_name: llm-emitter
-    static_configs: [{targets: ["emitter:9109"]}]
+    static_configs:
+      - targets: ["emitter:9109"]

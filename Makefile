@@ -7,10 +7,8 @@ export GRAFANA_PASSWORD ?= admin
 .PHONY: demo demo-down test selftest forge audit
 
 demo: ## Stack complète : Grafana + Prometheus + métriques LLM synthétiques, puis forge
-	docker compose -f demo/docker-compose.yml up -d
-	@echo "→ attente de Grafana…"; \
-	for i in $$(seq 1 60); do curl -sf $(GRAFANA_URL)/api/health >/dev/null && break; sleep 2; done
-	@echo "→ attente des premières métriques…"; sleep 20
+	docker compose -f demo/docker-compose.yml up -d --wait
+	@echo "→ waiting for the first scrapes…"; sleep 15
 	python3 scripts/discover.py --out demo/capability_map.json
 	python3 scripts/forge_dashboards.py --capability demo/capability_map.json \
 		--blueprints auto --deploy --with-alerts --out-dir demo/generated

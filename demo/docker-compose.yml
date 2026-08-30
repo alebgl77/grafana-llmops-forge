@@ -1,35 +1,102 @@
-# Stack de démonstration grafana-llmops-forge : Grafana + Prometheus + un
-# émetteur de métriques LLM synthétiques. Aucune donnée réelle.
-#   make demo   → up + attente + forge + URLs
+# grafana-llmops-forge demo stack: Grafana + Prometheus + a synthetic LLM
+# metrics emitter. No real data, nothing leaves the host.
+#
+#   docker compose up -d --wait     # deterministic: waits on healthchecks
+#   make demo                       # the same, then discovers and forges
+#
+# Portability notes, because this is the file people copy first:
+#   - no `version:` key — obsolete in Compose v2 and rejected by some parsers
+#   - no `platform:` pin — images are multi-arch, so this runs unchanged on
+#     Apple Silicon, Graviton and x86
+#   - `mem_limit`/`cpus` rather than `deploy.resources`, which Compose ignores
+#     outside Swarm
+#   - healthchecks use only what each base image already ships (busybox wget,
+#     the Python stdlib) so nothing has to be installed at runtime
+#   - ports bind to 127.0.0.1: a demo on a laptop has no business listening on
+#     the local network
 services:
   emitter:
     image: python:3.12-slim-bookworm
     command: python /app/emitter.py --port 9109
-    volumes: ["./emitter.py:/app/emitter.py:ro"]
-    ports: ["9109:9109"]
+    volumes:
+      - ./emitter.py:/app/emitter.py:ro
+    ports:
+      - "127.0.0.1:9109:9109"
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - import urllib.request;urllib.request.urlopen('http://localhost:9109/metrics',timeout=3)
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 5s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 256m
+    cpus: 0.5
+    restart: unless-stopped
 
   prometheus:
     image: prom/prometheus:v3.14.0
     command:
       - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
       - --storage.tsdb.retention.time=6h
       - --web.enable-lifecycle
     volumes:
       - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./rules:/etc/prometheus/rules:ro
-    ports: ["9090:9090"]
-    depends_on: [emitter]
+      - prometheus-data:/prometheus
+    ports:
+      - "127.0.0.1:9090:9090"
+    depends_on:
+      emitter:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    restart: unless-stopped
 
   grafana:
     image: grafana/grafana:12.3.0
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
+      # Anonymous viewer keeps the demo one click away. Acceptable only because
+      # the port is bound to loopback; never carry this into a real instance.
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_USERS_ALLOW_SIGN_UP: "false"
+      # Renderer plugin is only needed for `make shots`; set GF_PLUGINS="" to
+      # skip the install and start faster, which is what CI does.
       GF_INSTALL_PLUGINS: ${GF_PLUGINS-grafana-image-renderer}
-      GF_FEATURE_TOGGLES_ENABLE: publicDashboards
     volumes:
       - ./provisioning:/etc/grafana/provisioning:ro
-    ports: ["3000:3000"]
-    depends_on: [prometheus]
+      - grafana-data:/var/lib/grafana
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--spider", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 20s
+    security_opt:
+      - no-new-privileges:true
+    mem_limit: 1g
+    restart: unless-stopped
+
+volumes:
+  prometheus-data:
+  grafana-data:

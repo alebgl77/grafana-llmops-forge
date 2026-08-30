@@ -65,3 +65,30 @@ Depuis avril 2026, l'UI migre les dashboards ouverts vers le schéma v2
   (permissions datasource sur Enterprise/Cloud).
 - `/api/health` ne demande pas d'auth sur la plupart des setups — premier test
   de connectivité avant de diagnostiquer un problème de token.
+
+## 6. Où déposer les recording rules générées
+
+La forge écrit deux fichiers équivalents ; le contenu des règles est identique,
+seul l'emballage change selon la façon dont votre backend charge des règles.
+
+| Environnement | Fichier | Comment le charger |
+|---|---|---|
+| Prometheus autonome | `prometheus_rules_llmops.yml` | `rule_files:` dans `prometheus.yml`, puis reload |
+| Kubernetes + Prometheus Operator (kube-prometheus-stack) | `prometheusrule_llmops.yaml` | `kubectl apply -f` — ajuster les labels au `ruleSelector` de votre Prometheus |
+| Grafana Mimir / Cortex / Grafana Cloud | `prometheus_rules_llmops.yml` | `mimirtool rules load` (par tenant) |
+| Thanos Ruler | `prometheus_rules_llmops.yml` | `--rule-file=` |
+| VictoriaMetrics | `prometheus_rules_llmops.yml` | `vmalert -rule=` |
+| AWS Managed Prometheus | `prometheus_rules_llmops.yml` | `aws amp create-rule-groups-namespace --data file://…` |
+| Google Managed Prometheus | `prometheusrule_llmops.yaml` | la ressource `Rules` du rule-evaluator suit le même schéma |
+
+Deux paramètres à accorder à votre plateforme avant de charger :
+
+- `--rules-window` : la fenêtre `rate()`, à garder au-dessus de quatre fois
+  l'intervalle de scrape. À 60 s de scrape, `5m` est le plancher pratique.
+- `--rules-interval` : l'intervalle d'évaluation du groupe. Les offres managées
+  imposent des minimums — AMP et Mimir refusent le sous-minute par défaut.
+
+Le `timeInterval` de votre datasource Grafana doit par ailleurs valoir votre
+intervalle de scrape : `$__rate_interval` en dérive, et tous les panneaux
+générés l'utilisent. Laissé vide, Grafana suppose 15 s et fausse silencieusement
+chaque `rate()` sur une plateforme qui scrape plus lentement.
