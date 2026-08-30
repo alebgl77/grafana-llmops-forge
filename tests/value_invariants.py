@@ -71,6 +71,24 @@ def main() -> int:
     D = "gen_ai_client_operation_duration_seconds"
     T = "gen_ai_client_token_usage_token"
 
+    # Ce script tourne juste après un `docker compose restart prometheus` :
+    # le temps du redémarrage, l'API ne répond pas, q() renvoie None et les
+    # premières sections échouaient dans le vide — cinq ❌ pendant que la
+    # section coût, seule à attendre, passait. On attend donc la condition la
+    # plus forte AVANT la première assertion : les recording rules
+    # matérialisées. Elles n'existent que si l'API répond, si les scrapes
+    # sont requêtables et si le moteur de règles a évalué. Pas de sleep
+    # deviné ici non plus : on attend la série, pas une durée.
+    deadline = time.time() + a.wait_for_rules
+    _rec = q(b, f"sum({COST})")
+    while not _rec and time.time() < deadline:
+        time.sleep(5)
+        _rec = q(b, f"sum({COST})")
+    if _rec:
+        waited = a.wait_for_rules - (deadline - time.time())
+        print(f"(stack prête — recording rules matérialisées "
+              f"après {waited:.0f}s)")
+
     print("--- quantiles ordonnés ---")
     p = {}
     for lvl in (0.50, 0.95, 0.99):
@@ -100,14 +118,6 @@ def main() -> int:
           (tin or 0) > (tout or 0), f"in={tin} out={tout}")
 
     print("--- convergence des deux chemins de coût ---")
-    deadline = time.time() + a.wait_for_rules
-    _rec = q(b, f"sum({COST})")
-    while not _rec and time.time() < deadline:
-        time.sleep(5)
-        _rec = q(b, f"sum({COST})")
-    if _rec:
-        waited = a.wait_for_rules - (deadline - time.time())
-        print(f"  (recording rules matérialisées après {waited:.0f}s)")
     recorded = float(_rec[0]["value"][1]) if _rec else None
     # La série enregistrée date de la dernière évaluation de la règle (jusqu'à
     # un intervalle de retard). Comparer à un calcul « maintenant » mesurerait
