@@ -20,7 +20,11 @@ jobs:
       - name: Offline selftest (7 blueprints, zero network)
         run: cd scripts && python forge_dashboards.py --selftest --with-alerts
       - name: Audit harness (4 topologies + regressions)
-        run: python tests/audit_harness.py
+        # pyyaml is a harness dependency only — the shipped scripts are stdlib
+        # and the harness itself asserts that.
+        run: |
+          pip install --quiet pyyaml
+          python tests/audit_harness.py
       - name: Infrastructure YAML must lint and load
         if: matrix.python == '3.13'
         run: |
@@ -69,12 +73,15 @@ jobs:
       - name: Start Prometheus + synthetic emitter (pinned images, no downloads)
         run: |
           docker compose -f demo/docker-compose.yml up -d --wait emitter prometheus
-          sleep 15   # healthchecks cover readiness; this covers the first scrapes
       - name: Every generated query must return data
-        run: python tests/live_query_check.py --prometheus http://localhost:9090
+        # No fixed sleep: the script waits until Prometheus has ingested traffic.
+        run: |
+          python tests/live_query_check.py --prometheus http://localhost:9090 \
+            --wait-for-data 180
       - name: Load the generated cost recording rules and let them evaluate
         run: |
-          python tests/live_query_check.py --prometheus http://localhost:9090 --out-dir /tmp/lf >/dev/null
+          python tests/live_query_check.py --prometheus http://localhost:9090 \
+            --wait-for-data 180 --out-dir /tmp/lf >/dev/null
           cp /tmp/lf/prometheus_rules_llmops.yml demo/rules/
           docker compose -f demo/docker-compose.yml restart prometheus
       - name: Values must be internally consistent

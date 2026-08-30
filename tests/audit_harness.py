@@ -1,7 +1,15 @@
 """Harnais d'audit grafana-llmops-forge — vérifie les chemins hors selftest."""
 import json, os, re, subprocess, sys, shutil
-
 import pathlib
+
+try:
+    import yaml
+except ImportError:       # le PRODUIT reste sans dependance ; ce harnais, non.
+    sys.exit("Ce harnais requiert pyyaml (il valide les YAML d'infrastructure).\n"
+             "  pip install pyyaml\n"
+             "Les scripts livres dans scripts/ n'utilisent que la stdlib : "
+             "c'est la promesse qui compte, et tests/audit_harness.py la verifie.")
+
 SK = str(pathlib.Path(__file__).resolve().parent.parent)
 SC = f"{SK}/scripts"
 sys.path.insert(0, SC)
@@ -225,10 +233,9 @@ print("\n[8] SKILL.md")
 txt = open(f"{SK}/SKILL.md").read()
 desc = re.search(r"description: (.+)", txt).group(1)
 check(f"description {len(desc)} <= 1024", len(desc) <= 1024)
-import yaml as _yfm
 _fm_ok, _fm = True, {}
 try:
-    _fm = _yfm.safe_load(txt.split("---")[1])
+    _fm = yaml.safe_load(txt.split("---")[1])
     _fm_ok = isinstance(_fm, dict) and {"name", "description"} <= set(_fm)
 except Exception as _e:
     _fm_ok, _fm = False, {"err": str(_e)[:90]}
@@ -384,12 +391,11 @@ check("helpers msel/qlbl corrects",
 
 # ----------------------------- 14. recording rules : ordre d'évaluation
 print("\n[14] Recording rules")
-import yaml as _yaml
 r, d = run_forge(forge_dashboards.selftest_capability(), "audit_rules")
 _rp = os.path.join(d, "prometheus_rules_llmops.yml")
 check("fichier de règles émis", os.path.exists(_rp))
 if os.path.exists(_rp):
-    _g = _yaml.safe_load(open(_rp))["groups"]
+    _g = yaml.safe_load(open(_rp))["groups"]
     check("un seul groupe (les groupes séparés s'évaluent en parallèle)",
           len(_g) == 1, str([x["name"] for x in _g]))
     _r = _g[0]["rules"]
@@ -415,7 +421,6 @@ if os.path.exists(_rp):
 
 # --------------------------- 15. entrées hostiles (labels applicatifs)
 print("\n[15] Entrees hostiles")
-import yaml as _y2
 _cap = forge_dashboards.selftest_capability()
 _pk = list(_cap["signals"])[0]
 _cap["signals"][_pk]["otel_genai"]["models_seen"] = [
@@ -458,7 +463,7 @@ _rp = os.path.join(d, "prometheus_rules_llmops.yml")
 _ok = True
 if os.path.exists(_rp):
     try:
-        _ok = _y2.safe_load(open(_rp)) is not None
+        _ok = yaml.safe_load(open(_rp)) is not None
     except Exception:
         _ok = False
 check("recording rules restent du YAML valide", _ok)
@@ -498,7 +503,6 @@ check("aucun commentaire en fin de ligne (git ne les interprete pas)",
 
 # ------------------------------- 18. chaine d'approvisionnement CI
 print("\n[18] Durcissement des workflows")
-import yaml as _y3
 _wf = sorted(pathlib.Path(os.path.join(SK, ".github", "workflows")).glob("*.yml"))
 check("des workflows sont presents", len(_wf) >= 3, str(len(_wf)))
 _txt = {f.name: f.read_text() for f in _wf}
@@ -507,7 +511,7 @@ _uses = [(n, u) for n, s in _txt.items()
 _unpinned = [(n, u) for n, u in _uses if not re.search(r"@[0-9a-f]{40}$", u)]
 check("toute action est epinglee a un SHA de commit (tag mutable = reprise possible)",
       not _unpinned, str(_unpinned[:2]))
-_docs = {n: _y3.safe_load(s) for n, s in _txt.items()}
+_docs = {n: yaml.safe_load(s) for n, s in _txt.items()}
 check("jeton en lecture seule par defaut (permissions: {} au niveau workflow)",
       all(d.get("permissions") == {} for d in _docs.values()),
       str({n: d.get("permissions") for n, d in _docs.items()}))
@@ -530,6 +534,11 @@ check("aucune attente longue en dur dans la CI (attendre l'etat, pas une duree)"
       all(int(s) <= 30 for s in _blind), f"sleep {[s for s in _blind if int(s) > 30]}")
 check("les invariants attendent la materialisation des regles",
       "--wait-for-rules" in _ci_txt)
+_prod = " ".join(open(os.path.join(SC, f)).read()
+                 for f in os.listdir(SC) if f.endswith(".py"))
+_third = [m for m in ("yaml", "requests", "httpx", "pydantic", "jinja2", "click")
+          if re.search(rf"^\s*(?:import {m}\b|from {m}\b)", _prod, re.M)]
+check("le produit livre n'importe que la stdlib", not _third, str(_third))
 check("dependabot suit les actions epinglees",
       os.path.exists(os.path.join(SK, ".github", "dependabot.yml")))
 check("CODEOWNERS present (revue obligatoire des chemins sensibles)",
@@ -577,17 +586,16 @@ check("table de localisation fr disponible",
 
 # ------------------------------------------ 21. YAML d'infrastructure
 print("\n[21] YAML d'infrastructure")
-import yaml as _y4
 _yamls = [p for p in pathlib.Path(SK).rglob("*.y*ml") if ".git/" not in str(p)]
 _bad = []
 for _p in _yamls:
     try:
-        _y4.safe_load(_p.read_text())
+        yaml.safe_load(_p.read_text())
     except Exception as _e:
         _bad.append((_p.name, str(_e)[:60]))
 check(f"{len(_yamls)} fichiers YAML parsent", not _bad, str(_bad[:2]))
 
-_dc = _y4.safe_load(open(os.path.join(SK, "demo", "docker-compose.yml")))
+_dc = yaml.safe_load(open(os.path.join(SK, "demo", "docker-compose.yml")))
 check("pas de cle 'version' (obsolete en Compose v2)", "version" not in _dc)
 _svc = _dc["services"]
 check("toute image est epinglee (jamais :latest)",
@@ -614,8 +622,8 @@ _named = {v.split(":")[0] for s in _svc.values() for v in s.get("volumes", [])
 check("volumes nommes declares au niveau racine",
       _named <= set(_dc.get("volumes") or {}), str(_named))
 
-_pcfg = _y4.safe_load(open(os.path.join(SK, "demo", "prometheus.yml")))
-_ds = _y4.safe_load(open(os.path.join(SK, "demo", "provisioning",
+_pcfg = yaml.safe_load(open(os.path.join(SK, "demo", "prometheus.yml")))
+_ds = yaml.safe_load(open(os.path.join(SK, "demo", "provisioning",
                                       "datasources", "prometheus.yml")))["datasources"][0]
 check("timeInterval de la datasource == scrape_interval "
       "(sinon $__rate_interval fausse tous les panneaux)",
@@ -632,12 +640,12 @@ _crd = os.path.join(d, "prometheusrule_llmops.yaml")
 check("format portable ET manifeste PrometheusRule emis",
       os.path.exists(_flat) and os.path.exists(_crd))
 if os.path.exists(_crd):
-    _c = _y4.safe_load(open(_crd))
+    _c = yaml.safe_load(open(_crd))
     check("CRD conforme au Prometheus Operator",
           _c["apiVersion"] == "monitoring.coreos.com/v1"
           and _c["kind"] == "PrometheusRule" and _c["metadata"].get("labels"))
     check("les deux formats portent exactement les memes regles",
-          _y4.safe_load(open(_flat))["groups"] == _c["spec"]["groups"])
+          yaml.safe_load(open(_flat))["groups"] == _c["spec"]["groups"])
     check("en-tete documentant les backends cibles",
           "Thanos" in open(_flat).read() and "Mimir" in open(_flat).read())
 

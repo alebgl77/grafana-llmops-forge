@@ -20,6 +20,7 @@ import pathlib
 import re
 import subprocess
 import sys
+import time
 import urllib.parse
 import urllib.request
 
@@ -112,10 +113,23 @@ def build_map(base: str) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--prometheus", default="http://localhost:9090")
+    ap.add_argument("--wait-for-data", type=float, default=120,
+                    help="Secondes d'attente d'un premier trafic scrapé. Un "
+                         "nombre de scrapes deviné est un pile ou face : on "
+                         "attend la donnée.")
     ap.add_argument("--out-dir", default="/tmp/live_forge")
     ap.add_argument("--capability", default="/tmp/live_cap.json")
     a = ap.parse_args()
     base = a.prometheus.rstrip("/")
+
+    # Attendre que Prometheus ait effectivement ingéré du trafic : sans cela on
+    # mesure la lenteur du démarrage plutôt que la justesse des requêtes.
+    probe = 'count({__name__=~".*gen_ai[._].*|litellm.*|vllm:.*"})'
+    deadline = time.time() + a.wait_for_data
+    while not q(base, probe)[1] and time.time() < deadline:
+        time.sleep(3)
+    waited = a.wait_for_data - (deadline - time.time())
+    print(f"premières séries visibles après {waited:.0f}s")
 
     cap = build_map(base)
     dialects = sorted(cap["signals"]["live"])
