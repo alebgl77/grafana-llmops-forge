@@ -19,23 +19,35 @@ from grafana_client import GrafanaClient, GrafanaError
 
 # Signatures des dialectes de télémétrie IA. Regex volontairement larges :
 # la capability map capture ensuite les noms exacts, base du résolveur de la forge.
+# Les regex Prometheus sont ANCRÉES : "gen_ai_.*" ne matche pas
+# "myapp_gen_ai_..." (option `namespace` des exporters OTel Collector, ou
+# préfixe ajouté par metric_relabel_configs). D'où le `.*` de tête.
+# Et `[._]` couvre translation_strategy: NoTranslation, qui conserve les points
+# du nom OTel (`gen_ai.client.token.usage`) — légal depuis Prometheus 3.x.
+# Les deux cas ont été reproduits sur une instance réelle avant correction.
+_P = r".*"          # tolérance préfixe / namespace
+_S = r"[._]"        # séparateur : underscore classique ou point UTF-8
+
 DIALECT_SIGNATURES = {
-    "otel_genai": r"gen_ai_.*",                    # conventions OTel GenAI (+ OpenLIT)
-    "litellm":    r"litellm_.*",                   # passerelle LiteLLM (spend USD natif)
-    "vllm":       r"vllm:.*",                      # moteur vLLM
-    "tgi":        r"tgi_.*",                       # HuggingFace TGI
-    "ollama":     r"ollama_.*",                    # Ollama
-    "gpu_dcgm":   r"DCGM_FI_DEV_.*",               # NVIDIA DCGM exporter
-    "gpu_smi":    r"nvidia_smi_.*|nvidia_gpu_.*",  # exporters nvidia-smi alternatifs
-    "langfuse":   r"langfuse_.*",                  # Langfuse self-hosted
+    "otel_genai": _P + r"gen_ai" + _S + r".*",     # conventions OTel GenAI (+ OpenLIT)
+    "litellm":    _P + r"litellm" + _S + r".*",    # passerelle LiteLLM (spend USD natif)
+    "vllm":       _P + r"vllm:.*",                 # moteur vLLM
+    "tgi":        _P + r"tgi" + _S + r".*",        # HuggingFace TGI
+    "ollama":     _P + r"ollama" + _S + r".*",     # Ollama
+    "gpu_dcgm":   _P + r"DCGM_FI_DEV_.*",          # NVIDIA DCGM exporter
+    "gpu_smi":    _P + r"nvidia_smi_.*|" + _P + r"nvidia_gpu_.*",
+    "langfuse":   _P + r"langfuse" + _S + r".*",   # Langfuse self-hosted
     "recorded":   r"llm:.*",                       # recording rules émises par la forge
-    "evals":      r"gen_ai_evaluation_.*|ragas_.*|langfuse_score.*|deepeval_.*|"
-                  r"trulens_.*|openlit_.*guard.*|guardrail_.*",
+    "evals":      _P + r"gen_ai" + _S + r"evaluation" + _S + r".*|" + _P + r"ragas" + _S + r".*|"
+                  + _P + r"langfuse" + _S + r"score.*|" + _P + r"deepeval" + _S + r".*|"
+                  + _P + r"trulens" + _S + r".*|" + _P + r"openlit" + _S + r".*guard.*|"
+                  + _P + r"guardrail" + _S + r".*",
 }
 
 # Labels de modèle candidats, par dialecte (le premier trouvé gagne).
 MODEL_LABEL_CANDIDATES = {
-    "otel_genai": ["gen_ai_request_model", "gen_ai_response_model", "gen_ai_model"],
+    "otel_genai": ["gen_ai_request_model", "gen_ai.request.model",
+                   "gen_ai_response_model", "gen_ai.response.model", "gen_ai_model"],
     "litellm":    ["model", "model_group", "litellm_model_name"],
     "vllm":       ["model_name", "model"],
     "tgi":        ["model_id", "model"],
@@ -44,11 +56,13 @@ MODEL_LABEL_CANDIDATES = {
     "evals":      ["gen_ai_request_model", "model", "evaluator"],
 }
 PROVIDER_LABEL_CANDIDATES = {
-    "otel_genai": ["gen_ai_provider_name", "gen_ai_system"],
+    "otel_genai": ["gen_ai_provider_name", "gen_ai.provider.name",
+                   "gen_ai_system", "gen_ai.system"],
     "litellm":    ["api_provider", "custom_llm_provider", "llm_provider"],
 }
-TEAM_LABEL_CANDIDATES = ["team", "team_alias", "service_name", "service", "app",
-                         "namespace", "job", "hashed_api_key", "end_user"]
+TEAM_LABEL_CANDIDATES = ["team", "team_alias", "service_name", "service.name",
+                         "service", "app", "namespace", "job", "hashed_api_key",
+                         "end_user"]
 
 LOKI_AI_HINT_LABELS = ["service_name", "gen_ai_system", "ai_system", "app", "job"]
 
@@ -74,7 +88,8 @@ def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
                     entry["providers_seen"] = vals[:40]
                     break
             if dialect == "otel_genai":
-                for cand in ("gen_ai_token_type", "token_type", "gen_ai_usage_type"):
+                for cand in ("gen_ai_token_type", "gen_ai.token.type", "token_type",
+                             "gen_ai_usage_type"):
                     vals = client.prom_label_values(ds, cand, match=sample)
                     if any(v in ("input", "output") for v in vals):
                         entry["token_type_label"] = cand

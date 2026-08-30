@@ -93,7 +93,7 @@ def build_map(base: str) -> dict:
                 e["provider_label"], e["providers_seen"] = cand, v[:40]
                 break
         if dialect == "otel_genai":
-            for cand in ("gen_ai_token_type", "token_type"):
+            for cand in ("gen_ai_token_type", "gen_ai.token.type", "token_type"):
                 if set(label_values(base, cand, sample)) & {"input", "output"}:
                     e["token_type_label"] = cand
                     break

@@ -141,7 +141,7 @@ class FakeClient:
                                    {"uid": "l1", "name": "Loki", "type": "loki"}]
     def prometheus_like(self): return [d for d in self.datasources() if d["type"] == "prometheus"]
     def prom_metric_names(self, ds, match):
-        if match.startswith("gen_ai"):
+        if "gen_ai" in match and "evaluation" not in match:
             return ["gen_ai_client_operation_duration_seconds_bucket",
                     "gen_ai_client_token_usage_token_sum"]
         return []
@@ -291,6 +291,52 @@ check("aucune sequence backslash-tiret dans les regex generees",
       not any(BS + "-" in e for e in rx_exprs), str(rx_exprs[:1]))
 
 # ------------------------------------------- 12. cohérence doc / réalité
+# ------------------------- 13. variantes de chemin d'export (exporters Prometheus)
+print("\n[13] Variantes d'export (namespace, UTF-8)")
+import copy as _copy
+from forge_dashboards import msel, qlbl
+_base = forge_dashboards.selftest_capability()
+_prom = list(_base["signals"])[0]
+
+def _variant(transform, label_transform=lambda x: x):
+    c = _copy.deepcopy(_base)
+    sig = c["signals"][_prom]
+    for d in list(sig):
+        if d != "otel_genai":
+            del sig[d]
+    e = sig["otel_genai"]
+    e["metric_names"] = [transform(n) for n in e["metric_names"]]
+    e["model_label"] = label_transform(e["model_label"])
+    e["token_type_label"] = label_transform(e["token_type_label"])
+    return c
+
+# namespace ajouté par l'exporter (les regex Prometheus sont ancrées)
+r, d = run_forge(_variant(lambda n: "myapp_" + n), "audit_prefix")
+check("préfixe namespace : dashboards générés", r.returncode == 0 and load_boards(d),
+      r.stderr[-160:])
+_ex = [e for b in load_boards(d).values() for _, e in all_exprs(b)]
+check("préfixe conservé dans les requêtes",
+      any("myapp_gen_ai" in e for e in _ex))
+
+# translation_strategy: NoTranslation -> noms et labels UTF-8 pointés
+_dot = lambda n: n.replace("gen_ai_client_", "gen_ai.client.").replace(
+    "gen_ai_server_", "gen_ai.server.")
+r, d = run_forge(_variant(_dot, lambda l: l.replace("gen_ai_", "gen_ai.").replace("_", ".")
+                          if l.startswith("gen_ai_") else l), "audit_utf8")
+check("noms UTF-8 : dashboards générés", r.returncode == 0 and load_boards(d),
+      r.stderr[-160:])
+_ex = [e for b in load_boards(d).values() for _, e in all_exprs(b)]
+_dotted = [e for e in _ex if "gen_ai.client" in e]
+check("nom pointé toujours entre guillemets (nom nu = 400)",
+      _dotted and all('{"gen_ai.client' in e for e in _dotted),
+      str([e[:70] for e in _dotted if '{"gen_ai.client' not in e][:1]))
+check("label pointé quoté dans by()/matchers",
+      not any(re.search(r"by\(gen_ai\.[a-z.]+\)", e) or re.search(r"\{gen_ai\.[a-z.]+=", e)
+              for e in _ex))
+check("helpers msel/qlbl corrects",
+      msel("a.b", '{x="1"}') == '{"a.b",x="1"}' and msel("a_b", '{x="1"}') == 'a_b{x="1"}'
+      and qlbl("a.b") == '"a.b"' and qlbl("a_b") == "a_b")
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()

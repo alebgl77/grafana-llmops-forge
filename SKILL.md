@@ -104,6 +104,7 @@ The scripts cover the deterministic core. To extend (extra panels, specific quer
 ## Known pitfalls
 
 - **OTel→Prometheus suffixes vary**: `gen_ai.client.token.usage` may surface as `gen_ai_client_token_usage_token_*`, `..._tokens_*`, or without a unit. The resolver matches on prefixes captured in Phase 1; never hardcode a name without checking the capability map.
+- **Export path changes the names**: an exporter `namespace` prefix breaks anchored regexes, and `translation_strategy: NoTranslation` keeps OTel dots (`gen_ai.client.token.usage`), which then require the quoted `{"name", label="v"}` selector syntax — a bare dotted name returns HTTP 400. Discovery and query rendering handle all three cases; see `references/instrumentation_guide.md` §6b.
 - **Cardinality**: never group by `gen_ai.conversation.id` or any unique ID in a time series. The forge drops group-by labels above 300 values and bounds grouped panels with `topk`.
 - **Tiered pricing**: some models change price beyond a context threshold; the registry carries `tiered_pricing` and the cost panel then notes "low estimate".
 - **Grafana Cloud**: the legacy dashboard API works, but provisioned alerts need the right `folderUID` and a sufficient role; on 403, degrade by exporting the rules as JSON and explain manual import.

@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2] — 2026-08-30
+### Fixed — chemins d'export Prometheus (deux angles morts reproduits sur instance réelle)
+- **Préfixe de namespace invisible.** Les regex Prometheus sont ancrées : la signature `gen_ai_.*` ne matchait pas `myapp_gen_ai_...`, produit par l'option `namespace` des exporters OTel Collector ou par un `metric_relabel_configs`. La forge annonçait « aucun signal LLM » sur une stack parfaitement instrumentée. Signatures désormais tolérantes au préfixe.
+- **Noms UTF-8 non supportés.** Avec `translation_strategy: NoTranslation` (Prometheus ≥ 3.0), les noms OTel gardent leurs points (`gen_ai.client.token.usage`) et les labels aussi. Ces séries n'étaient ni découvertes, ni interrogeables : un nom pointé nu renvoie HTTP 400, il faut la syntaxe `{"nom", label="v"}`. Ajout des helpers `msel`/`qlbl`, routage de toutes les compositions métrique/label, résolveur de signaux insensible au séparateur.
+
+### Verified
+38/38 expressions exécutées sans erreur sur un Prometheus réel pour les trois variantes (classique, préfixée, UTF-8) ; 63/63 sur la stack de démo complète, sans régression. Tests permanents ajoutés au harnais.
+
 ## [1.2.1] — 2026-08-30
 ### Fixed
 - **Échappement regex PromQL** (bug trouvé par le nouveau contrôle live, invisible hors ligne) : `re.escape` produisait `\-`, rejeté par RE2, et un `\.` simple était consommé par le littéral chaîne du matcher avant d'atteindre la regex. Le panel « Trafic par souveraineté » était cassé pour tout modèle contenant un tiret ou un point — c'est-à-dire presque tous.

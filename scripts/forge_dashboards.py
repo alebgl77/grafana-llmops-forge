@@ -50,7 +50,12 @@ class Signals:
         self.group_card = groups[0]["cardinality"] if groups else 0
 
     def find(self, substr: str, suffix: str | None = None) -> str | None:
-        cands = [n for n in self.names if substr in n]
+        """Recherche par sous-chaîne, insensible au séparateur : un nom conservé
+        en UTF-8 (`gen_ai.client.operation.duration`) doit répondre aux mêmes
+        clés que sa forme classique. On compare une forme normalisée mais on
+        retourne toujours le nom RÉEL, seul interrogeable."""
+        key = substr.replace(".", "_")
+        cands = [n for n in self.names if key in n.replace(".", "_")]
         if suffix:
             cands = [n for n in cands if n.endswith(suffix)]
         return sorted(cands, key=len)[0] if cands else None
@@ -79,6 +84,29 @@ def _rx(s: str) -> str:
     d'où un backslash doublé.
     """
     return "".join(("\\\\" + c) if c in RE2_META else c for c in s)
+
+
+_LEGACY = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
+Q1, B1, B2 = chr(34), chr(123), chr(125)
+
+
+def msel(metric: str, sel: str = "") -> str:
+    """Rend `metric{...}` ou, pour un nom UTF-8 (points conservés par
+    translation_strategy: NoTranslation), la forme `{"metric",...}` — un nom
+    pointé nu fait renvoyer 400 par Prometheus. Vérifié sur instance réelle."""
+    if not metric:
+        return metric
+    if _LEGACY.fullmatch(metric):
+        return metric + sel
+    inner = sel[1:-1].strip() if sel.startswith("{") and sel.endswith("}") else ""
+    return '{"' + metric + '"' + ("," + inner if inner else "") + "}"
+
+
+def qlbl(label: str | None) -> str:
+    """Nom de label utilisable dans by()/matcher : quoté s'il n'est pas legacy."""
+    if not label:
+        return ""
+    return label if _LEGACY.fullmatch(label) else '"' + label + '"'
 
 
 def _norm(s: str) -> str:
@@ -125,30 +153,30 @@ class Q:
 
     # -- primitives --------------------------------------------------------
     def by(self, label: str | None) -> str:
-        return f" by({label})" if label else ""
+        return f" by({qlbl(label)})" if label else ""
 
     def pXX(self, base: str, q: float, sel: str = "", by: str | None = None,
             w: str = RATE) -> str:
-        grp = f"le,{by}" if by else "le"
+        grp = f"le,{qlbl(by)}" if by else "le"
         return (f"histogram_quantile({q}, sum by({grp})"
-                f"(rate({base}_bucket{sel}[{w}])))")
+                f"(rate({msel(base + '_bucket', sel)}[{w}])))")
 
     def req_rate(self, by: str | None = None, sel: str = "", w: str = RATE) -> str | None:
         d = self.s.dialect
         if d in ("otel_genai", "tgi") and getattr(self, "dur", None):
-            return f"sum{self.by(by)}(rate({self.dur}_count{sel}[{w}]))"
+            return f"sum{self.by(by)}(rate({msel(self.dur + chr(95) + 'count', sel)}[{w}]))"
         if d == "litellm" and getattr(self, "req", None):
-            return f"sum{self.by(by)}(rate({self.req}{sel}[{w}]))"
+            return f"sum{self.by(by)}(rate({msel(self.req, sel)}[{w}]))"
         if d == "vllm" and getattr(self, "e2e", None):
-            return f"sum{self.by(by)}(rate({self.e2e}_count{sel}[{w}]))"
+            return f"sum{self.by(by)}(rate({msel(self.e2e + chr(95) + 'count', sel)}[{w}]))"
         return None
 
     def err_rate(self, by: str | None = None, w: str = RATE) -> str | None:
         d = self.s.dialect
         if d == "otel_genai" and self.dur:
-            return f'sum{self.by(by)}(rate({self.dur}_count{{error_type!=""}}[{w}]))'
+            return f'sum{self.by(by)}(rate({msel(self.dur + chr(95) + "count", chr(123) + "error_type!=" + chr(34)*2 + chr(125))}[{w}]))'
         if d == "litellm" and getattr(self, "fail", None):
-            return f"sum{self.by(by)}(rate({self.fail}[{w}]))"
+            return f"sum{self.by(by)}(rate({msel(self.fail)}[{w}]))"
         return None
 
     def error_ratio(self, w: str = RATE) -> str | None:
@@ -161,17 +189,17 @@ class Q:
                     w: str = RATE) -> str | None:
         d = self.s.dialect
         if d == "otel_genai" and self.tok:
-            sel = f'{{{self.s.token_type_label}="{direction}"{sel_extra}}}'
-            return f"sum{self.by(by)}(rate({self.tok}_sum{sel}[{w}]))"
+            sel = f'{{{qlbl(self.s.token_type_label)}="{direction}"{sel_extra}}}'
+            return f"sum{self.by(by)}(rate({msel(self.tok + chr(95) + 'sum', sel)}[{w}]))"
         if d == "litellm":
             m = self.tok_in if direction == "input" else self.tok_out
             if m:
                 sel = f"{{{sel_extra.lstrip(',')}}}" if sel_extra else ""
-                return f"sum{self.by(by)}(rate({m}{sel}[{w}]))"
+                return f"sum{self.by(by)}(rate({msel(m, sel)}[{w}]))"
         if d == "vllm":
             m = self.tok_prompt if direction == "input" else self.tok_gen
             if m:
-                return f"sum{self.by(by)}(rate({m}[{w}]))"
+                return f"sum{self.by(by)}(rate({msel(m)}[{w}]))"
         return None
 
 
@@ -257,10 +285,10 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
                                  ("output", m.get("output_per_mtok"))):
             if price is None:
                 continue
-            sel = (f'{{{q.s.token_type_label}="{direction}",'
-                   f'{q.s.model_label}="{lbl}"}}')
-            terms.append(f'(sum({agg}({q.tok}_sum{sel}[{window}])) or vector(0)) '
-                         f"* {price / 1e6:.9g}")
+            sel = (f'{{{qlbl(q.s.token_type_label)}="{direction}",'
+                   f'{qlbl(q.s.model_label)}="{lbl}"}}')
+            terms.append(f'(sum({agg}({msel(q.tok + "_sum", sel)}[{window}])) '
+                         f"or vector(0)) * {price / 1e6:.9g}")
     return "(" + " + ".join(terms) + ")" if terms else None
 
 
@@ -276,6 +304,7 @@ def emit_recording_rules(ctx, path: str) -> tuple[str, int]:
     if not q or q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
         return "", 0
     ml, tt = q.s.model_label, q.s.token_type_label
+    ml_q = qlbl(ml)
     L = ["# Généré par grafana-llmops-forge — recording rules coût LLM.",
          f"# Registre vérifié le {ctx.verified}. Recharger Prometheus après copie",
          "# (rule_files: - prometheus_rules_llmops.yml).",
@@ -295,13 +324,13 @@ def emit_recording_rules(ctx, path: str) -> tuple[str, int]:
         return "", 0
     L += ["", "  - name: llmops-forge-cost", "    interval: 1m", "    rules:",
           f"      - record: {COST_RECORDED}", "        expr: |",
-          f'          sum by({ml}, region, vendor) (',
-          f'            rate({q.tok}_sum{{{tt}="input"}}[5m])',
-          f"          ) * on({ml}) group_left(region, vendor) {PRICE_IN}",
+          f'          sum by({ml_q}, region, vendor) (',
+          f'            rate({msel(q.tok + "_sum", B1 + qlbl(tt) + "=" + Q1 + "input" + Q1 + B2)}[5m])',
+          f"          ) * on({ml_q}) group_left(region, vendor) {PRICE_IN}",
           "          or",
-          f'          sum by({ml}, region, vendor) (',
-          f'            rate({q.tok}_sum{{{tt}="output"}}[5m])',
-          f"          ) * on({ml}) group_left(region, vendor) {PRICE_OUT}"]
+          f'          sum by({ml_q}, region, vendor) (',
+          f'            rate({msel(q.tok + "_sum", B1 + qlbl(tt) + "=" + Q1 + "output" + Q1 + B2)}[5m])',
+          f"          ) * on({ml_q}) group_left(region, vendor) {PRICE_OUT}"]
     txt = "\n".join(L) + "\n"
     with open(path, "w", encoding="utf-8") as f:
         f.write(txt)
@@ -344,16 +373,18 @@ class Board:
         if not base:
             return
         metric = base + ("_count" if q.s.dialect == "otel_genai" else "")
+        metric = msel(metric)
         self.d["templating"]["list"].append({
             "name": "model", "label": "Modèle", "type": "query",
             "datasource": {"type": "prometheus", "uid": q.s.ds_uid},
-            "query": {"query": f"label_values({metric}, {q.s.model_label})", "refId": "V"},
+            "query": {"query": f"label_values({metric}, {qlbl(q.s.model_label)})",
+                      "refId": "V"},
             "includeAll": True, "multi": True, "refresh": 2,
             "current": {"selected": True, "text": ["All"], "value": ["$__all"]}})
 
     def model_sel(self, q: Q) -> str:
         if any(v["name"] == "model" for v in self.d["templating"]["list"]):
-            return f'{{{q.s.model_label}=~"$model"}}'
+            return f'{{{qlbl(q.s.model_label)}=~"$model"}}'
         return ""
 
     def panel(self, ptype: str, title: str, w: int, h: int, ds_uid: str | None,
@@ -526,7 +557,7 @@ def bp_finops(ctx: Ctx) -> Board | None:
              desc="Ventilation par région du fournisseur — pilotage souveraineté/AI Act.")
     if q.s.dialect == "litellm" and getattr(q, "spend", None) and q.s.group_label:
         b.ts("Dépense par équipe (USD/s)", ds,
-             [(f"sum by({q.s.group_label})(rate({q.spend}[{RATE}]))",
+             [(f"sum by({qlbl(q.s.group_label)})(rate({msel(q.spend)}[{RATE}]))",
                "{{" + q.s.group_label + "}}")], 12, 8, "currencyUSD", stacked=True,
              topk=12)
     elif q.s.model_label:
@@ -538,8 +569,8 @@ def bp_finops(ctx: Ctx) -> Board | None:
         b.ts("Tokens output par modèle / s", ds,
              [(q.tokens_rate("output", by=q.s.model_label),
                "{{" + q.s.model_label + "}}")], 12, 8, "short", stacked=True)
-        top = (f"topk(10, sum by({q.s.model_label})"
-               f"(increase({q.tok}_sum[$__range])))" if q.s.dialect == "otel_genai" and q.tok
+        top = (f"topk(10, sum by({qlbl(q.s.model_label)})"
+               f"(increase({msel(q.tok + chr(95) + 'sum')}[$__range])))" if q.s.dialect == "otel_genai" and q.tok
                else None)
         b.table("Top modèles (tokens, période)", ds, top, 12, 8)
     if ctx.unmatched:
@@ -588,7 +619,8 @@ def bp_gateway(ctx: Ctx) -> Board | None:
     b.row_break()
     if q.s.dialect == "otel_genai" and dur:
         b.ts("Erreurs/s par type", ds,
-             [(f'sum by(error_type)(rate({dur}_count{{error_type!=""}}[{RATE}]))',
+             [(f'sum by(error_type)(rate('
+               f'{msel(dur + "_count", B1 + "error_type!=" + Q1*2 + B2)}[{RATE}]))',
                "{{error_type}}")], 12, 8, "short")
     elif q.err_rate():
         b.ts("Erreurs/s", ds, [(q.err_rate(), "erreurs")], 12, 8, "short")
@@ -615,21 +647,21 @@ def bp_agents(ctx: Ctx) -> Board | None:
     ds = q.s.ds_uid
     op = "gen_ai_operation_name"
     b.stat("Invocations d'agents / s", ds,
-           f'sum(rate({q.dur}_count{{{op}="invoke_agent"}}[{RATE}]))', 6, 5, "reqps")
+           f'sum(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "invoke_agent" + chr(34) + "}")}[{RATE}]))', 6, 5, "reqps")
     b.stat("Appels d'outils / s", ds,
-           f'sum(rate({q.dur}_count{{{op}="execute_tool"}}[{RATE}]))', 6, 5, "reqps")
+           f'sum(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "execute_tool" + chr(34) + "}")}[{RATE}]))', 6, 5, "reqps")
     b.stat("Durée agent p95", ds,
            q.pXX(q.dur, 0.95, f'{{{op}="invoke_agent"}}'), 6, 5, "s")
     b.stat("Erreurs outils / s", ds,
-           f'sum(rate({q.dur}_count{{{op}="execute_tool",error_type!=""}}[{RATE}]))',
+           f'sum(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "execute_tool" + chr(34) + ",error_type!=" + chr(34)*2 + "}")}[{RATE}]))',
            6, 5, "short")
     b.row_break()
     b.ts("Mix d'opérations GenAI", ds,
-         [(f"sum by({op})(rate({q.dur}_count[{RATE}]))", "{{" + op + "}}")],
+         [(f"sum by({qlbl(op)})(rate({msel(q.dur + chr(95) + chr(99)+chr(111)+chr(117)+chr(110)+chr(116))}[{RATE}]))", "{{" + op + "}}")],
          12, 8, "reqps", stacked=True,
          desc="chat / embeddings / invoke_agent / execute_tool…")
     b.ts("Appels par outil (execute_tool)", ds,
-         [(f'sum by(gen_ai_tool_name)(rate({q.dur}_count{{{op}="execute_tool"}}[{RATE}]))',
+         [(f'sum by({qlbl("gen_ai_tool_name")})(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "execute_tool" + chr(34) + "}")}[{RATE}]))',
            "{{gen_ai_tool_name}}")], 12, 8, "reqps", stacked=True, topk=15,
          exemplar=ctx.exemplars,
          trace_link=tempo_link(ctx.tempo,
@@ -638,7 +670,7 @@ def bp_agents(ctx: Ctx) -> Board | None:
     b.row_break()
     if q.tok:
         b.ts("Tokens par agent / s", ds,
-             [(f"sum by(gen_ai_agent_name)(rate({q.tok}_sum[{RATE}]))",
+             [(f"sum by({qlbl(chr(103)+'en_ai_agent_name')})(rate({msel(q.tok + '_sum')}[{RATE}]))",
                "{{gen_ai_agent_name}}")], 12, 8, "short", stacked=True, topk=12)
     b.ts("Latence embeddings p95 (pipeline RAG)", ds,
          [(q.pXX(q.dur, 0.95, f'{{{op}="embeddings"}}'), "p95 embeddings")],
@@ -669,15 +701,15 @@ def bp_adoption(ctx: Ctx) -> Board | None:
         base_cnt = q.req
     if g and base_cnt:
         b.stat(f"Entités actives ({g})", ds,
-               f"count(sum by({g})(rate({base_cnt}[1h])) > 0)", 6, 5, "short")
+               f"count(sum by({qlbl(g)})(rate({msel(base_cnt)}[1h])) > 0)", 6, 5, "short")
         b.stat("Nouveaux adoptants (7j)", ds,
-               f"count(sum by({g})(increase({base_cnt}[7d])) > 0) - "
-               f"count(sum by({g})(increase({base_cnt}[7d] offset 7d)) > 0)",
+               f"count(sum by({qlbl(g)})(increase({msel(base_cnt)}[7d])) > 0) - "
+               f"count(sum by({qlbl(g)})(increase({msel(base_cnt)}[7d] offset 7d)) > 0)",
                6, 5, "short",
                "Entités émettant du trafic LLM cette semaine mais pas la précédente.")
     if q.s.model_label and base_cnt:
         b.stat("Modèles distincts en usage", ds,
-               f"count(count by({q.s.model_label})(rate({base_cnt}[1h])))", 6, 5)
+               f"count(count by({qlbl(q.s.model_label)})(rate({msel(base_cnt)}[1h])))", 6, 5)
     b.stat("Requêtes / s (total)", ds, q.req_rate(), 6, 5, "reqps")
     b.row_break()
     if q.s.model_label:
@@ -694,7 +726,7 @@ def bp_adoption(ctx: Ctx) -> Board | None:
     b.row_break()
     if g and q.s.dialect == "otel_genai" and q.tok:
         b.table("Top consommateurs (tokens, période)", ds,
-                f"topk(15, sum by({g})(increase({q.tok}_sum[$__range])))", 24, 9)
+                f"topk(15, sum by({qlbl(g)})(increase({msel(q.tok + chr(95) + 'sum')}[$__range])))", 24, 9)
     return b
 
 
@@ -796,7 +828,8 @@ def bp_governance(ctx: Ctx) -> Board:
             ids = [_esc(it["seen"]) for it in ctx.matched if it["reg"].get("region") == r]
             if ids and q.s.model_label:
                 rx = "|".join(_rx(i) for i in ids)
-                exprs.append((q.req_rate(sel=f'{{{q.s.model_label}=~"{rx}"}}'), lbl))
+                exprs.append((q.req_rate(
+                    sel=f'{{{qlbl(q.s.model_label)}=~"{rx}"}}'), lbl))
         if exprs:
             b.ts("Trafic par souveraineté du fournisseur", ds, exprs, 12, 8,
                  "reqps", stacked=True,

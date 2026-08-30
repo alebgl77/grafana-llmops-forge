@@ -122,6 +122,25 @@ limits_config:
 Envoyer les logs applicatifs IA avec un label `service_name` stable. Ne jamais
 logger le contenu des prompts en clair dans Loki (mêmes précautions que §2).
 
+## 6b. Le chemin d'export change les noms — et donc la découverte
+
+Le même code instrumenté produit des noms différents selon l'exporter. Trois cas
+vérifiés sur instance réelle, tous supportés par la forge :
+
+| Configuration | Nom obtenu | Conséquence |
+|---|---|---|
+| défaut (`UnderscoreEscapingWithSuffixes`) | `gen_ai_client_token_usage_token_sum` | cas nominal |
+| option `namespace: myapp` de l'exporter | `myapp_gen_ai_client_...` | les regex Prometheus étant **ancrées**, une signature `gen_ai_.*` ne matche pas — la découverte annoncerait « aucun signal » sur une stack correctement instrumentée |
+| `translation_strategy: NoTranslation` (Prometheus ≥ 3.0) | `gen_ai.client.token.usage_sum`, labels `gen_ai.request.model` | les points sont conservés ; interroger ces séries exige la syntaxe `{"nom.pointé", label="v"}` — un nom nu renvoie HTTP 400 |
+
+Côté Prometheus, l'ingestion UTF-8 suppose `global.metric_name_validation_scheme: utf8`
+et un exporter qui annonce `Content-Type: ...; escaping=allow-utf-8`.
+
+Si vous avez le choix, restez sur le nommage par défaut : c'est le mieux outillé
+de l'écosystème. Si votre plateforme impose un préfixe ou le mode UTF-8, la forge
+s'y adapte sans configuration — mais vérifiez que `discover.py` liste bien le
+dialecte attendu avant de générer.
+
 ## 7. Vérification de bout en bout
 
 ```bash
