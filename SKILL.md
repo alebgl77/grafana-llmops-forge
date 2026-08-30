@@ -1,5 +1,6 @@
 ---
 name: grafana-llmops-forge
+allowed-tools: Bash, Read, Write, WebSearch, Env
 description: Runs end-to-end AI/LLM observability on any Grafana (OSS, Cloud, Enterprise) with a single prerequisite — a reachable Grafana instance. Auto-discovers the instance (version, APIs, datasources), detects which LLM telemetry dialects are actually present (OpenTelemetry GenAI gen_ai.*, LiteLLM, vLLM, TGI, GPU/DCGM, eval scores), then generates and deploys dashboards — FinOps and multi-provider cost by sovereignty (US/EU/Asia), gateway SLOs, agent and RAG tracing, internal adoption, quality evaluations, EU AI Act governance, self-hosted inference — plus burn-rate SLO alerts, cost recording rules, and a visual verification pass on the rendered dashboards. Use this skill whenever the user mentions Grafana, dashboards, AI or LLM monitoring or observability, token costs, AI FinOps, LLMOps, agents or RAG, model adoption, AI Act compliance, or Prometheus/Loki/Tempo applied to AI — even without the word dashboard. Also use it to audit an existing Grafana or an AI stack that emits nothing yet.
 ---
 
@@ -64,6 +65,8 @@ Seven blueprints. Choose from the request plus the capability map (do not re-ask
 
 ### Phase 4 — Forge and deploy
 
+**Confirm before writing to a production instance.** `--deploy` and `--with-alerts` create a folder, upsert dashboards and provision alert rules on a live Grafana. Before the first deployment against an instance you have not written to in this session, state plainly what will be created (folder name, dashboard count, alert count) and get an explicit go-ahead. `--dry-run` produces the JSON without touching anything and is the right default when the target is unfamiliar. Re-running afterwards is safe — deterministic UIDs make it an update, never a duplicate.
+
 ```bash
 python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints auto --deploy --with-alerts
 python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints finops,governance --deploy
@@ -103,7 +106,7 @@ The scripts cover the deterministic core. To extend (extra panels, specific quer
 
 ## Known pitfalls
 
-- **OTel→Prometheus suffixes vary**: `gen_ai.client.token.usage` may surface as `gen_ai_client_token_usage_token_*`, `..._tokens_*`, or without a unit. The resolver matches on prefixes captured in Phase 1; never hardcode a name without checking the capability map.
+- **OTel→Prometheus suffixes vary**: `gen_ai.client.token.usage` may surface as `gen_ai_client_token_usage_token_*`, `..._tokens_*`, or without a unit. The resolver matches on prefixes captured in Phase 1; always resolve names against the capability map rather than hardcoding them.
 - **Export path changes the names**: an exporter `namespace` prefix breaks anchored regexes, and `translation_strategy: NoTranslation` keeps OTel dots (`gen_ai.client.token.usage`), which then require the quoted `{"name", label="v"}` selector syntax — a bare dotted name returns HTTP 400. Discovery and query rendering handle all three cases; see `references/instrumentation_guide.md` §6b.
 - **Cardinality**: never group by `gen_ai.conversation.id` or any unique ID in a time series. The forge drops group-by labels above 300 values and bounds grouped panels with `topk`.
 - **Tiered pricing**: some models change price beyond a context threshold; the registry carries `tiered_pricing` and the cost panel then notes "low estimate".

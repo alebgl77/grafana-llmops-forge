@@ -3,13 +3,13 @@
 #   make demo   → up + attente + forge + URLs
 services:
   emitter:
-    image: python:3.12-slim
+    image: python:3.12-slim-bookworm
     command: python /app/emitter.py --port 9109
     volumes: ["./emitter.py:/app/emitter.py:ro"]
     ports: ["9109:9109"]
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:v3.14.0
     command:
       - --config.file=/etc/prometheus/prometheus.yml
       - --storage.tsdb.retention.time=6h
@@ -21,7 +21,7 @@ services:
     depends_on: [emitter]
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:12.3.0
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin

@@ -104,7 +104,8 @@ réplique.
 ## 5. GPU — dcgm-exporter (NVIDIA)
 
 ```bash
-docker run -d --gpus all --rm -p 9400:9400 nvcr.io/nvidia/k8s/dcgm-exporter:latest
+# Épingler la version : `:latest` rend le déploiement non reproductible
+docker run -d --gpus all --rm -p 9400:9400 nvcr.io/nvidia/k8s/dcgm-exporter:4.2.3-4.1.1-ubuntu22.04
 # K8s : helm install dcgm gpu-helm-charts/dcgm-exporter
 ```
 

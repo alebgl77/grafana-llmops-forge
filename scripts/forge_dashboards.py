@@ -989,7 +989,7 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
     d'une règle d'alerte n'est pas celui d'un panel), et burn-rate multi-fenêtres
     pour le taux d'erreur — un seuil unique sur la dernière valeur alerte trop
     tard sur les pannes lentes et trop souvent sur les pics inoffensifs."""
-    rules, org = [], ctx.org_id
+    alert_rules, org = [], ctx.org_id
     q = ctx.primary
     budget = max(1 - slo_target, 1e-4)
     if q:
@@ -1001,7 +1001,7 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
             if not (r_fast and r_slow):
                 continue
             thr = factor * budget
-            rules.append(_rule(
+            alert_rules.append(_rule(
                 name, f"LLM · Burn-rate {'rapide' if factor > 10 else 'lent'} "
                       f"({fast}/{slow}) — budget d'erreur SLO {slo_target:.1%}",
                 q.s.ds_uid,
@@ -1013,7 +1013,7 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
         # --- signal perdu : NoData DOIT alerter, c'est le cas qu'on veut attraper
         rr = q.req_rate(w="10m")
         if rr:
-            rules.append(_rule(
+            alert_rules.append(_rule(
                 "llm-signal-lost", "LLM · Signal perdu (pipeline télémétrie)",
                 q.s.ds_uid, f"({rr}) or vector(0)", 1e-9, "lt", folder_uid,
                 "Plus aucun trafic LLM mesuré, ou datasource injoignable : "
@@ -1021,21 +1021,21 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
                 "warning", "15m", "Alerting", org))
         spend = cost_rate_expr(q, ctx.matched, window="10m", recorded=ctx.recorded)
         if spend:
-            rules.append(_rule(
+            alert_rules.append(_rule(
                 "llm-daily-budget", "LLM · Budget quotidien dépassé", q.s.ds_uid,
                 f"({spend}) * 86400", daily_budget, "gt", folder_uid,
                 f"Rythme de dépense > {daily_budget} USD/jour.",
                 "warning", "30m", "OK", org))
         ttft = getattr(q, "ttft", None)
         if ttft:
-            rules.append(_rule(
+            alert_rules.append(_rule(
                 "llm-ttft-p95", "LLM · TTFT p95 > 3 s", q.s.ds_uid,
                 q.pXX(ttft, 0.95, w="10m"), 3, "gt", folder_uid,
                 "Le premier token met > 3 s (p95) : saturation probable.",
                 "warning", "10m", "OK", org))
     qv = ctx.q.get("vllm")
     if qv and qv.kv:
-        rules.append(_rule(
+        alert_rules.append(_rule(
             "vllm-kv-cache", "vLLM · KV cache > 92 %", qv.s.ds_uid,
             f"max({qv.kv})", 0.92, "gt", folder_uid,
             "Saturation KV cache : préemptions et latence en vue.",
@@ -1045,14 +1045,14 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
         sc = (qe.s.find("score", "_bucket") or qe.s.find("evaluation", "_bucket"))
         if sc:
             base = sc[:-len("_bucket")]
-            rules.append(_rule(
+            alert_rules.append(_rule(
                 "llm-quality-drop", "LLM · Score d'évaluation p50 < 0.7",
                 qe.s.ds_uid,
                 f"histogram_quantile(0.5, sum by(le)(rate({base}_bucket[30m])))",
                 0.7, "lt", folder_uid,
                 "La qualité médiane des réponses évaluées passe sous le seuil.",
                 "warning", "30m", "OK", org))
-    return rules
+    return alert_rules
 
 
 # --------------------------------------------------------------------------- #
@@ -1268,12 +1268,12 @@ def main() -> int:
             manifest["dashboards"][i]["url"] = client.dashboard_url(res, board.d)
             print(f"  ↗ {manifest['dashboards'][i]['url']}")
         if args.with_alerts:
-            rules = build_alerts(ctx, folder["uid"], args.daily_budget,
+            alert_rules = build_alerts(ctx, folder["uid"], args.daily_budget,
                                  args.slo_target)
             if not client.contact_points():
                 print("  ⚠ aucun contact point configuré : les alertes se "
                       "déclencheront sans destinataire (Alerting → Contact points).")
-            for r in rules:
+            for r in alert_rules:
                 try:
                     client.upsert_alert_rule(r)
                     print(f"  ⚑ alerte : {r['title']}")

@@ -207,7 +207,7 @@ check("toutes les références citées existent", not missing, str(missing))
 # ------------------------------------------------- 9. correctifs v1.2 (régressions)
 print("\n[9] Correctifs v1.2")
 import subprocess as sp, glob as gl
-r, d = run_forge(json.load(open(f"{SK}/scripts/_st.json")) if os.path.exists(f"{SK}/scripts/_st.json") else __import__('sys').modules['forge_dashboards'].selftest_capability(), "audit_v12", extra=("--export-portable",))
+r, d = run_forge(json.load(open(f"{SK}/scripts/_st.json")) if os.path.exists(f"{SK}/scripts/_st.json") else forge_dashboards.selftest_capability(), "audit_v12", extra=("--export-portable",))
 check("forge selftest-like exit 0", r.returncode == 0, r.stderr[-200:])
 bs = load_boards(d)
 check("7 blueprints dont quality", "quality" in bs and len(bs) == 7, str(sorted(bs)))

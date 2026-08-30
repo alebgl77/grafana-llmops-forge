@@ -31,6 +31,13 @@ demo-down: ## Tout arrêter et nettoyer
 	docker compose -f demo/docker-compose.yml down -v
 	rm -rf demo/generated demo/capability_map.json demo/rules/*.yml
 
+package: ## Construire le .skill (nettoie le bytecode avant copie)
+	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]; [p.unlink() for p in pathlib.Path('.').rglob('*.pyc')]" 
+	@echo "arbre nettoyé — packager depuis skill-creator"
+
+scan: ## Analyse de sécurité du paquet livré (NVIDIA SkillSpector)
+	skillspector scan dist/ --no-llm || true
+
 selftest: ## Rendu des 7 blueprints hors ligne
 	cd scripts && python3 forge_dashboards.py --selftest --with-alerts
 

@@ -29,8 +29,13 @@ jobs:
         run: |
           python demo/emitter.py --port 9109 --seed-minutes 20 &
           sleep 6
-          V=$(curl -s https://api.github.com/repos/prometheus/prometheus/releases/latest | python -c "import sys,json;print(next(a['browser_download_url'] for a in json.load(sys.stdin)['assets'] if 'linux-amd64.tar.gz' in a['name']))")
-          curl -sL "$V" -o p.tgz && tar xzf p.tgz && mv prometheus-*linux-amd64 prom
+          # Version ET empreinte épinglées : un téléchargement 'latest' dans la CI
+          # est une dépendance mouvante que personne ne relit.
+          PROM_VER=3.14.0
+          PROM_SHA=f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d
+          curl -sL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VER}/prometheus-${PROM_VER}.linux-amd64.tar.gz" -o p.tgz
+          echo "${PROM_SHA}  p.tgz" | sha256sum -c -
+          tar xzf p.tgz && mv prometheus-${PROM_VER}.linux-amd64 prom
           mkdir -p /tmp/rules
           printf 'global: {scrape_interval: 5s, evaluation_interval: 5s}\nrule_files: ["/tmp/rules/*.yml"]\nscrape_configs:\n  - job_name: e\n    static_configs: [{targets: ["localhost:9109"]}]\n' > /tmp/prom.yml
           ./prom/prometheus --config.file=/tmp/prom.yml --storage.tsdb.path=/tmp/tsdb --web.listen-address=:9090 &
