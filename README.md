@@ -24,6 +24,8 @@ Your teams ship LLM features. Your CFO asks what they cost. Your board asks abou
 
 `grafana-llmops-forge` fixes that with **one prerequisite: a reachable Grafana** (URL + service-account token). Everything else is discovered, not assumed.
 
+**Runs anywhere your platform already is.** Prometheus, Thanos, Mimir, VictoriaMetrics, AWS AMP, Grafana Cloud or Kubernetes under the Prometheus Operator — the generated rules ship in both the portable format and a `PrometheusRule` manifest. Dashboards render in English by default, French with `--locale fr`. Governance evidence reads against the **EU AI Act, ISO/IEC 42001 and NIST AI RMF** — `--framework` picks which.
+
 > **Not the same thing as Grafana Cloud AI Observability.** Grafana shipped its own AI/agent observability (public preview, April 2026) — it's excellent, it's **Cloud-only**, and it asks you to adopt *their* SDK. This works on **self-hosted OSS**, on whatever telemetry you already emit, and adds the two things a European CIO actually gets asked about: **cost by provider sovereignty** and **EU AI Act evidence**. See the [FAQ](#faq).
 
 ```bash
@@ -66,6 +68,9 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 
 Blueprints only materialize when the underlying signals exist — no empty panels, ever.
 
+<div align="center"><img src="docs/assets/governance-crosswalk.svg" alt="One telemetry layer, three regulatory readings" width="100%"/>
+<sub><i>Diagram, not a screenshot. The measured panels are identical whichever framework you select — only the reading changes.</i></sub></div>
+
 Plus **provisioned SLO alerts** built the way SREs actually want them: **multi-window burn-rate** on the error budget (5m/1h page, 30m/6h ticket, `--slo-target`), telemetry-signal-lost (with `noDataState: Alerting` — the alert that catches a dead pipeline must not go quiet when the pipeline dies), daily budget breach, TTFT p95, vLLM KV-cache saturation, and eval-score drop.
 
 ### Cost that scales
@@ -104,6 +109,27 @@ Pure Python 3.8+ stdlib. No pip install. The three commands at the top of this R
 Run discovery anyway. You'll get a prioritized gap report, and [`references/instrumentation_guide.md`](references/instrumentation_guide.md) contains copy-paste configs ordered by value/effort: **LiteLLM gateway (~30 min → native USD spend)** → OTel GenAI SDK setup → vLLM/TGI scrape → dcgm-exporter → Loki retention for AI-Act evidence.
 </details>
 
+## How this is verified
+
+Every defect found in this project so far has been **silent**: a model billed at
+another model's price, a regex that parsed everywhere except against the real
+engine, an `or` that dropped half the cost, an alert that stayed quiet exactly
+when its subject failed, a datasource setting that skewed every `rate()`. None
+crashed anything. All produced a plausible, wrong dashboard — which is the
+failure mode that matters in observability, and the reason the test layers are
+what they are:
+
+| Layer | What it can catch | Where |
+|---|---|---|
+| Offline harness, four simulated instance topologies | structure, regressions, escaping, cardinality, packaging, supply chain | `tests/audit_harness.py` |
+| Live query check against a real Prometheus | queries that are valid but return nothing, or error at query time | `tests/live_query_check.py` |
+| Value invariants | numbers that exist but disagree with each other — ordered quantiles, bounded ratios, cost paths converging | `tests/value_invariants.py` |
+| End-to-end deploy on the demo stack | the full pipeline against a real Grafana | CI `e2e` job |
+| Vision pass on rendered panels | what only an eye sees: empty panels, implausible scales | `scripts/visual_audit.py` |
+
+All of it runs in CI on every push, with no network access to anything but your
+own infrastructure.
+
 ## 🔒 Security model
 
 Skills execute code — [a 2026 Snyk audit found 36% of published skills had at least one flaw](https://github.com/obviousworks/Claude-AI-skills-collection-2026#security). This repo is designed to be auditable in one sitting:
@@ -133,6 +159,7 @@ scripts/
 references/
   model_registry.json         # 30+ models: $/1M in·out·cached, context, sovereignty, GPAI
   locale.fr.json              # label translations (--locale fr)
+  ai_governance_frameworks.md # crosswalk: EU AI Act × ISO/IEC 42001 × NIST AI RMF
   query_library.md            # PromQL/LogQL/TraceQL per dialect, anti-patterns
   dashboard_blueprints.md     # panel-by-panel specs + optional extensions
   instrumentation_guide.md    # exact configs to close each gap
@@ -141,7 +168,9 @@ references/
   visual_verification.md      # vision checklist, failure signatures → fixes
   grafana_api_compat.md       # 3 API generations, editions matrix, schema v2 notes
 demo/                         # docker-compose stack: Grafana + Prometheus + synthetic LLM emitter
+tools/package.py              # builds the .skill reproducibly and verifies it matches sources
 tests/live_query_check.py     # runs every generated query against a real Prometheus
+tests/value_invariants.py     # checks the numbers agree with each other, not just exist
 tests/audit_harness.py        # offline checks across 4 instance topologies + regressions
 ```
 
@@ -163,10 +192,12 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 
 ## Roadmap
 
+- [ ] `--diff` against what is already deployed, for change-advisory boards
 - [ ] Native schema-v2 output (tabs/conditional layouts) for Grafana 13+ as-code shops
 - [ ] Cache-savings & budget burn-down panels (specs in `dashboard_blueprints.md`)
 - [ ] Conversation-level cost attribution via exemplars (click a cost spike → the exact agent run)
 - [ ] OpenAI/Gemini usage-API pollers for orgs with zero telemetry
+- [ ] More governance readings (Colorado AI Act, Korea AI Framework Act) — a row in the crosswalk, not new instrumentation
 - [ ] Terraform/Grafana-as-code export mode
 
 ## Support

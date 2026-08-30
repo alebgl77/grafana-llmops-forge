@@ -1,0 +1,111 @@
+<svg width="1240" height="620" viewBox="0 0 1240 620" xmlns="http://www.w3.org/2000/svg" font-family="Inter,-apple-system,Segoe UI,Roboto,sans-serif">
+  <defs>
+    <linearGradient id="sig" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#F46800"/><stop offset="1" stop-color="#FF9830"/>
+    </linearGradient>
+    <marker id="a" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+      <path d="M0 0 L10 5 L0 10 z" fill="#484f58"/>
+    </marker>
+    <filter id="sh"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-color="#000" flood-opacity=".45"/></filter>
+  </defs>
+  <style>
+    .h{fill:#e6edf3;font-size:15px;font-weight:700;letter-spacing:.2px}
+    .s{fill:#8b949e;font-size:12.5px}
+    .c{font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
+    .box{fill:#161b22;stroke:#30363d;rx:8}
+  </style>
+  <rect width="1240" height="620" fill="#0d1117"/>
+
+  <text x="40" y="46" fill="#e6edf3" font-size="23" font-weight="800">One telemetry layer, three regulatory readings</text>
+  <text x="40" y="70" class="s" font-size="13.5">The frameworks differ in vocabulary and in legal force. They agree almost entirely on what has to be observable.</text>
+
+  <!-- colonne signaux -->
+  <rect x="40" y="96" width="330" height="44" rx="8" fill="#1c1207" stroke="#F46800"/>
+  <text x="205" y="124" text-anchor="middle" class="h" fill="#FF9830">Observable signal — emitted once</text>
+
+  <g class="s" font-size="12.5">
+    <rect x="40" y="152" width="330" height="52" class="box"/>
+    <text x="56" y="174" class="h" font-size="13">Logs, continuous and retained</text>
+    <text x="56" y="192">Loki volume per service · retention posture</text>
+
+    <rect x="40" y="212" width="330" height="52" class="box"/>
+    <text x="56" y="234" class="h" font-size="13">Production systems monitored</text>
+    <text x="56" y="252">latency, errors, TTFT, burn-rate alerts</text>
+
+    <rect x="40" y="272" width="330" height="52" class="box"/>
+    <text x="56" y="294" class="h" font-size="13">Inventory of models consumed</text>
+    <text x="56" y="312">auto-detected from live label values</text>
+
+    <rect x="40" y="332" width="330" height="52" class="box"/>
+    <text x="56" y="354" class="h" font-size="13">Provider dependency &amp; jurisdiction</text>
+    <text x="56" y="372">spend split by provider region: EU · US · Asia</text>
+
+    <rect x="40" y="392" width="330" height="52" class="box"/>
+    <text x="56" y="414" class="h" font-size="13">Quality and drift measured</text>
+    <text x="56" y="432">eval score p50/p10 · guardrail blocks</text>
+
+    <rect x="40" y="452" width="330" height="52" class="box"/>
+    <text x="56" y="474" class="h" font-size="13">Incidents detected and escalated</text>
+    <text x="56" y="492">firing alerts, timestamped</text>
+  </g>
+
+  <!-- flèches -->
+  <g stroke="#484f58" stroke-width="1.5" fill="none" marker-end="url(#a)">
+    <path d="M374 178 H 420"/><path d="M374 238 H 420"/><path d="M374 298 H 420"/>
+    <path d="M374 358 H 420"/><path d="M374 418 H 420"/><path d="M374 478 H 420"/>
+  </g>
+
+  <!-- trois lectures -->
+  <g>
+    <rect x="424" y="96" width="256" height="44" rx="8" fill="#0f1b12" stroke="#2ea043" filter="url(#sh)"/>
+    <text x="552" y="115" text-anchor="middle" class="h" fill="#3fb950">EU AI Act</text>
+    <text x="552" y="132" text-anchor="middle" class="s" font-size="11">Reg. (EU) 2024/1689 · binding law</text>
+
+    <rect x="692" y="96" width="256" height="44" rx="8" fill="#0f1720" stroke="#388bfd" filter="url(#sh)"/>
+    <text x="820" y="115" text-anchor="middle" class="h" fill="#79c0ff">ISO/IEC 42001:2023</text>
+    <text x="820" y="132" text-anchor="middle" class="s" font-size="11">certifiable AIMS · Annex A</text>
+
+    <rect x="960" y="96" width="240" height="44" rx="8" fill="#1a1420" stroke="#a371f7" filter="url(#sh)"/>
+    <text x="1080" y="115" text-anchor="middle" class="h" fill="#d2a8ff">NIST AI RMF 1.0</text>
+    <text x="1080" y="132" text-anchor="middle" class="s" font-size="11">AI 100-1 · voluntary, US de facto</text>
+  </g>
+
+  <g class="c">
+    <g fill="#3fb950">
+      <text x="552" y="180" text-anchor="middle">Art. 12 · Art. 26(6)</text>
+      <text x="552" y="240" text-anchor="middle">Art. 72 post-market</text>
+      <text x="552" y="300" text-anchor="middle">Art. 26 · GPAI chain</text>
+      <text x="552" y="360" text-anchor="middle">GPAI contractual terms</text>
+      <text x="552" y="420" text-anchor="middle">Art. 15 accuracy</text>
+      <text x="552" y="480" text-anchor="middle">Art. 73</text>
+    </g>
+    <g fill="#79c0ff">
+      <text x="820" y="180" text-anchor="middle">A.6.2.8</text>
+      <text x="820" y="240" text-anchor="middle">A.6.2.6 · Cl. 9.1</text>
+      <text x="820" y="300" text-anchor="middle">A.10</text>
+      <text x="820" y="360" text-anchor="middle">A.10</text>
+      <text x="820" y="420" text-anchor="middle">A.6.2.6</text>
+      <text x="820" y="480" text-anchor="middle">A.8</text>
+    </g>
+    <g fill="#d2a8ff">
+      <text x="1080" y="180" text-anchor="middle">MANAGE 4.1</text>
+      <text x="1080" y="240" text-anchor="middle">MEASURE 3.x · MANAGE 4.1</text>
+      <text x="1080" y="300" text-anchor="middle">GOVERN 6.1 · MAP 4.1</text>
+      <text x="1080" y="360" text-anchor="middle">GOVERN 6.2</text>
+      <text x="1080" y="420" text-anchor="middle">MEASURE 2.x</text>
+      <text x="1080" y="480" text-anchor="middle">MANAGE 4.x</text>
+    </g>
+  </g>
+
+  <g stroke="#21262d" stroke-width="1">
+    <line x1="424" y1="152" x2="1200" y2="152"/><line x1="424" y1="212" x2="1200" y2="212"/>
+    <line x1="424" y1="272" x2="1200" y2="272"/><line x1="424" y1="332" x2="1200" y2="332"/>
+    <line x1="424" y1="392" x2="1200" y2="392"/><line x1="424" y1="452" x2="1200" y2="452"/>
+    <line x1="424" y1="512" x2="1200" y2="512"/>
+    <line x1="686" y1="152" x2="686" y2="512"/><line x1="954" y1="152" x2="954" y2="512"/>
+  </g>
+
+  <rect x="40" y="534" width="1160" height="56" rx="8" fill="#161b22" stroke="#30363d"/>
+  <text x="60" y="556" class="s" font-size="12.5"><tspan fill="#e6edf3" font-weight="700">Proves</tspan> that monitoring happened: logging continuity, a model inventory matching reality, jurisdictional dependency, measured quality, surfaced incidents.</text>
+  <text x="60" y="577" class="s" font-size="12.5"><tspan fill="#f85149" font-weight="700">Does not prove</tspan> a management system exists, a risk assessment was done, human oversight is effective, or retention is configured. Evidence layer — not a legal opinion, not a certification.</text>
+</svg>
