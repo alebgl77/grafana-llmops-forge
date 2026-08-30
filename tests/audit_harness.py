@@ -476,6 +476,62 @@ _inline = [l for l in _gi if re.search(r"\S\s+#", l) and not l.lstrip().startswi
 check("aucun commentaire en fin de ligne (git ne les interprete pas)",
       not _inline, str(_inline[:1]))
 
+# ------------------------------- 18. chaine d'approvisionnement CI
+print("\n[18] Durcissement des workflows")
+import yaml as _y3
+_wf = sorted(pathlib.Path(os.path.join(SK, ".github", "workflows")).glob("*.yml"))
+check("des workflows sont presents", len(_wf) >= 3, str(len(_wf)))
+_txt = {f.name: f.read_text() for f in _wf}
+_uses = [(n, u) for n, s in _txt.items()
+         for u in re.findall(r"uses:\s*(\S+)", s)]
+_unpinned = [(n, u) for n, u in _uses if not re.search(r"@[0-9a-f]{40}$", u)]
+check("toute action est epinglee a un SHA de commit (tag mutable = reprise possible)",
+      not _unpinned, str(_unpinned[:2]))
+_docs = {n: _y3.safe_load(s) for n, s in _txt.items()}
+check("jeton en lecture seule par defaut (permissions: {} au niveau workflow)",
+      all(d.get("permissions") == {} for d in _docs.values()),
+      str({n: d.get("permissions") for n, d in _docs.items()}))
+check("chaque job declare ses permissions",
+      all(j.get("permissions") is not None
+          for d in _docs.values() for j in d["jobs"].values()))
+check("aucun declencheur pull_request_target",
+      not any("pull_request_target" in s for s in _txt.values()))
+check("checkout sans credentials persistants",
+      all("persist-credentials: false" in s
+          for n, s in _txt.items() if "actions/checkout" in s))
+_runs = [(n, r) for n, d in _docs.items() for j in d["jobs"].values()
+         for st in j["steps"] for r in [st.get("run", "")] if r]
+_inj = [(n, r[:60]) for n, r in _runs if re.search(r"\$\{\{\s*(github|inputs|steps)\.", r)]
+check("aucune interpolation d'expression dans un bloc run (injection de script)",
+      not _inj, str(_inj[:1]))
+check("dependabot suit les actions epinglees",
+      os.path.exists(os.path.join(SK, ".github", "dependabot.yml")))
+check("CODEOWNERS present (revue obligatoire des chemins sensibles)",
+      os.path.exists(os.path.join(SK, ".github", "CODEOWNERS")))
+
+# --------------------------------- 19. aucun secret en dur dans l'arbre
+print("\n[19] Fuite de secrets")
+_SECRET_RX = "|".join([
+    r"glsa_[A-Za-z0-9]{10}", r"gh[pousr]_[A-Za-z0-9]{20}",
+    r"sk-ant-[A-Za-z0-9_-]{20}", r"sk-[A-Za-z0-9]{32}",
+    r"AKIA[0-9A-Z]{16}", r"-----BEGIN [A-Z ]*PRIVATE KEY-----",
+    r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}",
+    r"xox[baprs]-[A-Za-z0-9-]{10}",
+])
+_leak = subprocess.run(["grep", "-rIlE", _SECRET_RX, "--exclude-dir=.git",
+                        "--exclude-dir=dist", "--exclude-dir=__pycache__", "."],
+                       cwd=SK, capture_output=True, text=True).stdout.strip()
+check("aucun jeton, cle API, cle privee ou JWT en dur", not _leak, _leak[:140])
+_env_reads = subprocess.run(
+    ["grep", "-rInE", r"os\.environ|os\.getenv", "--include=*.py", "scripts", "tools"],
+    cwd=SK, capture_output=True, text=True).stdout
+check("les identifiants ne viennent que de l'environnement",
+      "GRAFANA_TOKEN" in _env_reads and "GRAFANA_URL" in _env_reads)
+_logged = subprocess.run(
+    ["grep", "-rnE", r"print\(.*(token|TOKEN|password|PASSWORD)", "--include=*.py",
+     "scripts", "tools"], cwd=SK, capture_output=True, text=True).stdout.strip()
+check("aucun identifiant imprime sur la sortie", not _logged, _logged[:120])
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()

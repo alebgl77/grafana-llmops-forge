@@ -1,0 +1,12 @@
+version: 2
+updates:
+  # Les actions sont épinglées à des SHA de commit : sans mise à jour
+  # automatisée, un pin devient une version figée et vulnérable.
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule: {interval: weekly}
+    groups:
+      actions: {patterns: ["*"]}
+  - package-ecosystem: docker
+    directory: "/demo"
+    schedule: {interval: weekly}

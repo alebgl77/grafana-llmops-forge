@@ -2,30 +2,42 @@ name: CI
 on:
   push: {branches: [main]}
   pull_request:
-permissions: {contents: read}
+permissions: {}
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   audit:
+    permissions: {contents: read}  # lecture du dépôt uniquement
     runs-on: ubuntu-latest
     strategy:
       matrix: {python: ["3.9", "3.13"]}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with: {python-version: "${{ matrix.python }}"}
       - name: Offline selftest (7 blueprints, zero network)
         run: cd scripts && python forge_dashboards.py --selftest --with-alerts
       - name: Audit harness (4 topologies + regressions)
         run: python tests/audit_harness.py
+      - name: Workflows are code — lint them too
+        if: matrix.python == '3.13'
+        run: |
+          pip install --quiet zizmor==1.29.0
+          zizmor --no-online-audits --persona=regular .github/workflows/
       - name: Package builds reproducibly and matches sources
         run: python tools/package.py && python tools/package.py --verify
       - name: Registry JSON is valid & priced models have sources
         run: python -c "import json; r=json.load(open('references/model_registry.json')); assert r['models'] and r['_meta']['sources']; print(len(r['models']),'models OK')"
 
   live-queries:
+    permissions: {contents: read}  # lecture du dépôt uniquement
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065  # v5.6.0
         with: {python-version: "3.12"}
       - name: Start Prometheus + synthetic emitter (pinned images, no downloads)
         run: |
@@ -43,9 +55,11 @@ jobs:
         run: python tests/value_invariants.py --prometheus http://localhost:9090
 
   e2e:
+    permissions: {contents: read}  # lecture du dépôt uniquement
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262  # v4.4.0
+        with: {persist-credentials: false}
       - name: Boot demo stack (Grafana + Prometheus + synthetic LLM metrics)
         env: {GF_PLUGINS: ""}          # renderer inutile ici, évite un install réseau au boot
         run: docker compose -f demo/docker-compose.yml up -d

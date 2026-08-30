@@ -1,0 +1,8 @@
+# Toute modification passe par une revue. Les chemins sensibles sont listés
+# explicitement pour qu'un changement de CI ou de packaging ne se glisse pas
+# dans une PR fonctionnelle.
+*                       @alebgl77
+/.github/               @alebgl77
+/tools/                 @alebgl77
+/scripts/               @alebgl77
+SECURITY.md             @alebgl77
