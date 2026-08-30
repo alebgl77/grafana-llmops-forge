@@ -1,5 +1,16 @@
 # Changelog
 
+## [1.5.2] — 2026-08-30
+### Fixed — la documentation avait pris du retard sur le produit
+- **La description du SKILL.md ne mentionnait ni ISO 42001, ni NIST, ni les langues.** C'est le texte qui déclenche le skill : un DSI demandant des preuves ISO 42001 dans Grafana ne l'aurait pas activé. Défaut fonctionnel, pas cosmétique.
+- **Le frontmatter est devenu invalide en le corrigeant** — un `: ` dans un scalaire non quoté — et le harnais ne l'a pas vu : il vérifiait la longueur par regex, jamais que le YAML parse. Un skill au frontmatter cassé ne charge pas du tout. Contrôle ajouté.
+- `docs/README.fr.md` était figé avant l'internationalisation, la gouvernance multi-référentiels et le format Kubernetes. Réécrit.
+- Le brouillon Show HN ignorait ISO/NIST et l'anglais par défaut, deux arguments de vente majeurs.
+- Le playbook de lancement recommandait les listes awesome **avant** la traction. L'expérience dit l'inverse : plusieurs listes filtrent sur un seuil d'étoiles. Séquence corrigée, avec l'état réel de la première vague.
+
+### Added
+- Harnais section [24] : la documentation utilisateur, le brouillon de lancement et les liens internes sont comparés au produit à chaque exécution.
+
 ## [1.5.1] — 2026-08-30
 ### Fixed — les visuels avaient dérivé du produit
 Confrontés programmatiquement au code plutôt qu'à l'œil, les quatre schémas mentaient sur quatre points :

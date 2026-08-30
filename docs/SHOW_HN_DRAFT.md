@@ -67,12 +67,26 @@ cross-panel incoherence such as tokens/s above zero while cost sits at zero,
 which means a model didn't match the registry. HTTP 200 means the JSON was
 accepted, not that the render is right.
 
-Other things people might care about: zero dependencies, stdlib only, about
-2000 lines, deliberately readable in one sitting given that a Snyk audit this
+Other things people might care about. Zero dependencies, stdlib only, about
+2500 lines, deliberately readable in one sitting given that a Snyk audit this
 year found roughly a third of published agent skills had at least one flaw.
 Cost scales through generated Prometheus recording rules, so prices become
 series and the FinOps panels collapse to one O(1) query instead of a 2N-term
-sum. It works as a plain CLI or as an agent skill.
+sum; those rules also ship as a PrometheusRule manifest, because most enterprise
+clusters run the Prometheus Operator and will not read a flat rule file.
+
+The governance board reads the same telemetry against the EU AI Act, ISO/IEC
+42001 and NIST AI RMF, selected with --framework. That is less clever than it
+sounds: the frameworks differ in vocabulary and legal force but agree almost
+entirely on what has to be observable, so the same log volume evidences Art. 12,
+A.6.2.8 and MANAGE 4.1. The measured panels are identical either way. The board
+also states what it does not prove — a management system, a risk assessment,
+effective human oversight — because a governance dashboard oversold is worse
+than none.
+
+Dashboards render in English by default, French with --locale; adding a language
+is a JSON file rather than a change to any blueprint. It works as a plain CLI or
+as an agent skill.
 
 make demo boots Grafana, Prometheus and a synthetic workload and deploys the
 whole thing in about a minute if you want to poke at it before reading code.

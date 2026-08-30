@@ -11,7 +11,27 @@ Interne au repo (pas listé dans le README). Séquencement optimisé : d'abord l
 5. Activer Discussions ; épingler une discussion « Show us your forge output (redacted) » — les captures des autres = contenu de preuve gratuit.
 6. Vérifier que le badge CI passe au vert (le workflow tourne offline, aucune raison d'échouer).
 
-## J1-J3 — Les listes GitHub (PR ciblées)
+## Ordre corrigé par l'expérience : traction D'ABORD, listes ensuite
+
+La première campagne de soumissions a été instructive. `BehiSecc` a fermé la PR
+avec un motif explicite : *« the AI skill currently has fewer than 60 stars, and
+we're only accepting skills above that threshold »*. Plusieurs listes de skills
+filtrent sur les étoiles — **elles récompensent la traction, elles ne la créent
+pas**. Soumettre trop tôt brûle une cartouche : une fois la PR fermée, resoumettre
+agace le mainteneur.
+
+Séquence corrigée :
+1. Show HN, puis Reddit à 24-48 h d'intervalle → premières centaines d'étoiles
+2. Grafana Community Dashboards (publier le JSON portable via `--export-portable`)
+3. **Ensuite** les listes de skills, une fois passé le seuil de 60-100 étoiles
+4. Marketplace Anthropic en dernier
+
+État de la première vague : `adriannovegil/awesome-observability` **mergée** ;
+`ComposioHQ`, `travisvn` et `obviousworks` ouvertes ; `tensorchord` et `BehiSecc`
+fermées — la seconde sur le seuil d'étoiles, la première avec des contrôles CI en
+échec à vérifier avant resoumission.
+
+## Les listes GitHub (PR ciblées) — après la traction
 
 Règle d'or : **une PR = une ligne au format exact de la liste**, description ≤ 1 phrase, pas d'auto-promo dans le texte de PR. Ordre de priorité :
 

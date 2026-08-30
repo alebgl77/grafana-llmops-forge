@@ -224,7 +224,26 @@ check("uids mode OK", r.returncode == 0 and "llmops-x-1" in r.stdout, r.stderr[-
 print("\n[8] SKILL.md")
 txt = open(f"{SK}/SKILL.md").read()
 desc = re.search(r"description: (.+)", txt).group(1)
-check(f"description {len(desc)} ≤ 1024", len(desc) <= 1024)
+check(f"description {len(desc)} <= 1024", len(desc) <= 1024)
+import yaml as _yfm
+_fm_ok, _fm = True, {}
+try:
+    _fm = _yfm.safe_load(txt.split("---")[1])
+    _fm_ok = isinstance(_fm, dict) and {"name", "description"} <= set(_fm)
+except Exception as _e:
+    _fm_ok, _fm = False, {"err": str(_e)[:90]}
+check("frontmatter SKILL.md parse en YAML (sinon le skill ne charge pas)",
+      _fm_ok, str(_fm)[:110])
+if _fm_ok:
+    check("description YAML-safe (pas de ': ' non quote)",
+          ": " not in _fm["description"],
+          _fm["description"][max(0, _fm["description"].find(": ") - 30):][:60])
+    _d = _fm["description"]
+    check("le declencheur couvre les trois referentiels de gouvernance",
+          all(k in _d for k in ("AI Act", "42001", "NIST")),
+          [k for k in ("AI Act", "42001", "NIST") if k not in _d])
+    check("le declencheur mentionne les langues",
+          "French" in _d or "English" in _d)
 check("SKILL.md < 500 lignes", txt.count("\n") < 500, str(txt.count("\n")))
 refs = re.findall(r"references/[a-z_]+\.(?:md|json)", txt)
 missing = [f for f in set(refs) if not os.path.exists(f"{SK}/{f}")]
@@ -716,6 +735,36 @@ check("les panneaux du mockup existent vraiment", not _absent, str(_absent))
 _fr = [w for w in ("Dépense", "Coût", "souveraineté", "requête", "Rythme")
        if w in _mock]
 check("mockup en anglais, comme la sortie par defaut", not _fr, str(_fr))
+
+# ------------------------------------ 24. coherence narrative
+print("\n[24] Coherence de la documentation utilisateur")
+_fr = open(os.path.join(SK, "docs", "README.fr.md")).read()
+_hn = open(os.path.join(SK, "docs", "SHOW_HN_DRAFT.md")).read()
+_pb = open(os.path.join(SK, "docs", "LAUNCH_PLAYBOOK.md")).read()
+for _doc, _name in ((_fr, "README.fr"), (_hn, "Show HN")):
+    check(f"{_name} couvre les trois referentiels",
+          all(k in _doc for k in ("AI Act", "42001", "NIST")),
+          str([k for k in ("AI Act", "42001", "NIST") if k not in _doc]))
+    check(f"{_name} mentionne la langue de sortie",
+          "locale" in _doc or "English" in _doc or "anglais" in _doc)
+check("README.fr mentionne le format Kubernetes",
+      "PrometheusRule" in _fr or "Kubernetes" in _fr)
+check("README.fr donne le bon compte de modeles",
+      str(len(json.load(open(os.path.join(SK, "references",
+          "model_registry.json")))["models"])) in _fr)
+check("playbook : listes awesome apres la traction, pas avant",
+      "60" in _pb)
+# liens internes (hors conventions GitHub ../../actions|releases)
+_broken = []
+for _p in [os.path.join(SK, x) for x in ("README.md", "SKILL.md", "SECURITY.md",
+                                         "CONTRIBUTING.md")]:
+    _c = open(_p).read()
+    for _l in re.findall(r"\]\(([\w./-]+\.(?:md|json|yml|yaml|py|svg|png))\)", _c):
+        if _l.startswith("../../"):
+            continue
+        if not os.path.exists(os.path.normpath(os.path.join(os.path.dirname(_p), _l))):
+            _broken.append(f"{os.path.basename(_p)} -> {_l}")
+check("aucun lien interne casse", not _broken, str(_broken[:3]))
 
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
