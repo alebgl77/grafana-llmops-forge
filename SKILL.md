@@ -13,7 +13,7 @@ Turns any Grafana instance into an AI/LLM command centre for a platform team: di
 1. **Discovery-first, never assume.** Never generate a panel "just in case". Probe the instance and its datasources, capture the **real metric names**, and only build panels whose queries will return data. OTel exporters disagree on suffixes (`_seconds`, `_token`, `_total`): the capability map is the source of truth, not theory.
 2. **Four telemetry dialects, one mental model.** LLM signals arrive in four practical shapes: OTel GenAI conventions (`gen_ai_*` — Development status, v1.4x, opt-in `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`), LiteLLM gateway (`litellm_*`, native USD spend), inference engines (`vllm:*`, `tgi_*`), and GPU (`DCGM_*`). Evaluation signals (`gen_ai_evaluation_*`, RAGAS, guardrails) form a fifth, optional one. Each blueprint is translated into whatever is actually emitted.
 3. **Cost is computed, not hoped for.** Prefer recorded cost (`llm:cost_usd_per_second`), then native gateway spend, then on-the-fly composition against the bundled price registry. The registry carries a verification date; if it is older than 30 days and web search is available, refresh the prices of the **detected** models from the official pages BEFORE generating cost panels (protocol in `references/model_registry.json`, key `_meta.refresh_protocol`).
-4. **Governance is observable.** The AI Act requires logging (Art. 12), deployer-side retention of at least six months (Art. 26§6), serious-incident reporting (Art. 73) and transparency (Art. 50). The governance dashboard maps articles to measurable signals, with the verified post-Digital-Omnibus timeline. This is not legal advice — say so explicitly to the user.
+4. **Governance is observable, and the framework is a reading, not a rebuild.** The same telemetry answers three regimes: EU AI Act (Art. 12 logging, Art. 26(6) retention, Art. 73 incidents, Art. 50 transparency), ISO/IEC 42001 (A.6.2.6 operation and monitoring, A.6.2.8 event logs, A.9 use, A.10 suppliers) and NIST AI RMF (MANAGE 4.1 post-deployment monitoring, MEASURE 2.x evaluation, GOVERN 6.x third-party). `--framework` selects which readings the governance board renders; the measured panels are identical either way. Ask which regime applies before assuming the AI Act — it is the wrong default outside Europe. Crosswalk and caveats in `references/ai_governance_frameworks.md`. Never present this as legal advice or as certification.
 5. **Total idempotence.** Deterministic UIDs (name hash), upsert with overwrite, a single "AI Observability" folder. Re-running the forge is always safe. `--dry-run` covers everything that writes.
 6. **Graceful degradation.** No LLM signal is not a failure: produce an **instrumentation gap report** (what to wire, in which order, with the exact configs from `references/instrumentation_guide.md`), and still deploy the governance dashboard (it works without metrics).
 7. **Verified by eye, not just by API.** HTTP 200 proves the JSON was accepted, not that the render is correct. At strategic moments (post-deploy, handing over the governance dashboard, after closing a gap), capture the real rendering (`visual_audit.py`: native Grafana renderer, Playwright fallback), then **inspect the PNGs with vision** using the checklist in `references/visual_verification.md` — scale plausibility ($, latencies), "No data" panels, cross-panel coherence — and loop remediation (max two iterations). Never announce a successful deployment without a visual verdict when capture is possible.
@@ -61,7 +61,7 @@ Seven blueprints. Choose from the request plus the capability map (do not re-ask
 | Internal adoption (teams, apps, model mix) | `adoption` | otel or litellm |
 | Self-hosted inference (vLLM/TGI + GPU) | `inference` | vllm/tgi/ollama or DCGM detected |
 | Quality & evaluations | `quality` | eval scores detected (RAGAS, LLM judge, guardrails) |
-| EU AI Act governance | `governance` | always available (degrades gracefully) |
+| Governance evidence (EU AI Act, ISO/IEC 42001, NIST AI RMF) | `governance` | always available (degrades gracefully); `--framework` picks the readings |
 
 ### Phase 4 — Forge and deploy
 
@@ -77,6 +77,7 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 #   --export-portable       ${DS_*} JSON, publishable on grafana.com/dashboards
 #   --datasource <uid|name> pin one datasource
 #   --locale fr             translate panel labels (default: English)
+#   --framework iso-42001   governance readings: eu-ai-act, iso-42001, nist-rmf
 #   --rules-window 10m      rate() window; keep it ≥ 4× your scrape interval
 #   --rules-interval 2m     rule group evaluation interval
 ```

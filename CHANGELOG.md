@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.0] — 2026-08-30
+### Added — la gouvernance parle enfin à autre chose qu'à l'Europe
+- **ISO/IEC 42001:2023 et NIST AI RMF 1.0** rejoignent l'EU AI Act dans le tableau de bord de gouvernance. Le même volume de logs atteste l'Art. 12, le contrôle A.6.2.8 et MANAGE 4.1 : c'est une lecture qui change, pas une instrumentation. Un DSI à Singapour poursuit une certification ISO, un américain raisonne en RMF — aucun des deux ne se reconnaissait dans un tableau de bord mono-juridiction.
+- `--framework eu-ai-act,iso-42001,nist-rmf` (défaut) sélectionne les lectures rendues. La table de correspondance est générée depuis des données : elle n'affiche que les colonnes demandées, et ajouter un référentiel est une clé de plus, pas un panneau de plus.
+- `references/ai_governance_frameworks.md` : le crosswalk complet, ce que chaque cadre est réellement, et surtout **ce que le tableau de bord ne prouve pas** — un système de management (clauses ISO 4-10), une analyse de risque, l'efficacité de la supervision humaine, la rétention effective. Un tableau de bord de gouvernance survendu est pire que pas de tableau de bord.
+- Les numéros de contrôle Annexe A varient entre sources secondaires ; le document le dit et renvoie à la norme, dont le texte est payant et invérifiable d'ici.
+
+### Verified
+Triple contrôle. Hors ligne : cinq combinaisons de `--framework`, UID stable (mise à jour et non duplication), référentiel inconnu géré, sept options de génération. Sur Prometheus réel : 63/63 expressions par combinaison, invariants de valeur respectés — les référentiels n'ont touché à aucune requête. Indépendamment : yamllint, zizmor, promtool sur les deux formats de règles, 123 contrôles du harnais, paquet conforme aux sources, scan de sécurité à zéro constat.
+
 ## [1.4.0] — 2026-08-30
 ### Added — les règles générées s'installent dans n'importe quelle plateforme
 - **Manifeste `PrometheusRule` émis à côté du fichier plat.** La majorité des déploiements d'entreprise tournent sous Kubernetes avec le Prometheus Operator, qui n'accepte pas un fichier de règles brut. Mêmes règles, deux emballages, validés identiques par promtool à chaque build.

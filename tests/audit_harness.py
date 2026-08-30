@@ -616,6 +616,46 @@ if os.path.exists(_crd):
     check("en-tete documentant les backends cibles",
           "Thanos" in open(_flat).read() and "Mimir" in open(_flat).read())
 
+# --------------------------------------- 22. gouvernance multi-referentiels
+print("\n[22] Referentiels de gouvernance")
+_combos = ["eu-ai-act", "iso-42001", "nist-rmf", "iso-42001,nist-rmf",
+           "eu-ai-act,iso-42001,nist-rmf"]
+_uids, _ok = set(), True
+for _c in _combos:
+    r, d = run_forge(forge_dashboards.selftest_capability(),
+                     "audit_fw_" + _c.replace(",", "_"), extra=("--framework", _c))
+    if r.returncode != 0:
+        _ok = False
+        print("     ", _c, r.stderr[-120:])
+        continue
+    _g = load_boards(d).get("governance")
+    _uids.add(_g["uid"])
+    _txt = " ".join(p["options"]["content"] for p in _g["panels"]
+                    if p["type"] == "text")
+    for _f, _needle in (("eu-ai-act", "Art. 12"), ("iso-42001", "A.6.2.8"),
+                        ("nist-rmf", "MANAGE 4.1")):
+        _want = _f in _c
+        if (_needle in _txt) is not _want:
+            _ok = False
+            print(f"      {_c}: {_needle} present={_needle in _txt} attendu={_want}")
+check("chaque combinaison de --framework genere le bon contenu", _ok)
+check("UID stable quel que soit le referentiel (mise a jour, pas duplication)",
+      len(_uids) == 1, str(_uids))
+r, d = run_forge(forge_dashboards.selftest_capability(), "audit_fw_bad",
+                 extra=("--framework", "inexistant"))
+check("referentiel inconnu : avertit et retombe sur l'AI Act",
+      r.returncode == 0 and "unknown framework" in r.stderr
+      and "Art. 12" in " ".join(p["options"]["content"]
+                                for p in load_boards(d)["governance"]["panels"]
+                                if p["type"] == "text"), r.stderr[-120:])
+_ref = open(os.path.join(SK, "references", "ai_governance_frameworks.md")).read()
+check("crosswalk documente et honnete sur ses limites",
+      "not a legal opinion" in _ref and "Does not prove" in _ref
+      and "Annex A numbering varies" in _ref)
+_gov = load_boards(d)["governance"]
+check("les panneaux mesures restent identiques quel que soit le cadre",
+      sum(1 for p in _gov["panels"] if p["type"] != "text") >= 2)
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()

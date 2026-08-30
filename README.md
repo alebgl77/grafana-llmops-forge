@@ -62,7 +62,7 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 | 📈 **Adoption** | *Who actually adopted what?* | active teams, **new adopters (7d)**, model mix over time, top token consumers — shadow AI shows up here |
 | ⚡ **Inference (self-hosted)** | *Do our GPUs hold, at what cost vs API?* | vLLM TTFT/TPOT, queue, **KV-cache saturation**, preemptions, GPU util/VRAM, API-price benchmark table |
 | ✅ **Quality & Evals** | *Is the output any good, and is it drifting?* | eval score p50/p10, score per model, guardrail blocks, eval volume (a system can be green on latency and wrong on content) |
-| ⚖ **EU AI Act Governance** | *What do we show an auditor?* | regulatory timeline (July 2026, post-Omnibus), logging evidence (Art. 12/26§6), **auto model inventory** (region/license/GPAI), incident watch (Art. 73) |
+| ⚖ **Governance Evidence** | *What do we show an auditor?* | the same telemetry read against **EU AI Act, ISO/IEC 42001 and NIST AI RMF** (`--framework`): regulatory timeline, logging evidence, **auto model inventory**, provider-jurisdiction split, incident watch |
 
 Blueprints only materialize when the underlying signals exist — no empty panels, ever.
 
@@ -137,6 +137,7 @@ references/
   dashboard_blueprints.md     # panel-by-panel specs + optional extensions
   instrumentation_guide.md    # exact configs to close each gap
   eu_ai_act_observability.md  # article → signal → panel mapping, deployer checklist
+  ai_governance_frameworks.md # crosswalk: EU AI Act × ISO/IEC 42001 × NIST AI RMF
   visual_verification.md      # vision checklist, failure signatures → fixes
   grafana_api_compat.md       # 3 API generations, editions matrix, schema v2 notes
 demo/                         # docker-compose stack: Grafana + Prometheus + synthetic LLM emitter
@@ -158,7 +159,7 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 
 **Multiple Prometheus (prod + staging)?** Discovery flags it and the forge tells you which one it picked; pin it with `--datasource <uid|name>`.
 
-**Is the AI Act dashboard legal advice?** No, and it says so on the dashboard. It's the *evidence layer* your counsel will ask you for.
+**Is the governance dashboard legal advice?** No, and it says so on the dashboard. It is the *evidence layer* your counsel or auditor will ask for — the logging continuity, model inventory and incident trail that ISO 42001 Stage 2, NIST MANAGE 4.1 and AI Act Art. 12 all want to see. It proves monitoring happened; it does not prove a management system exists, and `references/ai_governance_frameworks.md` is explicit about both halves.
 
 ## Roadmap
 

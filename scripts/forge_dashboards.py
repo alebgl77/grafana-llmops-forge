@@ -577,6 +577,7 @@ class Ctx:
         self.loki = (dss.get("loki") or [None])[0]
         self.tempo = ((dss.get("tempo") or [{}])[0] or {}).get("uid")
         self.major = int(cap.get("instance", {}).get("major") or 12)
+        self.frameworks = ["eu-ai-act", "iso-42001", "nist-rmf"]
         self.recorded = "recorded" in self.q and any(
             n.startswith("llm:cost") for n in self.q["recorded"].s.names)
         self.exemplars = any(m.get("exemplars") for m in dss.get("prometheus", []))
@@ -872,6 +873,99 @@ def bp_inference(ctx: Ctx) -> Board | None:
     return b
 
 
+ISO_42001_MD = """### ISO/IEC 42001:2023 — where these panels serve as evidence
+
+Certification audits management-system clauses 4–10 plus every Annex A control
+declared applicable in your Statement of Applicability (38 controls across nine
+groups, A.2 to A.10). Most of those are satisfied by documents. A handful are
+not: an auditor at Stage 2 wants to see the system **was actually monitored**,
+and that is what this dashboard produces.
+
+| Control | What the auditor asks for | Panel here |
+|---|---|---|
+| A.6.2.6 — AI system operation and monitoring | Evidence that production systems are monitored continuously, not just documented | The whole board, plus the gateway and quality dashboards |
+| A.6.2.8 — AI system recording of event logs | Logs enabled at the declared lifecycle phases, retained, retrievable | Logging evidence panel; retention is a Loki config check |
+| A.9 — Use of AI systems | Responsible and intended use, human oversight | Adoption dashboard (who uses what) + override counters if instrumented |
+| A.10 — Third parties and suppliers | Which providers you depend on, and how that dependency is governed | Model inventory and the sovereignty split |
+| Clause 9.1 — Monitoring, measurement, analysis, evaluation | Defined metrics, measured, reviewed | Every panel; the review record is yours to keep |
+
+Two cautions. Annex A numbering differs between secondary sources — confirm each
+reference against your own copy of the standard before it enters a Statement of
+Applicability. And a dashboard is evidence of monitoring, not of a management
+system: clauses 4–10 remain organisational work no tool performs for you."""
+
+
+NIST_RMF_MD = """### NIST AI RMF 1.0 — which subcategories these signals feed
+
+The framework (NIST AI 100-1) is voluntary and organises work into GOVERN, MAP,
+MEASURE and MANAGE, about seventy subcategories in all. It is the de facto
+reference for US programmes and crosswalks closely to ISO/IEC 42001. Runtime
+telemetry speaks mostly to MEASURE and MANAGE.
+
+| Subcategory | Outcome sought | Panel here |
+|---|---|---|
+| MEASURE 2.x — performance and trustworthiness evaluated | Systems evaluated on chosen metrics, regularly | Quality & Evaluations dashboard; gateway latency and error panels |
+| MEASURE 3.x — mechanisms for tracking identified risks | Risks tracked over time, not assessed once | Trend panels across the whole suite |
+| MEASURE 4.x — measurement efficacy reviewed | Feedback on whether the measurements still mean anything | Evaluation volume panel: flat-lined scores are stale scores |
+| MANAGE 4.1 — post-deployment monitoring | Monitoring, appeal and override, decommissioning, change management | This board plus the provisioned SLO alerts |
+| MANAGE 2.x — maximise benefit, minimise negative impact | Documented treatment of residual risk | Cost and adoption boards inform the trade-offs |
+| GOVERN 1.1 — legal and regulatory requirements understood | Applicable obligations known and tracked | Regulatory timeline panel |
+| GOVERN 6.1/6.2 — third-party risk | Supply-chain and vendor dependency governed | Model inventory and sovereignty split |
+
+For generative AI specifically, NIST AI 600-1 (the Generative AI Profile, July
+2024) adds twelve risk categories mapped back to these four functions; the cost,
+adoption and quality boards are the measurement layer several of them assume."""
+
+
+# Le crosswalk est une donnée, pas un bloc de texte : n'afficher que les
+# colonnes demandées, et ajouter un référentiel devient une clé de plus.
+CROSSWALK_ROWS = [
+    ("Logs exist continuously and are retained",
+     {"eu-ai-act": "Art. 12 · Art. 26(6)", "iso-42001": "A.6.2.8",
+      "nist-rmf": "MANAGE 4.1"}),
+    ("Production systems are monitored",
+     {"eu-ai-act": "Art. 72 post-market", "iso-42001": "A.6.2.6 · Cl. 9.1",
+      "nist-rmf": "MEASURE 3.x · MANAGE 4.1"}),
+    ("Inventory of models actually consumed",
+     {"eu-ai-act": "Art. 26 · GPAI chain", "iso-42001": "A.10",
+      "nist-rmf": "GOVERN 6.1 · MAP 4.1"}),
+    ("Provider dependency and jurisdiction",
+     {"eu-ai-act": "GPAI contractual terms", "iso-42001": "A.10",
+      "nist-rmf": "GOVERN 6.2"}),
+    ("Quality and drift measured",
+     {"eu-ai-act": "Art. 15 accuracy/robustness", "iso-42001": "A.6.2.6",
+      "nist-rmf": "MEASURE 2.x"}),
+    ("Incidents detected and escalated",
+     {"eu-ai-act": "Art. 73", "iso-42001": "A.8", "nist-rmf": "MANAGE 4.x"}),
+    ("Who uses the systems, and how",
+     {"eu-ai-act": "Art. 4 · Art. 26", "iso-42001": "A.9",
+      "nist-rmf": "GOVERN 1.x"}),
+]
+
+
+def crosswalk_md(picked: list) -> str:
+    """Table de correspondance restreinte aux référentiels demandés."""
+    heads = [FRAMEWORKS[f][0] for f in picked]
+    lines = [
+        "### One signal, several frameworks",
+        "",
+        "Compliance regimes differ in vocabulary and in what they oblige. They",
+        "agree almost entirely on what has to be observable. This is the same",
+        "telemetry, read several ways — build the runtime layer once.",
+        "",
+        "| Observable signal | " + " | ".join(heads) + " |",
+        "|---|" + "---|" * len(heads),
+    ]
+    for signal, refs in CROSSWALK_ROWS:
+        lines.append(f"| {signal} | " + " | ".join(refs[f] for f in picked) + " |")
+    lines += ["",
+              "*Support for compliance evidence. Not a legal opinion, and not a "
+              "certification.*"]
+    return "\n".join(lines)
+
+
+
+
 AI_ACT_TIMELINE_MD = """### Calendrier AI Act — état vérifié juillet 2026 (post-Digital Omnibus)
 
 | Échéance | Obligation | Statut |
@@ -889,12 +983,35 @@ incidents graves), inventaire des systèmes. Sanctions : jusqu'à 35 M€ / 7 % 
 *Support d'aide à la conformité — ne constitue pas un avis juridique.*"""
 
 
+FRAMEWORKS = {
+    "eu-ai-act": ("EU AI Act", "Regulatory timeline", lambda: AI_ACT_TIMELINE_MD, 11),
+    "iso-42001": ("ISO/IEC 42001", "ISO/IEC 42001 evidence map", lambda: ISO_42001_MD, 10),
+    "nist-rmf": ("NIST AI RMF", "NIST AI RMF signal map", lambda: NIST_RMF_MD, 11),
+}
+
+
 def bp_governance(ctx: Ctx) -> Board:
-    b = Board(det_uid("ai-governance-eu-ai-act"), "AI · Governance & EU AI Act",
-              "Observability evidence for AI Act compliance: logging, inventory, "
+    """Le même socle de preuves, lu selon un ou plusieurs référentiels.
+
+    Les panneaux mesurés sont identiques quel que soit le cadre : c'est le même
+    volume de logs qui atteste l'Art. 12, le contrôle A.6.2.8 et MANAGE 4.1.
+    Seule la lecture change, et c'est elle qui décide si un DSI à Singapour ou
+    à Chicago se reconnaît dans le tableau de bord.
+    """
+    picked = [f for f in ctx.frameworks if f in FRAMEWORKS] or ["eu-ai-act"]
+    names = ", ".join(FRAMEWORKS[f][0] for f in picked)
+    title = ("AI · Governance & EU AI Act" if picked == ["eu-ai-act"]
+             else "AI · Governance & Compliance Evidence")
+    b = Board(det_uid("ai-governance-eu-ai-act"), title,
+              f"Observability evidence for {names}: logging, inventory, "
               "sovereignty, incidents. Generated by grafana-llmops-forge — "
-              "not legal advice.", ["governance", "ai-act"])
-    b.text("Regulatory timeline", AI_ACT_TIMELINE_MD, 24, 11)
+              "not legal advice.", ["governance"] + picked)
+    if len(picked) > 1:
+        b.text("One signal, several frameworks", crosswalk_md(picked),
+               24, 5 + len(CROSSWALK_ROWS))
+    for f in picked:
+        _, panel_title, md, h = FRAMEWORKS[f]
+        b.text(panel_title, md(), 24, h)
     q = ctx.primary
     if q:
         ds = q.s.ds_uid
@@ -929,13 +1046,13 @@ def bp_governance(ctx: Ctx) -> Board:
                         f"{'oui' if m.get('gpai_in_scope', True) else '—'} |")
         for s in ctx.unmatched:
             rows.append(f"| `{_md(s)}` | ? | ? | ? | to qualify |")
-        b.text("Observed model inventory (basis for the AI Act register)",
+        b.text("Observed model inventory (feeds your AI system register)",
                "Models actually in use (auto-detected):\n\n"
                "| Observed model | Vendor | Region | Licence | GPAI |\n"
                "|---|---|---|---|---|\n" + "\n".join(rows) +
                "\n\nÀ rapprocher de votre registre interne des systèmes d'IA "
                "(cartographie fournisseur/déployeur).", 12, 10)
-    b.alertlist("Incident watch (Art. 73: serious incidents must be reported)", 12, 10)
+    b.alertlist("Incident watch (AI Act Art. 73 · ISO A.8 · NIST MANAGE 4.x)", 12, 10)
     return b
 
 
@@ -1264,6 +1381,11 @@ def main() -> int:
     ap.add_argument("--cost-mode", choices=["auto", "recorded", "inline"],
                     default="auto",
                     help="auto: recording rules si détectées, sinon composition")
+    ap.add_argument("--framework", default="eu-ai-act,iso-42001,nist-rmf",
+                    help="Référentiels de gouvernance à cartographier : "
+                         "eu-ai-act, iso-42001, nist-rmf (liste séparée par des "
+                         "virgules). Les panneaux mesurés sont les mêmes ; seule "
+                         "la lecture change.")
     ap.add_argument("--rules-window", default="5m",
                     help="Fenêtre rate() des recording rules. Au moins 4x "
                          "l'intervalle de scrape (défaut 5m).")
@@ -1291,6 +1413,11 @@ def main() -> int:
             cap = json.load(f)
 
     ctx = Ctx(cap, load_registry(args.registry))
+    ctx.frameworks = [f.strip() for f in args.framework.split(",") if f.strip()]
+    _unknown = [f for f in ctx.frameworks if f not in FRAMEWORKS]
+    if _unknown:
+        print(f"[warn] unknown framework(s): {_unknown} — known: "
+              f"{sorted(FRAMEWORKS)}", file=sys.stderr)
     if args.cost_mode == "recorded":
         ctx.recorded = True
     elif args.cost_mode == "inline":
