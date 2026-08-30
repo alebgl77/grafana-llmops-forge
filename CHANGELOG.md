@@ -5,6 +5,9 @@
 - **Préfixe de namespace invisible.** Les regex Prometheus sont ancrées : la signature `gen_ai_.*` ne matchait pas `myapp_gen_ai_...`, produit par l'option `namespace` des exporters OTel Collector ou par un `metric_relabel_configs`. La forge annonçait « aucun signal LLM » sur une stack parfaitement instrumentée. Signatures désormais tolérantes au préfixe.
 - **Noms UTF-8 non supportés.** Avec `translation_strategy: NoTranslation` (Prometheus ≥ 3.0), les noms OTel gardent leurs points (`gen_ai.client.token.usage`) et les labels aussi. Ces séries n'étaient ni découvertes, ni interrogeables : un nom pointé nu renvoie HTTP 400, il faut la syntaxe `{"nom", label="v"}`. Ajout des helpers `msel`/`qlbl`, routage de toutes les compositions métrique/label, résolveur de signaux insensible au séparateur.
 
+### Fixed — recording rules muettes
+- Les prix et le coût étaient déclarés dans **deux groupes de règles distincts**. Prometheus évalue les groupes en parallèle et décale leur démarrage : la règle de coût pouvait s'exécuter avant l'existence des prix et ne rien produire, avec `health=ok` — donc silencieusement. Un seul groupe désormais, où l'ordre séquentiel est garanti. Vérifié : 5 séries de coût matérialisées, bascule automatique en mode `recorded`.
+
 ### Verified
 38/38 expressions exécutées sans erreur sur un Prometheus réel pour les trois variantes (classique, préfixée, UTF-8) ; 63/63 sur la stack de démo complète, sans régression. Tests permanents ajoutés au harnais.
 

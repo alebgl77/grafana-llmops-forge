@@ -337,6 +337,26 @@ check("helpers msel/qlbl corrects",
       msel("a.b", '{x="1"}') == '{"a.b",x="1"}' and msel("a_b", '{x="1"}') == 'a_b{x="1"}'
       and qlbl("a.b") == '"a.b"' and qlbl("a_b") == "a_b")
 
+# ----------------------------- 14. recording rules : ordre d'évaluation
+print("\n[14] Recording rules")
+import yaml as _yaml
+r, d = run_forge(forge_dashboards.selftest_capability(), "audit_rules")
+_rp = os.path.join(d, "prometheus_rules_llmops.yml")
+check("fichier de règles émis", os.path.exists(_rp))
+if os.path.exists(_rp):
+    _g = _yaml.safe_load(open(_rp))["groups"]
+    check("un seul groupe (les groupes séparés s'évaluent en parallèle)",
+          len(_g) == 1, str([x["name"] for x in _g]))
+    _r = _g[0]["rules"]
+    check("prix déclarés AVANT la règle de coût qui les joint",
+          _r[-1]["record"].startswith("llm:cost")
+          and all("price" in x["record"] for x in _r[:-1]),
+          str([x["record"] for x in _r][-2:]))
+    check("coût joint les prix par vector matching",
+          "group_left" in _r[-1]["expr"] and "on(" in _r[-1]["expr"])
+    check("chaque prix porte modèle + région + vendor",
+          all({"region", "vendor"} <= set(x.get("labels", {})) for x in _r[:-1]))
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()

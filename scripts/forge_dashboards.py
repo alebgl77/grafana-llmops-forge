@@ -308,7 +308,12 @@ def emit_recording_rules(ctx, path: str) -> tuple[str, int]:
     L = ["# Généré par grafana-llmops-forge — recording rules coût LLM.",
          f"# Registre vérifié le {ctx.verified}. Recharger Prometheus après copie",
          "# (rule_files: - prometheus_rules_llmops.yml).",
-         "groups:", "  - name: llmops-forge-pricing", "    interval: 1m", "    rules:"]
+         "#",
+         "# UN SEUL GROUPE, volontairement : les règles d'un même groupe sont",
+         "# évaluées séquentiellement, donc les prix existent avant que la règle",
+         "# de coût ne les joigne. Deux groupes séparés s'évaluent en parallèle",
+         "# et avec un décalage de démarrage — le coût sortirait vide.",
+         "groups:", "  - name: llmops-forge-cost", "    interval: 1m", "    rules:"]
     n = 0
     for it in ctx.matched:
         m, seen = it["reg"], it["seen"]
@@ -322,8 +327,7 @@ def emit_recording_rules(ctx, path: str) -> tuple[str, int]:
             n += 1
     if not n:
         return "", 0
-    L += ["", "  - name: llmops-forge-cost", "    interval: 1m", "    rules:",
-          f"      - record: {COST_RECORDED}", "        expr: |",
+    L += [f"      - record: {COST_RECORDED}", "        expr: |",
           f'          sum by({ml_q}, region, vendor) (',
           f'            rate({msel(q.tok + "_sum", B1 + qlbl(tt) + "=" + Q1 + "input" + Q1 + B2)}[5m])',
           f"          ) * on({ml_q}) group_left(region, vendor) {PRICE_IN}",
