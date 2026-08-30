@@ -5,6 +5,7 @@ model_registry.local.json
 generated_dashboards/
 selftest_output/
 visual_audit/
-.env
+*.env
+env/
 *.skill
-!dist/*.skill
+dist/

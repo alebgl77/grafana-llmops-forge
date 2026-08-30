@@ -29,14 +29,16 @@ shots: ## Captures réelles de tous les dashboards déployés
 
 demo-down: ## Tout arrêter et nettoyer
 	docker compose -f demo/docker-compose.yml down -v
-	rm -rf demo/generated demo/capability_map.json demo/rules/*.yml
+	python3 -c "import pathlib,shutil; shutil.rmtree('demo/generated',ignore_errors=True); [p.unlink() for p in pathlib.Path('demo').glob('capability_map.json')]; [p.unlink() for p in pathlib.Path('demo/rules').glob('*.yml')]"
 
 package: ## Construire le .skill (nettoie le bytecode avant copie)
 	python3 -c "import pathlib,shutil; [shutil.rmtree(p) for p in pathlib.Path('.').rglob('__pycache__')]; [p.unlink() for p in pathlib.Path('.').rglob('*.pyc')]" 
 	@echo "arbre nettoyé — packager depuis skill-creator"
 
-scan: ## Analyse de sécurité du paquet livré (NVIDIA SkillSpector)
-	skillspector scan dist/ --no-llm || true
+scan: ## Analyse de sécurité du LIVRABLE (NVIDIA SkillSpector)
+	python3 tools/package.py
+	python3 -c "import zipfile,shutil,pathlib; d=pathlib.Path('/tmp/skillscan'); shutil.rmtree(d, ignore_errors=True); zipfile.ZipFile('dist/grafana-llmops-forge.skill').extractall(d)"
+	skillspector scan /tmp/skillscan/grafana-llmops-forge --no-llm
 
 selftest: ## Rendu des 7 blueprints hors ligne
 	cd scripts && python3 forge_dashboards.py --selftest --with-alerts

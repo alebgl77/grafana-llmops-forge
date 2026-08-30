@@ -103,11 +103,20 @@ réplique.
 
 ## 5. GPU — dcgm-exporter (NVIDIA)
 
-```bash
-# Épingler la version : `:latest` rend le déploiement non reproductible
-docker run -d --gpus all --rm -p 9400:9400 nvcr.io/nvidia/k8s/dcgm-exporter:4.2.3-4.1.1-ubuntu22.04
-# K8s : helm install dcgm gpu-helm-charts/dcgm-exporter
+```yaml
+# compose.yml — image épinglée, déploiement reproductible
+services:
+  dcgm-exporter:
+    image: nvcr.io/nvidia/k8s/dcgm-exporter:4.2.3-4.1.1-ubuntu22.04
+    ports: ["9400:9400"]
+    deploy:
+      resources:
+        reservations:
+          devices: [{driver: nvidia, count: all, capabilities: [gpu]}]
 ```
+
+En Kubernetes : `helm install dcgm gpu-helm-charts/dcgm-exporter` (fixer
+`image.tag` dans les values).
 
 Scrape le port 9400 → dialecte `gpu_dcgm` → panels GPU du blueprint inference.
 

@@ -188,6 +188,31 @@ check("registre : régions valides",
       all(mm["region"] in ("us", "eu", "asia") for mm in reg["models"]))
 
 # ---------------------------------------------------------------- 7. visual_audit
+print("\n[16] Packaging du livrable")
+_pkg = "/tmp/audit_pkg.skill"
+r = subprocess.run([sys.executable, os.path.join(SK, "tools", "package.py"),
+                    "--out", _pkg], capture_output=True, text=True)
+check("le dépôt sait construire son propre .skill", r.returncode == 0, r.stderr[-160:])
+r2 = subprocess.run([sys.executable, os.path.join(SK, "tools", "package.py"),
+                     "--out", _pkg + "2"], capture_output=True, text=True)
+import hashlib as _hl
+_h = lambda p: _hl.sha256(open(p, "rb").read()).hexdigest()
+check("build reproductible (deux builds, même sha256)",
+      os.path.exists(_pkg) and os.path.exists(_pkg + "2") and _h(_pkg) == _h(_pkg + "2"))
+r3 = subprocess.run([sys.executable, os.path.join(SK, "tools", "package.py"),
+                     "--out", _pkg, "--verify"], capture_output=True, text=True)
+check("archive identique aux sources du dépôt", r3.returncode == 0, r3.stdout[-200:])
+import zipfile as _zf
+_names = _zf.ZipFile(_pkg).namelist()
+check("aucun bytecode embarqué",
+      not [n for n in _names if "__pycache__" in n or n.endswith(".pyc")])
+check("SKILL.md + 4 scripts + 7 références",
+      len([n for n in _names if n.endswith(".py")]) == 4
+      and len([n for n in _names if "/references/" in n]) == 7, str(len(_names)))
+check("le paquet n'est pas versionné (artefact de build)",
+      "dist/grafana-llmops-forge.skill" not in subprocess.run(
+          ["git", "ls-files"], cwd=SK, capture_output=True, text=True).stdout)
+
 print("\n[7] visual_audit plan (mode uids, sans réseau)")
 r = subprocess.run([sys.executable, f"{SC}/visual_audit.py", "--uids",
                     "llmops-x-1,llmops-y-2", "--dashboards", "/nonexistent",

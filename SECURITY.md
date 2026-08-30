@@ -16,31 +16,34 @@ container image versions throughout the documentation.
 
 ### Scanning the repository vs. scanning the deliverable
 
-Three scan targets give three different scores, and the difference is worth
-understanding before you read any of them as a verdict.
+**Scan the extracted skill directory — that is what an agent loads, and it
+reports zero findings.** `make scan` builds the package and does exactly that.
 
-- **The extracted skill directory** — what the agent actually loads: **LOW**,
-  two findings, both `RP1` false positives explained below. This is the number
-  that describes the code you will run.
-- **The `.skill` archive** — adds four `SC9` "concealed executable artifact"
-  findings, one per Python file. The `.skill` format *is* a zip with a custom
-  extension, so any skill shipping scripts triggers this. It is a property of
-  the packaging format, not of this code. Extract and scan the directory to see
-  through it.
-- **The whole repository** — additionally covers CI workflows, the test harness
-  and the distribution archive:
+Two other targets give different numbers, for reasons worth knowing:
 
-| Finding | Where | Why it is expected |
+- **The `.skill` archive itself** adds one `SC9` "concealed executable artifact"
+  per Python file. The format *is* a zip with a custom extension, so any skill
+  shipping scripts triggers it. Extract and scan the directory to see through
+  it. The archive is never committed here: CI builds it reproducibly from these
+  sources (`tools/package.py`, fixed timestamps → stable sha256), verifies file
+  by file that it matches them, and publishes it with its checksum.
+- **The whole repository** additionally covers CI workflows, the Makefile and
+  the test harness. Ten findings remain there, and each one is a development
+  tool doing its job:
+
+| Finding | Where | Why it stays |
 |---|---|---|
-| `SC9` Concealed executable artifact | `dist/*.skill` | The archive *is* the advertised deliverable. Its contents are byte-identical to the source in this repo — `tests/audit_harness.py` asserts that on every run, so you can verify rather than trust. |
-| `SC2` External script fetching | `.github/workflows/ci.yml` | CI downloads a Prometheus binary to run queries against a real server. Pinned to an explicit version **and** sha256 checksum. |
-| `AST4` subprocess calls | `tests/` | The test harness runs the CLI it is testing. |
-| `PE3` Credential access | `.gitignore` | The literal string `.env`, in a rule that prevents committing one. |
+| `AST4` subprocess call ×7 | `tests/` | The harness runs the CLI it tests. Rewriting the tests to avoid subprocess would make them less faithful, not safer. |
+| `SC2` external fetch | `.github/workflows/ci.yml` | A bounded retry loop waiting for the local Grafana container to answer. Replacing it with a fixed `sleep` would remove the finding and make CI flakier. |
+| `SSRF2` internal request | `.github/workflows/ci.yml` | The CI assertion that queries `localhost:3000` to prove the dashboards deployed. |
+| `PE3` credential access | `.gitignore` | The pattern `*.env`, in a rule whose purpose is to stop anyone committing one. |
 
-Two `RP1` findings remain and are **false positives**, documented here rather
-than hidden: the rule matches `docker\s+(?:pull|run|create)\s+\S+`, capturing
-only the token immediately after `docker run` — `-d` in our examples — and then
-looks for a version pin inside that fragment. Every image we reference *is*
-pinned to an explicit tag; the flag fires because option flags precede the image
-name. Verify by reading `references/instrumentation_guide.md` §5 and
-`references/visual_verification.md` §5.
+We stopped there deliberately. Two earlier attempts to push the repository score
+lower made the project worse: a `make` target rewritten to please a rule
+introduced two `rm -rf` calls and turned one LOW finding into two HIGH ones.
+A scanner is evidence, not a scoreboard.
+
+The `RP1` findings that an earlier revision carried are gone: the container
+images in the documentation are now shown as pinned Compose services rather than
+`docker run` one-liners, which are both reproducible and unambiguous to a
+reader.

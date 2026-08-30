@@ -1,0 +1,21 @@
+name: Release
+on:
+  push: {tags: ["v*"]}
+  workflow_dispatch:
+permissions: {contents: write}
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.12"}
+      - name: Build the .skill from sources (reproducible, bytecode excluded)
+        run: python tools/package.py
+      - name: The archive must match the repository sources
+        run: python tools/package.py --verify
+      - name: Attach to the release
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          sha256sum dist/*.skill > dist/SHA256SUMS
+          gh release upload "${GITHUB_REF_NAME}" dist/*.skill dist/SHA256SUMS --clobber

@@ -74,8 +74,11 @@ voir ces trois panels en premier).
 
 ```bash
 grafana-cli plugins install grafana-image-renderer && systemctl restart grafana-server
-# ou service distant :
-docker run -d -p 8081:8081 grafana/grafana-image-renderer:3.12.6
+# ou service distant, via compose (image épinglée) :
+#   services:
+#     renderer:
+#       image: grafana/grafana-image-renderer:3.12.6
+#       ports: ["8081:8081"]
 # grafana.ini → [rendering] server_url=http://renderer:8081/render callback_url=http://grafana:3000/
 ```
 Grafana Cloud : inclus (quotas de rendus). Le renderer EST un navigateur

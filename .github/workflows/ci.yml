@@ -16,6 +16,8 @@ jobs:
         run: cd scripts && python forge_dashboards.py --selftest --with-alerts
       - name: Audit harness (4 topologies + regressions)
         run: python tests/audit_harness.py
+      - name: Package builds reproducibly and matches sources
+        run: python tools/package.py && python tools/package.py --verify
       - name: Registry JSON is valid & priced models have sources
         run: python -c "import json; r=json.load(open('references/model_registry.json')); assert r['models'] and r['_meta']['sources']; print(len(r['models']),'models OK')"
 
@@ -25,29 +27,17 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with: {python-version: "3.12"}
-      - name: Start synthetic emitter + real Prometheus
+      - name: Start Prometheus + synthetic emitter (pinned images, no downloads)
         run: |
-          python demo/emitter.py --port 9109 --seed-minutes 20 &
-          sleep 6
-          # Version ET empreinte épinglées : un téléchargement 'latest' dans la CI
-          # est une dépendance mouvante que personne ne relit.
-          PROM_VER=3.14.0
-          PROM_SHA=f665c6da19eb7ba399c915d30c7d9793c9b417bf8a749b504bc470678631478d
-          curl -sL "https://github.com/prometheus/prometheus/releases/download/v${PROM_VER}/prometheus-${PROM_VER}.linux-amd64.tar.gz" -o p.tgz
-          echo "${PROM_SHA}  p.tgz" | sha256sum -c -
-          tar xzf p.tgz && mv prometheus-${PROM_VER}.linux-amd64 prom
-          mkdir -p /tmp/rules
-          printf 'global: {scrape_interval: 5s, evaluation_interval: 5s}\nrule_files: ["/tmp/rules/*.yml"]\nscrape_configs:\n  - job_name: e\n    static_configs: [{targets: ["localhost:9109"]}]\n' > /tmp/prom.yml
-          ./prom/prometheus --config.file=/tmp/prom.yml --storage.tsdb.path=/tmp/tsdb --web.listen-address=:9090 &
+          docker compose -f demo/docker-compose.yml up -d emitter prometheus
           sleep 35
       - name: Every generated query must return data
         run: python tests/live_query_check.py --prometheus http://localhost:9090
-      - name: Load generated cost recording rules and let them evaluate
+      - name: Load the generated cost recording rules and let them evaluate
         run: |
-          cp /tmp/live_forge/prometheus_rules_llmops.yml /tmp/rules/ 2>/dev/null || \
-            (python tests/live_query_check.py --prometheus http://localhost:9090 --out-dir /tmp/lf >/dev/null && cp /tmp/lf/prometheus_rules_llmops.yml /tmp/rules/)
-          pkill -f "prometheus --config" || true
-          ./prom/prometheus --config.file=/tmp/prom.yml --storage.tsdb.path=/tmp/tsdb --web.listen-address=:9090 &
+          python tests/live_query_check.py --prometheus http://localhost:9090 --out-dir /tmp/lf >/dev/null
+          cp /tmp/lf/prometheus_rules_llmops.yml demo/rules/
+          docker compose -f demo/docker-compose.yml restart prometheus
           sleep 100
       - name: Values must be internally consistent
         run: python tests/value_invariants.py --prometheus http://localhost:9090
@@ -61,7 +51,11 @@ jobs:
         run: docker compose -f demo/docker-compose.yml up -d
       - name: Wait for Grafana and first scrapes
         run: |
-          for i in $(seq 1 60); do curl -sf http://localhost:3000/api/health && break; sleep 2; done
+          for i in $(seq 1 60); do
+            docker compose -f demo/docker-compose.yml exec -T grafana \
+              wget -q -O /dev/null http://localhost:3000/api/health && break
+            sleep 2
+          done
           sleep 25
       - name: Discover, forge and deploy for real
         env: {GRAFANA_URL: "http://localhost:3000", GRAFANA_USER: admin, GRAFANA_PASSWORD: admin}

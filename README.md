@@ -85,7 +85,7 @@ Spins up the stack, discovers it, forges and deploys all applicable dashboards w
 <details>
 <summary><b>As an Agent Skill (Claude, or any agentskills.io-compatible agent)</b></summary>
 
-Drop the folder into your skills directory (or install the packaged `.skill` from [Releases](../../releases)), then just talk:
+Drop the folder into your skills directory, or download the packaged `.skill` from [Releases](../../releases) — it is built by CI from these sources and published with its checksum, never committed as a binary. Then just talk:
 
 > *"Audit my Grafana at https://grafana.internal and deploy whatever makes sense — then prove it visually."*
 
