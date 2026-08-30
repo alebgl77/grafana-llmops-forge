@@ -25,19 +25,19 @@
 
   <g class="s" font-size="12.5">
     <rect x="40" y="152" width="330" height="52" class="box"/>
-    <text x="56" y="174" class="h" font-size="13">Logs, continuous and retained</text>
+    <text x="56" y="174" class="h" font-size="13">Logs exist continuously and are retained</text>
     <text x="56" y="192">Loki volume per service · retention posture</text>
 
     <rect x="40" y="212" width="330" height="52" class="box"/>
-    <text x="56" y="234" class="h" font-size="13">Production systems monitored</text>
+    <text x="56" y="234" class="h" font-size="13">Production systems are monitored</text>
     <text x="56" y="252">latency, errors, TTFT, burn-rate alerts</text>
 
     <rect x="40" y="272" width="330" height="52" class="box"/>
-    <text x="56" y="294" class="h" font-size="13">Inventory of models consumed</text>
+    <text x="56" y="294" class="h" font-size="13">Inventory of models actually consumed</text>
     <text x="56" y="312">auto-detected from live label values</text>
 
     <rect x="40" y="332" width="330" height="52" class="box"/>
-    <text x="56" y="354" class="h" font-size="13">Provider dependency &amp; jurisdiction</text>
+    <text x="56" y="354" class="h" font-size="13">Provider dependency and jurisdiction</text>
     <text x="56" y="372">spend split by provider region: EU · US · Asia</text>
 
     <rect x="40" y="392" width="330" height="52" class="box"/>

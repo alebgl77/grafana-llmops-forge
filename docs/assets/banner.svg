@@ -59,9 +59,9 @@
     <text y="46" font-size="19" fill="#8b949e">Point it at any Grafana. Get a full AI observability suite —</text>
     <text y="74" font-size="19" fill="#8b949e">discovered, generated, deployed, <tspan fill="#3fb950">visually verified</tspan>.</text>
     <g transform="translate(0,108)" font-size="14">
-      <rect x="-2" y="-18" width="150" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="73" y="1" text-anchor="middle" fill="#FF9830">6 dashboards</text>
-      <rect x="158" y="-18" width="128" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="222" y="1" text-anchor="middle" fill="#79c0ff">4 dialects</text>
-      <rect x="296" y="-18" width="160" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="376" y="1" text-anchor="middle" fill="#d2a8ff">EU AI Act ready</text>
+      <rect x="-2" y="-18" width="150" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="73" y="1" text-anchor="middle" fill="#FF9830">7 dashboards</text>
+      <rect x="158" y="-18" width="128" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="222" y="1" text-anchor="middle" fill="#79c0ff">10 dialects</text>
+      <rect x="296" y="-18" width="212" height="28" rx="14" fill="#161b22" stroke="#30363d"/><text x="402" y="1" text-anchor="middle" fill="#d2a8ff">AI Act · ISO 42001 · NIST</text>
     </g>
   </g>
 

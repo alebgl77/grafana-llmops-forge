@@ -656,6 +656,67 @@ _gov = load_boards(d)["governance"]
 check("les panneaux mesures restent identiques quel que soit le cadre",
       sum(1 for p in _gov["panels"] if p["type"] != "text") >= 2)
 
+# ------------------------------- 23. coherence visuels / code
+print("\n[23] Visuels vs code")
+_A = os.path.join(SK, "docs", "assets")
+def _svg_text(name):
+    return " ".join(re.findall(r">([^<>]{1,240})<",
+                               open(os.path.join(_A, name), encoding="utf-8").read()))
+_svgs = [f for f in os.listdir(_A) if f.endswith(".svg")]
+check(f"{len(_svgs)} visuels vectoriels presents", len(_svgs) >= 4, str(_svgs))
+# Les glyphes geometriques de base (fleches, coches) sont dans toutes les
+# polices. Le risque est l'emoji couleur, qui exige une police dediee et
+# tombe en tofu sans elle — c'est ce que la revue visuelle avait attrape.
+def _emoji(txt):
+    return sorted({c for c in txt
+                   if ord(c) >= 0x1F000 or 0x1F1E6 <= ord(c) <= 0x1F1FF
+                   or ord(c) == 0xFE0F})
+_tofu = {f: _emoji(open(os.path.join(_A, f), encoding="utf-8").read()) for f in _svgs}
+_tofu = {k: v for k, v in _tofu.items() if v}
+check("aucun emoji couleur dans les visuels (tofu selon la police)",
+      not _tofu, str(_tofu))
+
+_ban = _svg_text("banner.svg")
+check(f"banner annonce {len(forge_dashboards.BLUEPRINTS)} dashboards",
+      f"{len(forge_dashboards.BLUEPRINTS)} dashboards" in _ban,
+      re.search(r"\d+ dashboards", _ban).group(0) if re.search(r"\d+ dashboards", _ban) else "?")
+import discover as _disc
+check(f"banner annonce {len(_disc.DIALECT_SIGNATURES)} dialectes",
+      f"{len(_disc.DIALECT_SIGNATURES)} dialects" in _ban,
+      re.search(r"\d+ dialects", _ban).group(0) if re.search(r"\d+ dialects", _ban) else "?")
+check("banner ne promet pas un seul referentiel", "EU AI Act ready" not in _ban)
+
+_arch = _svg_text("architecture.svg")
+check(f"schema annonce {len(forge_dashboards.BLUEPRINTS)} blueprints",
+      f"{len(forge_dashboards.BLUEPRINTS)} blueprints" in _arch)
+_scripts = sorted(f for f in os.listdir(os.path.join(SK, "scripts")) if f.endswith(".py"))
+check("schema cite chaque script du pipeline",
+      all(s in _arch for s in _scripts),
+      str([s for s in _scripts if s not in _arch]))
+
+_cw = _svg_text("governance-crosswalk.svg")
+_rows = [r[0] for r in forge_dashboards.CROSSWALK_ROWS]
+_miss = [r for r in _rows if r.replace("&", "&amp;") not in _cw and r not in _cw]
+check("crosswalk visuel == crosswalk du code",
+      len(_miss) <= 1, str(_miss))
+check("les trois referentiels nommes dans le visuel",
+      all(f in _cw for f in ("EU AI Act", "ISO/IEC 42001", "NIST AI RMF")))
+check("le visuel dit ce que le tableau ne prouve PAS",
+      "Does not prove" in _cw)
+
+r, d = run_forge(forge_dashboards.selftest_capability(), "audit_visual")
+_fin = load_boards(d)["finops"]
+_mock = _svg_text("dashboard-finops.svg")
+check("le mockup porte le titre reellement genere",
+      _fin["title"].replace("&", "&amp;") in _mock or _fin["title"] in _mock,
+      _fin["title"])
+_shown = [p["title"] for p in _fin["panels"][:4]]
+_absent = [p for p in _shown if p not in _mock]
+check("les panneaux du mockup existent vraiment", not _absent, str(_absent))
+_fr = [w for w in ("Dépense", "Coût", "souveraineté", "requête", "Rythme")
+       if w in _mock]
+check("mockup en anglais, comme la sortie par defaut", not _fr, str(_fr))
+
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()
 _ci = open(os.path.join(SK, ".github", "workflows", "ci.yml")).read()

@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.5.1] — 2026-08-30
+### Fixed — les visuels avaient dérivé du produit
+Confrontés programmatiquement au code plutôt qu'à l'œil, les quatre schémas mentaient sur quatre points :
+- **Le mockup phare du README était en français** alors que le produit sort en anglais par défaut depuis la 1.3.0. Un DSI comparant l'image et l'outil trouvait deux choses différentes. Réaligné mot pour mot sur les titres réellement générés.
+- Le banner annonçait « 6 dashboards » et « 4 dialects » — il y en a 7 et 10 — et « EU AI Act ready », alors que la gouvernance couvre trois référentiels.
+- Les intitulés du crosswalk visuel divergeaient de `CROSSWALK_ROWS`.
+- Le schéma d'architecture omettait `grafana_client.py`.
+- Emojis drapeaux retirés : ils tombent en tofu selon la police disponible, ce que la revue par vision a montré.
+
+### Added
+- Harnais section [23] : le nombre de dashboards et de dialectes annoncés, les titres du mockup, les lignes du crosswalk et les scripts cités sont désormais **dérivés du code et comparés aux visuels** à chaque exécution. Un visuel ne peut plus vieillir en silence.
+
 ## [1.5.0] — 2026-08-30
 ### Added — la gouvernance parle enfin à autre chose qu'à l'Europe
 - **ISO/IEC 42001:2023 et NIST AI RMF 1.0** rejoignent l'EU AI Act dans le tableau de bord de gouvernance. Le même volume de logs atteste l'Art. 12, le contrôle A.6.2.8 et MANAGE 4.1 : c'est une lecture qui change, pas une instrumentation. Un DSI à Singapour poursuit une certification ISO, un américain raisonne en RMF — aucun des deux ne se reconnaissait dans un tableau de bord mono-juridiction.

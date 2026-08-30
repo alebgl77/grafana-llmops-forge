@@ -30,7 +30,7 @@
   <!-- Phase 1 discover -->
   <rect x="330" y="70" width="250" height="120" class="box" rx="10"/>
   <text x="455" y="96" text-anchor="middle" class="t">① discover.py</text>
-  <text x="455" y="118" text-anchor="middle" class="s">probes real metric names</text>
+  <text x="455" y="118" text-anchor="middle" class="s">grafana_client.py probes real metric names</text>
   <text x="455" y="136" text-anchor="middle" class="s">otel_genai · litellm · vllm · dcgm</text>
   <text x="455" y="162" text-anchor="middle" class="c">→ capability_map.json</text>
   <path class="flow" d="M260 130 H326"/>
