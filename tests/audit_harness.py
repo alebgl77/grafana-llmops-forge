@@ -869,6 +869,25 @@ _fd = open(os.path.join(SK, "scripts", "forge_dashboards.py")).read()
 _bp = len(re.findall(r"^def bp_", _fd, re.M))
 _rows = sum(_readme.count(f"| {e}") for e in "💰🛡🤖📈⚡✅⚖")
 check(f"blueprints code ({_bp}) = lignes tableau README ({_rows})", _bp == _rows == 7)
+# Le controle ci-dessus ne voit que le tableau ; la prose, elle, avait derive
+# ("The six blueprints" au-dessus de sept lignes). On lit donc aussi les phrases.
+# CHANGELOG.md est exclu a dessein : ses "6 blueprints" datent de la v1.0.0 et
+# sont exacts pour cette version. Un journal enregistre le passe, il ne derive pas.
+_words = {"six": 6, "seven": 7, "sept": 7, "eight": 8, "huit": 8}
+_claims = []
+for _doc in ("README.md", "SKILL.md", "docs/SKILL.fr.md", "docs/README.fr.md"):
+    _t = open(os.path.join(SK, _doc), encoding="utf-8").read()
+    for _m in re.finditer(r"(\d+|six|seven|sept|eight|huit)\s+blueprints", _t, re.I):
+        _tok = _m.group(1).lower()
+        _n = _words.get(_tok, int(_tok) if _tok.isdigit() else None)
+        if _n is not None and _n != _bp:
+            _claims.append(f"{_doc}: {_m.group(0)}")
+check(f"aucune prose n'annonce un nombre de blueprints != {_bp}",
+      not _claims, str(_claims[:3]))
+# Le projet refuse les attentes devinees (cf. les deux commentaires de ci.yml) :
+# la CI ne doit pas en reintroduire une par commodite.
+_naps = re.findall(r"run:\s*sleep\s+\d+", _ci)
+check("aucune attente devinee (run: sleep N) dans la CI", not _naps, str(_naps))
 check("references citees par README existent toutes",
       all(os.path.exists(os.path.join(SK, p))
           for p in re.findall(r"\\(((?:references|docs|scripts|tests|demo)/[\\w./-]+)\\)", _readme)),

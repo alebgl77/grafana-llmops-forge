@@ -54,7 +54,7 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 <div align="center"><img src="docs/assets/architecture.svg" alt="Pipeline" width="100%"/>
 <sub><i>Diagram, not a screenshot. Every box is a script in <code>scripts/</code>.</i></sub></div>
 
-## The six blueprints
+## The seven blueprints
 
 | Dashboard | Answers | Key panels |
 |---|---|---|
@@ -100,7 +100,7 @@ The skill handles discovery → registry refresh → blueprint selection → dep
 <details>
 <summary><b>As a standalone CLI (no AI required)</b></summary>
 
-Pure Python 3.8+ stdlib. No pip install. The three commands at the top of this README are the whole workflow. `--dry-run` writes JSON without touching your instance; `--selftest` renders all six blueprints offline from a simulated capability map.
+Pure Python 3.8+ stdlib. No pip install. The three commands at the top of this README are the whole workflow. `--dry-run` writes JSON without touching your instance; `--selftest` renders all seven blueprints offline from a simulated capability map.
 </details>
 
 <details>
@@ -195,7 +195,7 @@ SKILL.md                      # agent playbook (7-phase pipeline, doctrine, pitf
 scripts/
   grafana_client.py           # universal client: OSS/Cloud/Enterprise, legacy + K8s-style APIs
   discover.py                 # capability map: real metric names, dialects, gaps
-  forge_dashboards.py         # 6 blueprints × detected dialect, cost engine, alerts
+  forge_dashboards.py         # 7 blueprints × detected dialect, cost engine, alerts
   visual_audit.py             # render/Playwright capture + DOM pre-scan for vision review
 references/
   model_registry.json         # 30+ models: $/1M in·out·cached, context, sovereignty, GPAI
@@ -205,7 +205,6 @@ references/
   dashboard_blueprints.md     # panel-by-panel specs + optional extensions
   instrumentation_guide.md    # exact configs to close each gap
   eu_ai_act_observability.md  # article → signal → panel mapping, deployer checklist
-  ai_governance_frameworks.md # crosswalk: EU AI Act × ISO/IEC 42001 × NIST AI RMF
   visual_verification.md      # vision checklist, failure signatures → fixes
   grafana_api_compat.md       # 3 API generations, editions matrix, schema v2 notes
 demo/                         # docker-compose stack: Grafana + Prometheus + synthetic LLM emitter

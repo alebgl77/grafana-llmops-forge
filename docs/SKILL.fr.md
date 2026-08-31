@@ -47,7 +47,7 @@ Lire `references/model_registry.json`. Si `_meta.verified_at` date de plus de 30
 
 ### Phase 3 : Sélection des blueprints
 
-Six blueprints. Choisir selon la demande + la capability map (ne pas demander à l'utilisateur de re-choisir ce qu'il a déjà exprimé) :
+Sept blueprints. Choisir selon la demande + la capability map (ne pas demander à l'utilisateur de re-choisir ce qu'il a déjà exprimé) :
 
 | Blueprint | ID | Condition d'activation |
 |---|---|---|
@@ -91,7 +91,7 @@ Format de sortie systématique : ce qui a été **détecté** → ce qui a été
 
 Les scripts couvrent le noyau déterministe. Pour étendre (panels supplémentaires, requêtes spécifiques, variables custom) :
 - `references/query_library.md` : bibliothèque PromQL/LogQL/TraceQL par dialecte, prête à coller dans de nouveaux panels.
-- `references/dashboard_blueprints.md` : spécification panel par panel des 6 blueprints, y compris les panels optionnels non générés par défaut.
+- `references/dashboard_blueprints.md` : spécification panel par panel des 7 blueprints, y compris les panels optionnels non générés par défaut.
 - `references/grafana_api_compat.md` : matrice OSS/Cloud/Enterprise, APIs legacy vs resource, namespaces Cloud (`stacks-<id>`), schéma v2 (dynamic dashboards) et quand l'utiliser.
 - Pour ajouter un panel à un dashboard déjà déployé : re-générer avec la forge (source de vérité = le code), jamais d'édition manuelle silencieuse, sinon la prochaine exécution écrase.
 
@@ -114,4 +114,4 @@ Sans instance disponible (démo, CI, développement du skill) :
 python3 scripts/forge_dashboards.py --selftest
 ```
 
-Génère une capability map simulée (tous dialectes), rend les 6 blueprints, valide les invariants (IDs de panels uniques, gridPos dans la grille 24 colonnes, targets non vides, expressions référencées résolues) et écrit les JSON dans `./selftest_output/`. Utile aussi pour montrer à l'utilisateur à quoi ressembleront les dashboards avant de toucher à son instance.
+Génère une capability map simulée (tous dialectes), rend les 7 blueprints, valide les invariants (IDs de panels uniques, gridPos dans la grille 24 colonnes, targets non vides, expressions référencées résolues) et écrit les JSON dans `./selftest_output/`. Utile aussi pour montrer à l'utilisateur à quoi ressembleront les dashboards avant de toucher à son instance.

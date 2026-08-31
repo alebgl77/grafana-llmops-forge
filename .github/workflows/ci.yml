@@ -104,10 +104,23 @@ jobs:
       - name: Boot demo stack (Grafana + Prometheus + synthetic LLM metrics)
         env: {GF_PLUGINS: ""}          # renderer not needed here; skips a network install at boot
         run: docker compose -f demo/docker-compose.yml up -d --wait
-      - name: Wait for the first scrapes
-        # `up --wait` already blocked on every healthcheck; this only lets a few
-        # scrape cycles land so the queries have data to return.
-        run: sleep 25
+      - name: Wait for the first scrape
+        # Pas de sleep devine, ici non plus. `up --wait` a deja bloque sur les
+        # healthchecks ; il reste a laisser UN scrape complet atterrir, car la
+        # decouverte matche des noms de metriques et Prometheus ingere tout
+        # l'endpoint d'un coup. On attend donc la serie, pas une duree : sortie
+        # des qu'elle est la, echec franc et date si elle ne vient jamais.
+        run: |
+          MAX=90   # une seule source pour le budget, boucle et message compris
+          for i in $(seq 1 "$MAX"); do
+            if curl -sf http://localhost:9090/api/v1/label/__name__/values \
+               | grep -q '"gen_ai_'; then
+              echo "series gen_ai visibles apres ${i}s"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error::aucune serie gen_ai apres ${MAX}s (emitter ou scrape KO)"
+          exit 1
       - name: Discover, forge and deploy for real
         env: {GRAFANA_URL: "http://localhost:3000", GRAFANA_USER: admin, GRAFANA_PASSWORD: admin}
         run: |
