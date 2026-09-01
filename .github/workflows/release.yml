@@ -8,19 +8,87 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   package:
-    permissions: {contents: write}  # attacher l'artefact à la release
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+      artifact-metadata: write
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: {persist-credentials: false}
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
         with: {python-version: "3.12"}
-      - name: Build the .skill from sources (reproducible, bytecode excluded)
-        run: python tools/package.py
-      - name: The archive must match the repository sources
-        run: python tools/package.py --verify
-      - name: Attach to the release
+      - name: Refuse non-tag dispatches and stale registry data
+        run: |
+          if [[ "${GITHUB_REF}" != refs/tags/v* ]]; then
+            echo "::error::release must run from an existing v* tag, got ${GITHUB_REF}"
+            exit 1
+          fi
+          python - <<'PY'
+          import datetime
+          import json
+
+          verified = datetime.date.fromisoformat(
+              json.load(open("references/model_registry.json"))["_meta"]["verified_at"]
+          )
+          age = (datetime.date.today() - verified).days
+          if age < 0:
+              raise SystemExit(f"registry verified_at is in the future: {verified}")
+          if age > 30:
+              raise SystemExit(
+                  f"registry is {age} days old (>30); verify providers before release"
+              )
+          print(f"registry age: {age} days (maximum 30)")
+          PY
+      - name: Refuse an existing release or asset set
         env: {GH_TOKEN: "${{ github.token }}"}
         run: |
-          sha256sum dist/*.skill > dist/SHA256SUMS
-          gh release upload "${GITHUB_REF_NAME}" dist/*.skill dist/SHA256SUMS --clobber
+          if gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            echo "::error::release ${GITHUB_REF_NAME} already exists; no assets were overwritten"
+            exit 1
+          fi
+      - name: Build twice and verify the reproducible package
+        run: |
+          python tools/package.py
+          cp dist/grafana-llmops-forge.skill /tmp/grafana-llmops-forge.first.skill
+          python tools/package.py
+          cmp /tmp/grafana-llmops-forge.first.skill dist/grafana-llmops-forge.skill
+          python tools/package.py --verify
+      - name: Generate twice and verify the deterministic SPDX 2.3 SBOM
+        run: |
+          python tools/sbom.py dist/grafana-llmops-forge.skill \
+            --out dist/grafana-llmops-forge.spdx.json
+          cp dist/grafana-llmops-forge.spdx.json /tmp/grafana-llmops-forge.first.spdx.json
+          python tools/sbom.py dist/grafana-llmops-forge.skill \
+            --out dist/grafana-llmops-forge.spdx.json
+          cmp /tmp/grafana-llmops-forge.first.spdx.json \
+            dist/grafana-llmops-forge.spdx.json
+          python tools/sbom.py dist/grafana-llmops-forge.skill \
+            --out dist/grafana-llmops-forge.spdx.json --verify
+      - name: Generate stable checksums
+        run: |
+          cd dist
+          sha256sum grafana-llmops-forge.skill \
+            grafana-llmops-forge.spdx.json > SHA256SUMS
+          sha256sum --check SHA256SUMS
+      - name: Create draft and upload each asset once
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" --draft --verify-tag \
+            --title "${GITHUB_REF_NAME}" --generate-notes
+          gh release upload "${GITHUB_REF_NAME}" \
+            dist/grafana-llmops-forge.skill \
+            dist/grafana-llmops-forge.spdx.json dist/SHA256SUMS
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: dist/grafana-llmops-forge.skill
+      - name: Attest SPDX SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6  # v4.2.2
+        with:
+          subject-path: dist/grafana-llmops-forge.skill
+          sbom-path: dist/grafana-llmops-forge.spdx.json
+      - name: Publish only after both attestations succeed
+        env: {GH_TOKEN: "${{ github.token }}"}
+        run: gh release edit "${GITHUB_REF_NAME}" --draft=false

@@ -52,7 +52,10 @@ jobs:
           pip install --quiet zizmor==1.29.0
           zizmor --no-online-audits --persona=regular .github/workflows/
       - name: Package builds reproducibly and matches sources
-        run: python tools/package.py && python tools/package.py --verify
+        run: |
+          python tools/package.py
+          python tools/package.py --verify
+          python tests/supply_chain_check.py
       - name: Registry JSON is valid & priced models have sources
         run: |
           python - <<'PY'
@@ -95,9 +98,61 @@ jobs:
           docker compose -f demo/docker-compose.yml ps -a
           docker compose -f demo/docker-compose.yml logs --tail=150
 
+  windows-portability:
+    name: Windows portability (Python 3.13)
+    permissions: {contents: read}
+    runs-on: windows-latest
+    env:
+      PYTHONUTF8: "1"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with: {persist-credentials: false}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97  # v7.0.0
+        with: {python-version: "3.13"}
+      - name: Install harness dependency
+        run: python -m pip install --quiet pyyaml==6.0.2
+      - name: Offline selftest
+        run: python scripts/forge_dashboards.py --selftest --with-alerts
+      - name: Audit harness
+        run: python tests/audit_harness.py
+      - name: Package and SBOM are portable and reproducible
+        run: |
+          python tools/package.py
+          python tools/package.py --verify
+          python tests/supply_chain_check.py
+      - name: Package verification is safe under Windows CP1252
+        env:
+          PYTHONUTF8: "0"
+          PYTHONIOENCODING: cp1252
+        run: |
+          python tools/package.py --verify
+          python tools/sbom.py dist/grafana-llmops-forge.skill --verify
+
   e2e:
+    name: E2E Grafana ${{ matrix.version }} (${{ matrix.support }})
     permissions: {contents: read}  # lecture du dépôt uniquement
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - version: "9.5.21"
+            support: legacy-compatibility-only
+            grafana: grafana/grafana:9.5.21@sha256:ec106c7d446c88377f9d6c4cd363361b5846c361a28f5669d1b5e92926d94891
+          - version: "10.4.19"
+            support: legacy-compatibility-only
+            grafana: grafana/grafana:10.4.19@sha256:a9043254ba16fb10945cc27333963dfd08eccbb43b51f1222d831cc564e3a1f4
+          - version: "11.6.16"
+            support: legacy-compatibility-only
+            grafana: grafana/grafana:11.6.16@sha256:d67af92050b8d93b393dc741864752a69c9da1ffa39c1bb9af49ad5d9e47d2c3
+          - version: "12.4.9"
+            support: supported
+            grafana: grafana/grafana:12.4.9@sha256:9b58461280b4d2992d4399823c9427d0fcf5f0fd7f376c93f2dea876158b867b
+          - version: "13.2.0"
+            support: supported
+            grafana: grafana/grafana:13.2.0@sha256:3fd54ae1214669f8355f065ec9f6445d5279a3d77095ab048ca045685272429b
+    env:
+      GRAFANA_IMAGE: ${{ matrix.grafana }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with: {persist-credentials: false}

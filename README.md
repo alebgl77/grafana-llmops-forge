@@ -38,6 +38,15 @@ python3 scripts/forge_dashboards.py \
 python3 scripts/visual_audit.py --dashboards generated_dashboards  # ③ prove it renders right
 ```
 
+Multi-org deployments can pin `--org-id <id>` on discovery, forge and visual
+audit. Use `--uid-scope <tenant-or-folder>` when deploying the same blueprints
+to multiple folders; omitting it preserves all historical UIDs. Discovery is
+fail-closed on datasource errors; `--tolerate-datasource-errors` only tolerates
+an unhealthy datasource when another one is healthy and records the error.
+Deployment writes a v2 manifest with `success|partial|failed`; `--best-effort`
+changes only the exit code. Visual audit likewise remains `failed` when an
+expected capture is absent, even when `--allow-empty` explicitly permits exit 0.
+
 <div align="center"><img src="docs/assets/dashboard-finops.svg" alt="Generated FinOps dashboard" width="100%"/>
 <sub><i><b>Illustration</b> (hand-drawn SVG, not a screenshot) of the FinOps blueprint: cost composed from a 30-model price registry, split by provider sovereignty. For the real thing on real data, run <code>make demo</code>: it boots Grafana + Prometheus + a synthetic LLM workload and deploys these dashboards for real in about a minute.</i></sub></div>
 
@@ -227,6 +236,10 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 **Can I publish the generated dashboards?** Yes: `--export-portable` emits JSON with `__inputs`/`${DS_PROMETHEUS}` placeholders, the format grafana.com/dashboards requires.
 
 **Multiple Prometheus (prod + staging)?** Discovery flags it and the forge tells you which one it picked; pin it with `--datasource <uid|name>`.
+
+**Multiple orgs or folders?** Pin the Grafana organization with `--org-id` and
+give each independently managed folder a stable `--uid-scope`. The forge
+refuses to overwrite an existing dashboard UID found in another folder.
 
 **Is the governance dashboard legal advice?** No, and it says so on the dashboard. It is the *evidence layer* your counsel or auditor will ask for: the logging continuity, model inventory and incident trail that ISO 42001 Stage 2, NIST MANAGE 4.1 and AI Act Art. 12 all want to see. It proves monitoring happened; it does not prove a management system exists, and `references/ai_governance_frameworks.md` is explicit about both halves.
 

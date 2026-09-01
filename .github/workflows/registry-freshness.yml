@@ -1,6 +1,6 @@
 name: Registry freshness
 on:
-  schedule: [{cron: "0 7 1 * *"}]   # 1er du mois
+  schedule: [{cron: "0 7 * * 1"}]   # chaque lundi
   workflow_dispatch:
 permissions: {}
 concurrency:
@@ -21,7 +21,7 @@ jobs:
           m = json.load(open("references/model_registry.json"))["_meta"]
           d = (datetime.date.today() - datetime.date.fromisoformat(m["verified_at"])).days
           print(f"days={d}")
-          print(f"stale={'true' if d > 45 else 'false'}")
+          print(f"stale={'true' if d > 30 else 'false'}")
           PY
       - if: steps.age.outputs.stale == 'true'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9.0.0
@@ -39,7 +39,7 @@ jobs:
             if (open.some(i => i.title.startsWith("Refresh model price registry"))) return;
             await github.rest.issues.create({...context.repo, title, labels: ["registry"],
               body: [
-                `LLM prices move quarterly. \`_meta.verified_at\` is ${days} days old.`,
+                `The 30-day price check is overdue: \`_meta.verified_at\` is ${days} days old.`,
                 "",
                 "Check the official pages listed in `_meta.sources`, update the",
                 "models you use, bump `verified_at`. Takes about ten minutes and",

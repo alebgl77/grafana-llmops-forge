@@ -21,9 +21,29 @@ sans verdict visuel quand la capture est possible.
 
 ```bash
 python3 scripts/visual_audit.py --dashboards generated_dashboards --out visual_audit
+# multi-org : --org-id 7 (sinon résolution stricte via /api/org)
 # puis : ouvrir visual_audit/<dash>/full.png (vision), croiser avec audit_manifest.json
 # (panel_index = correspondance fichier → titre ; dom_findings = pré-scan Playwright)
 ```
+
+Le manifeste v2 porte `org_id`, `audit_status`, la liste des captures attendues
+et manquantes, et des erreurs structurées. Zéro capture ou toute capture
+attendue manquante donne `audit_status: failed` et un code non nul. L'option
+`--allow-empty` doit rester exceptionnelle : elle ne peut autoriser le code 0
+que lorsque zéro capture a été produite sans erreur HTTP, moteur ou DOM critique;
+le manifeste demeure `failed`.
+
+En mode `auto`, seul un 404 du probe `/render` signifie que le renderer est
+explicitement absent et autorise le fallback Playwright. Les 403, 429, 5xx,
+réponses non-image et erreurs de transport échouent sans fallback. Playwright
+limite Basic à l'origine Grafana, installe le cookie avec domaine/path/secure et
+injecte Bearer ainsi que `X-Grafana-Org-Id` uniquement sur les requêtes
+same-origin. Toute sous-ressource cross-origin est débarrassée de ces trois
+secrets. Chaque navigation exige un statut 2xx. L'URL finale doit rester sur la
+même origine et le même UID de dashboard; `/login`, une origine SSO externe ou
+un autre dashboard échouent. `Unauthorized`, `Datasource not found`, les textes
+de connexion Grafana, plugin manquant, templating cassé et erreurs de chargement
+visibles dans le DOM rendent également l'audit `failed`.
 
 Ordre de lecture : `full.png` d'abord (structure, panels vides, erreurs
 visibles), puis les `panel_XX_*.png` de tout panel douteux. Sur Playwright, les

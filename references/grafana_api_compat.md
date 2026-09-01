@@ -58,6 +58,21 @@ Depuis avril 2026, l'UI migre les dashboards ouverts vers le schéma v2
 ## 5. Pièges opérationnels
 
 - **UID ≤ 40 caractères**, alphanum + tirets ; `det_uid()` le garantit.
+- Sans `--uid-scope`, les UIDs historiques restent inchangés. Pour plusieurs
+  dossiers/tenants, fournir un scope stable : dashboards **et** alertes auront
+  des UIDs distincts. La forge refuse un UID existant dans un autre dossier.
+- L'organisation vient de `/api/org` ou de `--org-id`; il n'existe aucun
+  fallback silencieux vers l'org 1. Un override ajoute `X-Grafana-Org-Id` à
+  toutes les requêtes, puis `/api/org` doit confirmer la même valeur. Un token
+  qui ignore ce scope, une réponse ambiguë ou un refus d'accès interrompt le run.
+- Avant l'update d'une alerte, la forge vérifie `uid`, `folderUID`, `orgID`,
+  `ruleGroup`, le label d'origine et `llmops_rule_identity`, un SHA-256 du nom
+  logique complet avant troncature de l'UID. Toute collision renvoie 409 avant
+  le PUT et recommande `--uid-scope`. Une ancienne règle forge sans ce nouveau
+  label est refusée de la même façon et doit être migrée explicitement.
+- Une erreur datasource 401/403/429/5xx, proxy ou JSON invalide échoue par
+  défaut. `--tolerate-datasource-errors` consigne l'erreur et continue seulement
+  si une autre datasource est saine; une sélection explicite reste fail-closed.
 - `overwrite: true` obligatoire pour l'idempotence legacy ; en resource API,
   PUT sur `/{name}` = update, POST = create (409 si existe).
 - Grafana Cloud : rate limits API ; la forge fait 1 appel/dashboard, négligeable.
@@ -65,6 +80,11 @@ Depuis avril 2026, l'UI migre les dashboards ouverts vers le schéma v2
   (permissions datasource sur Enterprise/Cloud).
 - `/api/health` ne demande pas d'auth sur la plupart des setups ; premier test
   de connectivité avant de diagnostiquer un problème de token.
+
+`deploy_manifest.json` v2 porte `deployment_status`, `org_id`, `folder_uid`,
+`uid_scope`, les compteurs requested/succeeded/failed/skipped par type et des
+erreurs structurées. Un échec demandé produit un code non nul; `--best-effort`
+autorise uniquement le code 0, sans transformer `partial|failed` en succès.
 
 ## 6. Où déposer les recording rules générées
 

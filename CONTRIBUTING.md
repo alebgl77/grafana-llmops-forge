@@ -6,6 +6,8 @@ Prices drift quarterly. Edit `references/model_registry.json`:
 2. Set `estimate: true` if not from the official page; add the official URL to `_meta.sources` if the vendor is new.
 3. Bump `_meta.verified_at`.
 CI validates the JSON; the specificity matcher has regression tests, so date-suffixed variants stay safe.
+Do not bump `_meta.verified_at` without checking the official provider pages;
+releases fail once the verified data is more than 30 days old.
 
 ## 🔌 New dialects (gateways/engines)
 Add a signature in `discover.py` (`DIALECT_SIGNATURES` + label candidates), extend `Q` in `forge_dashboards.py`, add a topology to `tests/audit_harness.py`. PRs without a harness topology won't be merged.
@@ -32,6 +34,12 @@ So the bar for a change is evidence, not plausibility:
 
 ## Ground rules
 - `python3 tests/audit_harness.py` must print `AUDIT PROPRE` (27/27).
+- `python3 tests/supply_chain_check.py` must prove that the package and SPDX
+  SBOM are reproducible and reject tampering.
 - stdlib only in `scripts/` (Playwright stays optional).
 - No hardcoded metric names in blueprints; resolve through the capability map.
 - Panel descriptions teach interpretation, not paraphrase titles.
+
+Production-impacting changes must also follow
+[`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md), including the
+manual Grafana Cloud, Enterprise, and SSO validation where applicable.

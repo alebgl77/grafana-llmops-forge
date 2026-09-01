@@ -103,9 +103,15 @@ def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
     return found
 
 
-def build_capability_map(client: GrafanaClient, ds_filter: str | None = None) -> dict:
+def build_capability_map(client: GrafanaClient, ds_filter: str | None = None,
+                         tolerate_datasource_errors: bool = False,
+                         org_id: int | None = None) -> dict:
+    resolved_org = client.resolve_org(org_id)
     cap = {
+        "schema": "grafana-llmops-forge/capability-map",
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(),
+        "org_id": resolved_org,
         "instance": {
             "url": client.base,
             "version": client.version(),
@@ -117,24 +123,20 @@ def build_capability_map(client: GrafanaClient, ds_filter: str | None = None) ->
         "datasources": {"prometheus": [], "loki": [], "tempo": [], "other": []},
         "signals": {},
         "gaps": [],
+        "datasource_errors": [],
+        "tolerate_datasource_errors": tolerate_datasource_errors,
     }
-    try:
-        all_ds = client.datasources()
-    except GrafanaError as e:
-        if e.status == 403:
-            cap["gaps"].append("Token sans droit de lister les datasources "
-                               "(rôle Viewer insuffisant → passer en Editor/Admin).")
-            all_ds = []
-        else:
-            raise
-
-    proms = client.prometheus_like() if all_ds else []
+    all_ds = client.datasources()
+    proms = [d for d in all_ds
+             if d.get("type") in ("prometheus", "grafana-amazonprometheus-datasource",
+                                  "grafana-azureprometheus-datasource")
+             or "mimir" in (d.get("type") or "")]
     if ds_filter:
         proms = [d for d in proms
                  if ds_filter in (d.get("uid", ""), d.get("name", ""))]
         if not proms:
-            cap["gaps"].append(f"--datasource « {ds_filter} » ne correspond à aucune "
-                               "datasource Prometheus de cette instance.")
+            raise GrafanaError(
+                404, f"--datasource {ds_filter!r} does not match a Prometheus datasource")
     for ds in all_ds:
         meta = {"uid": ds.get("uid"), "name": ds.get("name"), "type": ds.get("type"),
                 "default": ds.get("isDefault", False)}
@@ -147,14 +149,35 @@ def build_capability_map(client: GrafanaClient, ds_filter: str | None = None) ->
         else:
             cap["datasources"]["other"].append(meta)
 
+    healthy_proms = 0
     for ds in proms:
-        signals = probe_prometheus(client, ds)
+        try:
+            signals = probe_prometheus(client, ds)
+        except (GrafanaError, SystemExit) as e:
+            cap["datasource_errors"].append(
+                {"uid": ds.get("uid"), "name": ds.get("name"), "type": ds.get("type"),
+                 "status": getattr(e, "status", 0), "message": str(e)})
+            if ds_filter or not tolerate_datasource_errors:
+                raise
+            continue
+        healthy_proms += 1
         if signals:
             cap["signals"][ds["uid"]] = signals
+    if proms and not healthy_proms:
+        raise GrafanaError(502, "no healthy Prometheus datasource could be probed",
+                           repr(cap["datasource_errors"])[:2000])
 
     for meta in cap["datasources"]["loki"]:
         ds = next(d for d in all_ds if d.get("uid") == meta["uid"])
-        labels = client.loki_labels(ds)
+        try:
+            labels = client.loki_labels(ds)
+        except (GrafanaError, SystemExit) as e:
+            cap["datasource_errors"].append(
+                {"uid": ds.get("uid"), "name": ds.get("name"), "type": ds.get("type"),
+                 "status": getattr(e, "status", 0), "message": str(e)})
+            if not tolerate_datasource_errors:
+                raise
+            continue
         meta["labels"] = [l for l in labels if l in LOKI_AI_HINT_LABELS] or labels[:20]
 
     # exemplars : routage métrique → trace configuré côté datasource ?
@@ -203,7 +226,7 @@ def build_capability_map(client: GrafanaClient, ds_filter: str | None = None) ->
 
 def summarize(cap: dict) -> str:
     inst = cap["instance"]
-    lines = [f"Grafana {inst['version']} ({inst['edition']}), "
+    lines = [f"Grafana {inst['version']} ({inst['edition']}), org {cap['org_id']}, "
              f"API resource: {'oui' if inst['apis']['resource'] else 'non'}"]
     for kind in ("prometheus", "loki", "tempo"):
         n = len(cap["datasources"][kind])
@@ -218,24 +241,41 @@ def summarize(cap: dict) -> str:
                          f"{len(info['metric_names'])} métriques{extra}")
     for g in cap["gaps"]:
         lines.append(f"  GAP: {g}")
+    for e in cap.get("datasource_errors", []):
+        lines.append(f"  DATASOURCE ERROR [{e.get('uid')}]: {e.get('message')}")
     return "\n".join(lines)
 
 
 def main() -> int:
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(errors="backslashreplace")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--out", default="capability_map.json")
     ap.add_argument("--datasource", default=None,
                     help="Restreindre la découverte à une datasource (uid ou nom)")
+    ap.add_argument("--org-id", type=int, default=None,
+                    help="Override explicite de l'organisation Grafana (sinon /api/org)")
+    ap.add_argument("--tolerate-datasource-errors", action="store_true",
+                    help="Continuer si une datasource parmi plusieurs échoue; les erreurs "
+                         "restent consignées dans la capability map")
     ap.add_argument("--insecure", action="store_true",
                     help="Ignorer la vérification TLS (labs uniquement)")
     args = ap.parse_args()
 
-    client = GrafanaClient(insecure=args.insecure)
-    cap = build_capability_map(client, args.datasource)
+    if args.org_id is not None and args.org_id <= 0:
+        ap.error("--org-id must be a positive integer")
+    try:
+        client = GrafanaClient(insecure=args.insecure)
+        cap = build_capability_map(client, args.datasource,
+                                   args.tolerate_datasource_errors, args.org_id)
+    except (GrafanaError, SystemExit) as e:
+        print(f"[fail] discovery aborted: {e}", file=sys.stderr)
+        return 2
     with open(args.out, "w", encoding="utf-8") as f:
         json.dump(cap, f, indent=2, ensure_ascii=False)
     print(summarize(cap))
-    print(f"\nCapability map → {args.out}")
+    print(f"\nCapability map -> {args.out}")
     return 0
 
 

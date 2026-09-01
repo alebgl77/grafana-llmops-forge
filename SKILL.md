@@ -37,6 +37,8 @@ If the user has no token: Administration → Users and access → Service accoun
 ```bash
 python3 scripts/discover.py --out capability_map.json
 # --datasource <uid|name> to target one datasource (prod vs staging)
+# --org-id <id> to override /api/org in multi-org Grafana
+# --tolerate-datasource-errors only when other healthy datasources may continue
 ```
 
 Produces the capability map: version/edition/namespace, API availability (legacy `/api` vs resource `/apis/dashboard.grafana.app`), classified datasources, LLM dialects detected **with real metric names**, exemplar routing, Loki labels, and the gap list. Read the JSON and **summarise the findings to the user before continuing**; this is the moment to catch a wrong datasource or a staging instance.
@@ -80,9 +82,12 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 #   --framework iso-42001   governance readings: eu-ai-act, iso-42001, nist-rmf
 #   --rules-window 10m      rate() window; keep it ≥ 4× your scrape interval
 #   --rules-interval 2m     rule group evaluation interval
+#   --org-id 7              explicit Grafana organization
+#   --uid-scope prod-eu     distinct deterministic dashboard + alert UIDs
+#   --best-effort           exit 0 on partial deploy; manifest remains non-success
 ```
 
-The script generates the JSON (classic schema v41, identical behaviour across OSS/Cloud/Enterprise from v9 to v13, deployed through the legacy API with a K8s-style resource-API fallback), creates the folder, upserts the dashboards, provisions SLO alerts (`--with-alerts`: two-window error burn-rate at 5m/1h and 30m/6h per the SRE method, TTFT p95, daily budget, KV-cache saturation, eval-score drop, and signal loss; that last one gets `noDataState: Alerting`, without which it would stay silent precisely when telemetry dies), writes `deploy_manifest.json`, then prints the URLs. Always relay the final URLs to the user.
+The script generates the JSON (classic schema v41, identical behaviour across OSS/Cloud/Enterprise from v9 to v13, deployed through the legacy API with a K8s-style resource-API fallback), creates the folder, upserts the dashboards, provisions SLO alerts (`--with-alerts`: two-window error burn-rate at 5m/1h and 30m/6h per the SRE method, TTFT p95, daily budget, KV-cache saturation, eval-score drop, and signal loss; that last one gets `noDataState: Alerting`, without which it would stay silent precisely when telemetry dies), writes the v2 `deploy_manifest.json` (`success|partial|failed`, org/folder/scope, per-type counts and structured errors), then prints the URLs. Any requested-resource failure is nonzero unless `--best-effort` was explicit; that flag never changes the manifest status. Always relay the final URLs to the user.
 
 **Backing it out.** Say this without being asked when deploying to a production instance: everything created lives in one folder, the tool has no delete path of its own, and removing that folder removes the whole deployment: dashboards and alert rules together. Generated recording rules are a separate file in Prometheus. The exact command is in the README under "What it touches".
 
@@ -92,9 +97,10 @@ The script generates the JSON (classic schema v41, identical behaviour across OS
 
 ```bash
 python3 scripts/visual_audit.py --dashboards generated_dashboards --out visual_audit
+# --org-id 7 pins the org; --allow-empty only relaxes the exit code
 ```
 
-Engine auto-selection: native `/render/...` (image-renderer plugin; bundled on Cloud), otherwise Playwright (real headless browser, Bearer header auth, kiosk mode, DOM pre-scan for "No data" and errors). Then **open the PNGs with vision** (`visual_audit/<dash>/full.png` first, suspicious panels next, mapping in `audit_manifest.json`) and apply the checklist and the signature-to-fix table in `references/visual_verification.md`. Verdict per dashboard (✅/⚠/❌), remediate at the source (registry, capability map, code, never the UI), re-forge, re-capture only what was fixed, two iterations maximum. The same script checks non-dashboard settings (datasources, alert rules) through Playwright; see §6 of that reference.
+Engine auto-selection: native `/render/...` (image-renderer plugin; bundled on Cloud), otherwise Playwright (real headless browser, Bearer header auth, kiosk mode, DOM pre-scan for "No data" and errors). The v2 audit manifest includes `org_id`, expected/missing captures and structured errors; zero or missing expected captures fail by default. `--allow-empty` is an explicit exit-code override and leaves `audit_status: failed`. Then **open the PNGs with vision** (`visual_audit/<dash>/full.png` first, suspicious panels next, mapping in `audit_manifest.json`) and apply the checklist and the signature-to-fix table in `references/visual_verification.md`. Verdict per dashboard (✅/⚠/❌), remediate at the source (registry, capability map, code, never the UI), re-forge, re-capture only what was fixed, two iterations maximum. The same script checks non-dashboard settings (datasources, alert rules) through Playwright; see §6 of that reference.
 
 ### Phase 5: Gap report
 

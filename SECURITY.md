@@ -6,6 +6,11 @@
 
 **Scope**: the scripts in `scripts/`, the SKILL.md instructions, and the CI workflow. Model prices in the registry are data, not code: wrong prices are bugs, not vulnerabilities.
 
+Repository administrators should apply the external GitHub security controls
+and production validation gates in
+[`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md). These settings
+cannot be enforced by the workflow files alone.
+
 ## Third-party scanning
 
 This skill is scanned with [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector).

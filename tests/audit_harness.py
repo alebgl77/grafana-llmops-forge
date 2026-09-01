@@ -1,6 +1,18 @@
 """Harnais d'audit grafana-llmops-forge : vérifie les chemins hors selftest."""
 import json, os, re, subprocess, sys, shutil
 import pathlib
+import builtins
+
+_builtin_open = builtins.open
+def open(file, mode="r", *args, **kwargs):
+    """Le dépôt est UTF-8 ; ne pas dépendre de la code page Windows active."""
+    if "b" not in mode:
+        kwargs.setdefault("encoding", "utf-8")
+    return _builtin_open(file, mode, *args, **kwargs)
+
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(errors="backslashreplace")
 
 try:
     import yaml
@@ -14,23 +26,27 @@ SK = str(pathlib.Path(__file__).resolve().parent.parent)
 SC = f"{SK}/scripts"
 sys.path.insert(0, SC)
 import forge_dashboards
-import tempfile; os.chdir(tempfile.gettempdir())
+import tempfile
+TMP = tempfile.gettempdir()
+os.chdir(TMP)
 FAIL = []
 
 def check(name, cond, detail=""):
-    print(("  ✅ " if cond else "  ❌ ") + name + (f" : {detail}" if detail and not cond else ""))
+    print(("  [PASS] " if cond else "  [FAIL] ") + name
+          + (f" : {detail}" if detail and not cond else ""))
     if not cond:
         FAIL.append(f"{name}: {detail}")
 
 def run_forge(cap, outdir, bps="auto", extra=()):
-    shutil.rmtree(f"/tmp/{outdir}", ignore_errors=True)   # pas de résidu inter-run
-    cpath = f"/tmp/{outdir}.json"
+    outpath = os.path.join(TMP, outdir)
+    shutil.rmtree(outpath, ignore_errors=True)   # pas de résidu inter-run
+    cpath = os.path.join(TMP, outdir + ".json")
     json.dump(cap, open(cpath, "w"))
     r = subprocess.run([sys.executable, f"{SC}/forge_dashboards.py",
                         "--capability", cpath, "--blueprints", bps,
-                        "--out-dir", f"/tmp/{outdir}", "--with-alerts",
+                        "--out-dir", outpath, "--with-alerts", "--org-id", "1",
                         *extra], capture_output=True, text=True)
-    return r, f"/tmp/{outdir}"
+    return r, outpath
 
 def load_boards(d):
     out = {}
@@ -163,6 +179,10 @@ class FakeClient:
     def has_exemplar_link(self, ds): return ds.get("uid") == "p1"
     def contact_points(self): return []
     def org_id(self): return 3
+    def resolve_org(self, requested=None):
+        if requested is not None and int(requested) != 3:
+            raise discover.GrafanaError(409, "organization mismatch")
+        return 3
 cap = discover.build_capability_map(FakeClient())
 sig = cap["signals"]["p1"]["otel_genai"]
 check("dialecte otel détecté + modèle", sig["model_label"] == "gen_ai_request_model")
@@ -171,9 +191,12 @@ check("gap Tempo signalé", any("Tempo" in g for g in cap["gaps"]))
 check("labels Loki filtrés", "service_name" in cap["datasources"]["loki"][0]["labels"])
 check("exemplars détectés sur la datasource", cap["datasources"]["prometheus"][0]["exemplars"])
 check("gap recording rules signalé", any("Recording rules" in g for g in cap["gaps"]))
-cap2 = discover.build_capability_map(FakeClient(), ds_filter="inexistante")
-check("filtre --datasource inconnu → gap explicite",
-      any("--datasource" in g for g in cap2["gaps"]))
+try:
+    discover.build_capability_map(FakeClient(), ds_filter="inexistante")
+    _unknown_ds_failed = False
+except discover.GrafanaError as _e:
+    _unknown_ds_failed = _e.status == 404 and "--datasource" in str(_e)
+check("filtre --datasource inconnu => erreur explicite", _unknown_ds_failed)
 
 # ------------------------------------------------------------------ 6. invariants
 print("\n[6] Invariants unitaires")
@@ -198,7 +221,7 @@ check("registre : régions valides",
 
 # ---------------------------------------------------------------- 7. visual_audit
 print("\n[16] Packaging du livrable")
-_pkg = "/tmp/audit_pkg.skill"
+_pkg = os.path.join(TMP, "audit_pkg.skill")
 r = subprocess.run([sys.executable, os.path.join(SK, "tools", "package.py"),
                     "--out", _pkg], capture_output=True, text=True)
 check("le dépôt sait construire son propre .skill", r.returncode == 0, r.stderr[-160:])
@@ -292,7 +315,7 @@ gw = bs.get("gateway", {})
 ex = [t for p in gw.get("panels", []) for t in p.get("targets", []) if t.get("exemplar")]
 check("exemplars posés quand la datasource les route", bool(ex))
 # mode recorded : requêtes O(1)
-r2, d2 = run_forge(json.load(open(f"/tmp/audit_v12.json")), "audit_rec",
+r2, d2 = run_forge(json.load(open(os.path.join(TMP, "audit_v12.json"))), "audit_rec",
                    extra=("--cost-mode", "recorded"))
 fin = load_boards(d2).get("finops", {})
 ex2 = [t["expr"] for p in fin.get("panels", []) for t in p.get("targets", [])
@@ -553,19 +576,36 @@ _SECRET_RX = "|".join([
     r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_-]{20,}",
     r"xox[baprs]-[A-Za-z0-9-]{10}",
 ])
-_leak = subprocess.run(["grep", "-rIlE", _SECRET_RX, "--exclude-dir=.git",
-                        "--exclude-dir=dist", "--exclude-dir=__pycache__", "."],
-                       cwd=SK, capture_output=True, text=True).stdout.strip()
-check("aucun jeton, cle API, cle privee ou JWT en dur", not _leak, _leak[:140])
-_env_reads = subprocess.run(
-    ["grep", "-rInE", r"os\.environ|os\.getenv", "--include=*.py", "scripts", "tools"],
-    cwd=SK, capture_output=True, text=True).stdout
+def _scan_files(roots, pattern, suffix=None):
+    rx, hits = re.compile(pattern), []
+    excluded = {".git", "dist", "__pycache__"}
+    for root in roots:
+        for base, dirs, files in os.walk(os.path.join(SK, root)):
+            dirs[:] = [d for d in dirs if d not in excluded]
+            for name in files:
+                if suffix and not name.endswith(suffix):
+                    continue
+                path = os.path.join(base, name)
+                try:
+                    text = open(path, encoding="utf-8", errors="ignore").read()
+                except OSError:
+                    continue
+                if rx.search(text):
+                    hits.append(os.path.relpath(path, SK))
+    return hits
+
+_leak = _scan_files(["."], _SECRET_RX)
+check("aucun jeton, cle API, cle privee ou JWT en dur", not _leak, str(_leak[:4]))
+_env_reads = "\n".join(
+    open(os.path.join(base, name), encoding="utf-8", errors="ignore").read()
+    for root in ("scripts", "tools")
+    for base, dirs, files in os.walk(os.path.join(SK, root))
+    for name in files if name.endswith(".py"))
 check("les identifiants ne viennent que de l'environnement",
       "GRAFANA_TOKEN" in _env_reads and "GRAFANA_URL" in _env_reads)
-_logged = subprocess.run(
-    ["grep", "-rnE", r"print\(.*(token|TOKEN|password|PASSWORD)", "--include=*.py",
-     "scripts", "tools"], cwd=SK, capture_output=True, text=True).stdout.strip()
-check("aucun identifiant imprime sur la sortie", not _logged, _logged[:120])
+_logged = _scan_files(["scripts", "tools"],
+                      r"print\(.*(?:token|TOKEN|password|PASSWORD)", ".py")
+check("aucun identifiant imprime sur la sortie", not _logged, str(_logged[:4]))
 
 # ------------------------------------ 20. langue de sortie (audience mondiale)
 print("\n[20] Langue des artefacts generes")
@@ -808,7 +848,7 @@ import socket as _sk, time as _tm
 def _free_port():
     s = _sk.socket(); s.bind(("127.0.0.1", 0)); p = s.getsockname()[1]; s.close(); return p
 
-def _against_fake(mode, args):
+def _fake_session(mode, action):
     port = _free_port()
     srv = subprocess.Popen([sys.executable, os.path.join(SK, "tests", "fake_grafana.py"),
                             mode, str(port)], stdout=subprocess.DEVNULL,
@@ -826,14 +866,28 @@ def _against_fake(mode, args):
             # attribue au produit plutot qu'au harnais
             raise RuntimeError(f"fake_grafana n'a pas demarre sur le port {port}")
         env = dict(os.environ, GRAFANA_URL=f"http://127.0.0.1:{port}", GRAFANA_TOKEN="x")
-        cap = f"/tmp/fk_{mode}.json"
-        subprocess.run([sys.executable, os.path.join(SC, "discover.py"), "--out", cap],
-                       env=env, capture_output=True, timeout=60)
-        return subprocess.run([sys.executable, os.path.join(SC, "forge_dashboards.py"),
-                               "--capability", cap, "--out-dir", f"/tmp/fkout_{mode}"] + args,
-                              env=env, capture_output=True, text=True, timeout=90)
+        return action(env)
     finally:
         srv.terminate(); srv.wait(timeout=5)
+
+def _fake_out(mode):
+    return os.path.join(tempfile.gettempdir(), f"fkout_{mode}")
+
+def _against_fake(mode, args, discover_args=()):
+    cap = os.path.join(tempfile.gettempdir(), f"fk_{mode}.json")
+    out = _fake_out(mode)
+    shutil.rmtree(out, ignore_errors=True)
+    def action(env):
+        discovery = subprocess.run(
+            [sys.executable, os.path.join(SC, "discover.py"), "--out", cap,
+             *discover_args], env=env, capture_output=True, text=True, timeout=60)
+        if discovery.returncode:
+            return discovery
+        return subprocess.run(
+            [sys.executable, os.path.join(SC, "forge_dashboards.py"),
+             "--capability", cap, "--out-dir", out, *args],
+            env=env, capture_output=True, text=True, timeout=90)
+    return _fake_session(mode, action)
 
 r = _against_fake("nofolder", ["--deploy"])
 check("403 sur la creation du dossier : message actionnable, pas de traceback",
@@ -847,14 +901,273 @@ check("403 sur un dashboard : etat partiel decrit, pas de traceback",
       r.stderr[-140:])
 check("403 dashboard : dit que relancer est sur",
       "Re-running" in r.stderr and "safe" in r.stderr)
-r = _against_fake("nods", ["--deploy"])
-check("403 sur les datasources : degrade proprement au lieu d'echouer",
-      r.returncode == 0, r.stderr[-140:])
+r = _against_fake("ds403", ["--deploy"])
+check("403 datasource reste une erreur et donne un exit non nul",
+      r.returncode != 0 and "discovery aborted" in r.stderr, r.stderr[-180:])
+for _mode, _code in (("ds429", "429"), ("ds500", "500")):
+    r = _against_fake(_mode, ["--deploy"])
+    check(f"{_code} datasource ne devient jamais une liste vide",
+          r.returncode != 0 and _code in r.stderr, r.stderr[-180:])
+r = _against_fake("dsempty", ["--deploy"])
+check("200 avec liste datasource vide reste un etat valide",
+      r.returncode == 0, r.stderr[-180:])
+r = _against_fake("proxy500", ["--deploy"])
+check("500 du proxy datasource est fail-closed",
+      r.returncode != 0 and "500" in r.stderr, r.stderr[-180:])
+r = _against_fake("noorg", ["--deploy"])
+check("absence d'organisation resolue est une erreur claire",
+      r.returncode != 0 and "organization" in r.stderr.lower(), r.stderr[-180:])
+r = _against_fake("noorg", ["--deploy", "--org-id", "9"],
+                  discover_args=("--org-id", "9"))
+check("override org non confirmable est refuse",
+      r.returncode != 0 and "403" in r.stderr, r.stderr[-180:])
+r = _against_fake("orgmismatch", ["--deploy", "--org-id", "9"],
+                  discover_args=("--org-id", "9"))
+check("override org ignore par Grafana est refuse",
+      r.returncode != 0 and "confirmed organization 7" in r.stderr,
+      r.stderr[-220:])
+r = _against_fake("orgscope", ["--deploy", "--org-id", "9"],
+                  discover_args=("--org-id", "9"))
+check("override org scope toutes les requetes et est confirme",
+      r.returncode == 0
+      and json.load(open(os.path.join(_fake_out("orgscope"),
+                                     "deploy_manifest.json")))["org_id"] == 9,
+      r.stderr[-180:])
 r = _against_fake("ok", ["--deploy", "--with-alerts"])
 check("instance saine : deploiement complet", r.returncode == 0, r.stderr[-140:])
-check("403 sur le provisioning d'alertes : exporte au lieu d'abandonner",
-      "non provisionn" in r.stdout or "import manuel" in r.stdout
-      or os.path.exists("/tmp/fkout_ok"), r.stdout[-120:])
+_ok_manifest = json.load(open(os.path.join(_fake_out("ok"), "deploy_manifest.json")))
+check("org API propagee au manifeste", _ok_manifest["org_id"] == 7)
+r = _against_fake("alertfail", ["--deploy", "--with-alerts"])
+_alert_manifest = json.load(open(os.path.join(_fake_out("alertfail"),
+                                              "deploy_manifest.json")))
+check("alerte refusee => nonzero et manifeste non-success",
+      r.returncode != 0 and _alert_manifest["deployment_status"] in ("partial", "failed")
+      and _alert_manifest["resources"]["alerts"]["failed"] > 0,
+      r.stderr[-180:])
+r = _against_fake("alertfail", ["--deploy", "--with-alerts", "--best-effort"])
+_alert_best = json.load(open(os.path.join(_fake_out("alertfail"),
+                                          "deploy_manifest.json")))
+check("--best-effort autorise exit 0 sans maquiller le manifeste",
+      r.returncode == 0 and _alert_best["deployment_status"] != "success")
+
+from grafana_client import GrafanaClient, GrafanaError, alert_logical_identity
+_sample_rule = {"uid": "llmops-alr-sample", "title": "Sample", "folderUID": "f1",
+                "orgID": 7, "ruleGroup": "llmops-slo",
+                "labels": {"origin": "llmops-forge",
+                           "llmops_rule_identity": alert_logical_identity("sample")}}
+class _AlertClient:
+    def __init__(self, existing): self.existing, self.writes = existing, []
+    def get(self, path): return self.existing
+    def put(self, path, payload): self.writes.append(("PUT", path)); return {"ok": True}
+    def post(self, path, payload): self.writes.append(("POST", path)); return {"ok": True}
+    upsert_alert_rule = GrafanaClient.upsert_alert_rule
+
+for _field, _value in (("folderUID", "other"), ("orgID", 99), ("uid", "foreign")):
+    _existing = dict(_sample_rule)
+    _existing["labels"] = dict(_sample_rule["labels"])
+    _existing[_field] = _value
+    _ac = _AlertClient(_existing)
+    try:
+        _ac.upsert_alert_rule(dict(_sample_rule))
+        _collision_refused = False
+    except GrafanaError as _e:
+        _collision_refused = (_e.status == 409 and "uid-scope" in str(_e).lower()
+                              and not _ac.writes)
+    check(f"collision alerte {_field} refusee avant ecriture", _collision_refused,
+          str(_ac.writes))
+_compatible = _AlertClient(dict(_sample_rule))
+_compatible.upsert_alert_rule(dict(_sample_rule))
+check("alerte compatible conserve l'upsert idempotent",
+      _compatible.writes == [("PUT", "/api/v1/provisioning/alert-rules/llmops-alr-sample")],
+      str(_compatible.writes))
+_other_identity = dict(_sample_rule)
+_other_identity["labels"] = dict(_sample_rule["labels"],
+    llmops_rule_identity=alert_logical_identity("different-logical-rule"))
+_ac = _AlertClient(_other_identity)
+try:
+    _ac.upsert_alert_rule(dict(_sample_rule))
+    _logical_collision_refused = False
+except GrafanaError as _e:
+    _logical_collision_refused = (_e.status == 409 and "uid-scope" in str(_e).lower()
+                                  and not _ac.writes)
+check("meme UID/org/dossier mais identite logique differente refusee avant PUT",
+      _logical_collision_refused, str(_ac.writes))
+_legacy_rule = dict(_sample_rule)
+_legacy_rule["labels"] = {"origin": "llmops-forge"}
+_ac = _AlertClient(_legacy_rule)
+try:
+    _ac.upsert_alert_rule(dict(_sample_rule))
+    _legacy_refused = False
+except GrafanaError as _e:
+    _legacy_refused = (_e.status == 409 and "uid-scope" in str(_e).lower()
+                       and not _ac.writes)
+check("ancienne regle forge sans identite logique est fail-closed",
+      _legacy_refused, str(_ac.writes))
+check("identite logique utilise uid_name complet avant troncature",
+      alert_logical_identity("x" * 200 + "a")
+      != alert_logical_identity("x" * 200 + "b"))
+for _mode in ("alertcollision-folder", "alertcollision-org", "alertcollision-identity"):
+    r = _against_fake(_mode, ["--deploy", "--with-alerts"])
+    check(f"{_mode} produit un 409 actionnable",
+          r.returncode != 0 and "uid-scope" in (r.stdout + r.stderr).lower(),
+          (r.stdout + r.stderr)[-220:])
+
+_legacy_uid = forge_dashboards.det_uid("ai-executive-finops")
+check("UID legacy strictement inchange sans scope",
+      _legacy_uid == "llmops-ai-executive-finops-b6b56614a5", _legacy_uid)
+check("deux scopes produisent des UIDs distincts et deterministes",
+      forge_dashboards.det_uid("ai-executive-finops", scope="prod")
+      != forge_dashboards.det_uid("ai-executive-finops", scope="staging")
+      and forge_dashboards.det_uid("ai-executive-finops", scope="prod")
+      == forge_dashboards.det_uid("ai-executive-finops", scope="prod"))
+r = _against_fake("collision", ["--deploy"])
+check("collision dashboard dans un autre dossier refusee",
+      r.returncode != 0 and "uid-scope" in (r.stderr + r.stdout).lower(),
+      (r.stderr + r.stdout)[-220:])
+r = _against_fake("collision", ["--deploy", "--uid-scope", "prod"])
+check("scope explicite evite la collision inter-dossier", r.returncode == 0,
+      r.stderr[-180:])
+
+sys.path.insert(0, SC)
+import visual_audit
+from types import SimpleNamespace
+_url_args = SimpleNamespace(resolved_org_id=37, time_from="now-1h", time_to="now")
+_url_client = SimpleNamespace(base="https://grafana.example")
+check("Playwright recoit l'org resolue, jamais 1 en dur",
+      "orgId=37" in visual_audit.playwright_dashboard_url(
+          _url_client, {"uid": "x"}, _url_args))
+
+def _visual_action(extra, mode="ok", engine="renderer", uid="missing"):
+    out = os.path.join(tempfile.gettempdir(), f"visual_{mode}_{engine}")
+    shutil.rmtree(out, ignore_errors=True)
+    def action(env):
+        return subprocess.run(
+            [sys.executable, os.path.join(SC, "visual_audit.py"), "--uids", uid,
+             "--engine", engine, "--out", out, *extra], env=env,
+            capture_output=True, text=True, timeout=60)
+    result = _fake_session(mode, action)
+    return result, json.load(open(os.path.join(out, "audit_manifest.json")))
+
+r, _visual_ok = _visual_action([], mode="renderok")
+check("renderer sain produit une capture et un manifeste success",
+      r.returncode == 0 and _visual_ok["audit_status"] == "success"
+      and _visual_ok["dashboards"][0]["files"], r.stderr[-180:])
+for _status in (403, 429, 500):
+    r, _visual_bad = _visual_action([], mode=f"render{_status}", engine="auto")
+    check(f"renderer {_status} ne bascule jamais vers Playwright",
+          r.returncode != 0 and _visual_bad["audit_status"] == "failed"
+          and _visual_bad["errors"][0].get("status") == _status
+          and _visual_bad["engine"] == "auto", r.stderr[-220:])
+r, _visual_404 = _visual_action([], mode="render404", engine="auto")
+check("renderer 404 explicite autorise seulement le fallback Playwright",
+      r.returncode != 0 and _visual_404["engine"] == "playwright",
+      (r.stdout + r.stderr)[-220:])
+r, _visual_hard_allowed = _visual_action(["--allow-empty"], mode="render403",
+                                          engine="auto")
+check("--allow-empty ne masque pas une erreur renderer",
+      r.returncode != 0 and _visual_hard_allowed["audit_status"] == "failed")
+
+class _PWResponse:
+    def __init__(self, status, url): self.status, self.url = status, url
+class _PWPage:
+    def __init__(self, status, final="https://grafana.example/d/x/slug"):
+        self.status, self.final, self.url = status, final, "about:blank"
+    def goto(self, *args, **kwargs):
+        self.url = self.final
+        return _PWResponse(self.status, self.final)
+for _status in (401, 403, 429, 500):
+    try:
+        visual_audit._checked_goto(_PWPage(_status), "https://grafana.example/d/x")
+        _pw_failed = False
+    except GrafanaError as _e:
+        _pw_failed = _e.status == _status
+    check(f"Playwright HTTP {_status} est fail-closed", _pw_failed)
+visual_audit._checked_goto(_PWPage(200), "https://grafana.example/d/x/original")
+check("Playwright accepte le slug final du dashboard attendu", True)
+for _name, _final in (("login", "https://grafana.example/login"),
+                      ("autre dashboard", "https://grafana.example/d/y/slug"),
+                      ("origine externe", "https://sso.example/d/x/slug")):
+    try:
+        visual_audit._checked_goto(
+            _PWPage(200, _final), "https://grafana.example/d/x/original")
+        _redirect_failed = False
+    except GrafanaError:
+        _redirect_failed = True
+    check(f"Playwright refuse redirection {_name}", _redirect_failed)
+
+class _HeaderClient:
+    _headers = GrafanaClient._headers
+    def __init__(self, token, user, password, org):
+        self.token, self.user, self.password = token, user, password
+        self._scoped_org_id = org
+        self.base = "https://grafana.example/grafana"
+_basic_client = _HeaderClient("", "alice", "secret", 9)
+_basic_headers = visual_audit._scoped_request_headers(
+    _basic_client, "https://grafana.example/grafana/d/x/slug", {})
+check("requete dashboard same-origin recoit Basic et org",
+      _basic_headers.get("Authorization") == "Basic YWxpY2U6c2VjcmV0"
+      and _basic_headers.get("X-Grafana-Org-Id") == "9", str(_basic_headers.keys()))
+check("credentials HTTP Basic sont limites a l'origine Grafana",
+      visual_audit._basic_http_credentials(_basic_client).get("origin")
+      == "https://grafana.example")
+_bearer_client = _HeaderClient("token-value", "", "", 11)
+_bearer_headers = visual_audit._scoped_request_headers(
+    _bearer_client, "https://grafana.example/grafana/d/x/slug", {})
+check("requete dashboard same-origin recoit Bearer et org",
+      _bearer_headers.get("Authorization") == "Bearer token-value"
+      and _bearer_headers.get("X-Grafana-Org-Id") == "11",
+      str(_bearer_headers.keys()))
+for _name, _client, _incoming in (
+        ("Basic", _basic_client, {"Authorization": "Basic secret",
+                                  "X-Grafana-Org-Id": "9"}),
+        ("Bearer", _bearer_client, {"authorization": "Bearer token-value",
+                                    "x-grafana-org-id": "11"}),
+        ("cookie", _basic_client, {"Cookie": "grafana_session=secret"})):
+    _external_headers = visual_audit._scoped_request_headers(
+        _client, "https://cdn.example/asset.js", _incoming)
+    check(f"sous-ressource cross-origin ne recoit jamais {_name}",
+          not ({k.casefold() for k in _external_headers}
+               & {"authorization", "cookie", "x-grafana-org-id"}),
+          str(_external_headers.keys()))
+_old_cookie = os.environ.get("GRAFANA_COOKIE")
+os.environ["GRAFANA_COOKIE"] = "grafana_session=session-value"
+try:
+    _cookies = visual_audit._playwright_cookies(_basic_client)
+    check("cookie Playwright porte domaine path secure de l'origine",
+          len(_cookies) == 1 and _cookies[0]["domain"] == "grafana.example"
+          and _cookies[0]["path"] == "/grafana" and _cookies[0]["secure"] is True,
+          str(_cookies))
+    _same_cookie = visual_audit._scoped_request_headers(
+        _basic_client, "https://grafana.example/grafana/d/x/slug",
+        {"Cookie": "grafana_session=session-value"})
+    check("cookie same-origin est conserve par l'interception",
+          _same_cookie.get("Cookie") == "grafana_session=session-value")
+finally:
+    if _old_cookie is None:
+        os.environ.pop("GRAFANA_COOKIE", None)
+    else:
+        os.environ["GRAFANA_COOKIE"] = _old_cookie
+class _Renderer404Basic(_HeaderClient):
+    def get_bytes(self, *args, **kwargs):
+        raise GrafanaError(404, "renderer absent")
+_fallback_client = _Renderer404Basic("", "alice", "secret", 9)
+check("fallback renderer 404 conserve Basic et scope org pour Playwright",
+      not visual_audit.renderer_available(_fallback_client, "x")
+      and visual_audit._scoped_request_headers(
+          _fallback_client, "https://grafana.example/grafana/d/x/slug", {}
+      ).get("Authorization", "").startswith("Basic ")
+      and visual_audit._scoped_request_headers(
+          _fallback_client, "https://grafana.example/grafana/d/x/slug", {}
+      ).get("X-Grafana-Org-Id") == "9")
+_findings = {}
+visual_audit._scan_dom(
+    "Unauthorized\nDatasource not found\nNo data\nWelcome to Grafana\nSign in to Grafana",
+    _findings)
+check("marqueurs DOM critiques et login distingues de No data",
+      {"Unauthorized", "Datasource not found", "Welcome to Grafana",
+       "Sign in to Grafana"}.issubset(
+          set(_findings) & visual_audit.CRITICAL_DOM_MARKERS)
+      and "No data" not in visual_audit.CRITICAL_DOM_MARKERS, str(_findings))
 
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()

@@ -30,11 +30,22 @@ class GrafanaError(RuntimeError):
         self.body = body
 
 
-def det_uid(name: str, prefix: str = "llmops") -> str:
-    """UID déterministe (≤40 chars) : relancer la forge met à jour, ne duplique jamais."""
-    h = hashlib.sha1(name.encode("utf-8")).hexdigest()[:10]
+def det_uid(name: str, prefix: str = "llmops", scope: str | None = None) -> str:
+    """UID déterministe (≤40 chars), compatible legacy sans ``scope``.
+
+    Un scope explicite sépare les mêmes blueprints déployés dans plusieurs
+    dossiers. Il n'est volontairement pas ajouté au slug : seul le digest
+    change, ce qui garde des UIDs courts et lisibles.
+    """
+    seed = name if scope is None else f"{scope}\0{name}"
+    h = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10]
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:26]
     return f"{prefix}-{slug}-{h}"[:40]
+
+
+def alert_logical_identity(uid_name: str) -> str:
+    """Identité complète d'une règle, indépendante de l'UID Grafana tronqué."""
+    return hashlib.sha256(uid_name.encode("utf-8")).hexdigest()
 
 
 class GrafanaClient:
@@ -53,6 +64,7 @@ class GrafanaClient:
         self.ctx = ssl._create_unverified_context() if insecure else None
         self._health = None
         self._namespace = None
+        self._scoped_org_id = None
 
     # ------------------------------------------------------------------ HTTP
     def _headers(self) -> dict:
@@ -62,6 +74,8 @@ class GrafanaClient:
         else:
             cred = base64.b64encode(f"{self.user}:{self.password}".encode()).decode()
             h["Authorization"] = f"Basic {cred}"
+        if self._scoped_org_id is not None:
+            h["X-Grafana-Org-Id"] = str(self._scoped_org_id)
         return h
 
     def request(self, method: str, path: str, payload=None, params: dict | None = None,
@@ -79,7 +93,13 @@ class GrafanaClient:
                     body = resp.read().decode("utf-8", "replace")
                     if raw:
                         return body
-                    return json.loads(body) if body.strip() else {}
+                    if not body.strip():
+                        return {}
+                    try:
+                        return json.loads(body)
+                    except json.JSONDecodeError as e:
+                        raise GrafanaError(resp.status, "invalid JSON response",
+                                           body[:2000]) from e
             except urllib.error.HTTPError as e:
                 body = e.read().decode("utf-8", "replace")[:2000]
                 if e.code in (429, 500, 502, 503, 504) and attempt < self.retries - 1:
@@ -158,9 +178,60 @@ class GrafanaClient:
     def org_id(self) -> int:
         """Org courante du token ; ne jamais supposer 1 (multi-org Enterprise/Cloud)."""
         try:
-            return int(self.get("/api/org").get("id", 1))
-        except (GrafanaError, ValueError, TypeError):
-            return 1
+            body = self.get("/api/org")
+            org_id = int(body["id"])
+        except KeyError as e:
+            raise GrafanaError(502, "invalid /api/org response: missing id",
+                               repr(body)) from e
+        except (ValueError, TypeError) as e:
+            raise GrafanaError(502, "invalid /api/org response: id is not an integer",
+                               repr(body)) from e
+        if org_id <= 0:
+            raise GrafanaError(502, "invalid /api/org response: id must be positive",
+                               repr(body))
+        return org_id
+
+    def resolve_org(self, requested_org_id: int | None = None) -> int:
+        """Scope les requêtes et confirme l'organisation réellement effective.
+
+        ``X-Grafana-Org-Id`` est supporté par les versions Grafana couvertes.
+        Certains jetons restent néanmoins liés à leur organisation et ignorent
+        l'en-tête. Le GET ``/api/org`` est donc obligatoire après sélection :
+        aucune opération ne continue sur une organisation non confirmée.
+        """
+        previous = self._scoped_org_id
+        if requested_org_id is not None:
+            try:
+                requested = int(requested_org_id)
+            except (TypeError, ValueError) as e:
+                raise GrafanaError(400, "org id must be an integer") from e
+            if requested <= 0:
+                raise GrafanaError(400, "org id must be a positive integer")
+            self._scoped_org_id = requested
+            try:
+                effective = self.org_id()
+            except GrafanaError as e:
+                self._scoped_org_id = previous
+                raise GrafanaError(
+                    e.status, f"unable to confirm organization: {e}", e.body) from e
+            except SystemExit:
+                self._scoped_org_id = previous
+                raise
+            if effective != requested:
+                self._scoped_org_id = previous
+                raise GrafanaError(
+                    409,
+                    f"requested organization {requested}, but Grafana confirmed "
+                    f"organization {effective}; refusing unscoped requests")
+            return effective
+
+        try:
+            effective = self.org_id()
+        except GrafanaError as e:
+            raise GrafanaError(
+                e.status, f"unable to confirm organization: {e}", e.body) from e
+        self._scoped_org_id = effective
+        return effective
 
     @staticmethod
     def has_exemplar_link(ds: dict) -> bool:
@@ -202,7 +273,10 @@ class GrafanaClient:
 
     # ---------------------------------------------------------------- Datasources
     def datasources(self) -> list:
-        return self.get("/api/datasources")
+        body = self.get("/api/datasources")
+        if not isinstance(body, list):
+            raise GrafanaError(502, "invalid datasource list response", repr(body)[:2000])
+        return body
 
     def prometheus_like(self) -> list:
         return [d for d in self.datasources()
@@ -229,27 +303,27 @@ class GrafanaClient:
 
     def prom_metric_names(self, ds: dict, match: str) -> list:
         """Noms de métriques matchant un sélecteur ; le cœur du discovery-first."""
-        try:
-            r = self.ds_proxy(ds, "api/v1/label/__name__/values",
-                              params={"match[]": f'{{__name__=~"{match}"}}'})
-            return sorted(r.get("data", []) or [])
-        except GrafanaError:
-            return []
+        r = self.ds_proxy(ds, "api/v1/label/__name__/values",
+                          params={"match[]": f'{{__name__=~"{match}"}}'})
+        return sorted(self._proxy_list(r, "Prometheus metric names"))
 
     def prom_label_values(self, ds: dict, label: str, match: str | None = None) -> list:
         params = {"match[]": match} if match else None
-        try:
-            r = self.ds_proxy(ds, f"api/v1/label/{label}/values", params=params)
-            return r.get("data", []) or []
-        except GrafanaError:
-            return []
+        r = self.ds_proxy(ds, f"api/v1/label/{label}/values", params=params)
+        return self._proxy_list(r, f"Prometheus label {label}")
 
     def loki_labels(self, ds: dict) -> list:
-        try:
-            r = self.ds_proxy(ds, "loki/api/v1/labels")
-            return r.get("data", []) or []
-        except GrafanaError:
-            return []
+        r = self.ds_proxy(ds, "loki/api/v1/labels")
+        return self._proxy_list(r, "Loki labels")
+
+    @staticmethod
+    def _proxy_list(body, operation: str) -> list:
+        """Valide une réponse proxy : seul ``data: []`` est un vide sain."""
+        if (not isinstance(body, dict) or body.get("status") == "error"
+                or not isinstance(body.get("data"), list)):
+            raise GrafanaError(502, f"invalid {operation} proxy response",
+                               repr(body)[:2000])
+        return body["data"]
 
     # ------------------------------------------------------------------ Folders
     def ensure_folder(self, title: str, uid: str | None = None) -> dict:
@@ -264,6 +338,22 @@ class GrafanaClient:
     # --------------------------------------------------------------- Dashboards
     def upsert_dashboard(self, dashboard: dict, folder_uid: str, message: str = "forge") -> dict:
         """Upsert via API legacy (universelle). Fallback API resource si legacy indisponible."""
+        uid = dashboard.get("uid") or det_uid(dashboard.get("title", "dash"))
+        try:
+            existing = self.get(f"/api/dashboards/uid/{uid}")
+        except GrafanaError as e:
+            if e.status != 404:
+                raise
+        else:
+            existing_folder = ((existing.get("meta") or {}).get("folderUid")
+                               if isinstance(existing, dict) else None)
+            if existing_folder != folder_uid:
+                detail = existing_folder if existing_folder is not None else "unknown"
+                raise GrafanaError(
+                    409,
+                    f"dashboard UID {uid} already exists in folder {detail}; "
+                    "refusing cross-folder overwrite (use --uid-scope)",
+                    repr(existing)[:2000])
         payload = {"dashboard": dashboard, "folderUid": folder_uid,
                    "overwrite": True, "message": message}
         try:
@@ -273,7 +363,7 @@ class GrafanaClient:
                 raise
         # Fallback K8s-style (instances futures où l'API legacy serait retirée)
         ns = self.namespace()
-        name = dashboard.get("uid") or det_uid(dashboard.get("title", "dash"))
+        name = uid
         body = {"metadata": {"name": name,
                              "annotations": {"grafana.app/folder": folder_uid,
                                              "grafana.app/message": message}},
@@ -296,13 +386,60 @@ class GrafanaClient:
     def upsert_alert_rule(self, rule: dict) -> dict:
         """Provisioning API (Grafana ≥ 9.4). Idempotent via UID déterministe."""
         uid = rule["uid"]
+        expected_identity = (rule.get("labels") or {}).get("llmops_rule_identity")
+        if not isinstance(expected_identity, str) or not expected_identity:
+            raise GrafanaError(
+                400, f"alert rule {uid} has no logical identity; refusing write")
         try:
-            self.get(f"/api/v1/provisioning/alert-rules/{uid}")
-            return self.put(f"/api/v1/provisioning/alert-rules/{uid}", rule)
+            existing = self.get(f"/api/v1/provisioning/alert-rules/{uid}")
         except GrafanaError as e:
             if e.status == 404:
                 return self.post("/api/v1/provisioning/alert-rules", rule)
             raise
+
+        conflicts = []
+        if not isinstance(existing, dict) or existing.get("uid") != uid:
+            conflicts.append(
+                f"identity uid={existing.get('uid')!r}"
+                if isinstance(existing, dict) else "identity response is not an object")
+        if not isinstance(existing, dict) or existing.get("folderUID") != rule.get("folderUID"):
+            conflicts.append(
+                f"folderUID={existing.get('folderUID')!r}"
+                if isinstance(existing, dict) else "folderUID is unavailable")
+
+        def _org(value):
+            try:
+                return int(value)
+            except (TypeError, ValueError):
+                return None
+
+        if (not isinstance(existing, dict)
+                or _org(existing.get("orgID")) != _org(rule.get("orgID"))
+                or _org(rule.get("orgID")) is None):
+            conflicts.append(
+                f"orgID={existing.get('orgID')!r}"
+                if isinstance(existing, dict) else "orgID is unavailable")
+        expected_origin = (rule.get("labels") or {}).get("origin")
+        existing_origin = ((existing.get("labels") or {}).get("origin")
+                           if isinstance(existing, dict) else None)
+        existing_identity = ((existing.get("labels") or {}).get("llmops_rule_identity")
+                             if isinstance(existing, dict) else None)
+        if (not expected_origin or existing_origin != expected_origin
+                or existing.get("ruleGroup") != rule.get("ruleGroup")):
+            conflicts.append(
+                f"identity origin={existing_origin!r}, "
+                f"ruleGroup={existing.get('ruleGroup')!r}"
+                if isinstance(existing, dict) else "identity metadata is unavailable")
+        if existing_identity != expected_identity:
+            conflicts.append(
+                f"logical identity={existing_identity!r} (expected {expected_identity!r})")
+        if conflicts:
+            raise GrafanaError(
+                409,
+                f"alert rule UID {uid} already belongs to an incompatible rule "
+                f"({'; '.join(conflicts)}); refusing overwrite (use --uid-scope)",
+                repr(existing)[:2000])
+        return self.put(f"/api/v1/provisioning/alert-rules/{uid}", rule)
 
 
 if __name__ == "__main__":
