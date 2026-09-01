@@ -118,6 +118,7 @@ jobs:
       - name: Package and SBOM are portable and reproducible
         run: |
           python tools/package.py
+          python tools/sbom.py dist/grafana-llmops-forge.skill
           python tools/package.py --verify
           python tests/supply_chain_check.py
       - name: Package verification is safe under Windows CP1252

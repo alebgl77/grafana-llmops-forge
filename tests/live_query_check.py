@@ -111,7 +111,8 @@ def build_map(base: str) -> dict:
                 e.setdefault("group_labels", []).append(
                     {"label": cand, "cardinality": len(v)})
         sig[dialect] = e
-    return {"instance": {"version": "0.0.0", "major": 12, "edition": "oss"},
+    return {"org_id": 1,
+            "instance": {"version": "0.0.0", "major": 12, "edition": "oss"},
             "datasources": {"prometheus": [{"uid": "live", "exemplars": False}],
                             "loki": [], "tempo": [], "other": []},
             "signals": {"live": sig}, "gaps": []}
