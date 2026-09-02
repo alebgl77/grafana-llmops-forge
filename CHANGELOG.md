@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.0] - 2026-09-01
+### Changed : chaîne de déploiement et de preuve v2
+- **Rupture de compatibilité : manifests v2 et portée organisationnelle stricte.** Les artefacts de déploiement portent désormais leur contrat de version, l'organisation cible est vérifiée sans repli implicite, et un garde-fou bloque les collisions avant toute écriture.
+- **Audit visuel fail-closed et Playwright durci.** Une preuve visuelle manquante ou invalide fait échouer l'audit ; l'exécution du navigateur applique les limites et contrôles de sécurité attendus.
+- **Release reproductible avec SBOM.** La chaîne de publication produit et vérifie ses artefacts de supply chain, tandis que la CI couvre Grafana 9 à 13.
+- **Registre de prix rafraîchi depuis les sources officielles.** Chaque entrée expose sa provenance et sa date de vérification ; les tarifs absents restent non chiffrés. Artificial Analysis n'est disponible qu'en fallback tiers opt-in, avec attribution et restrictions de redistribution explicites.
+
 ## [1.6.0] - 2026-08-30
 ### Fixed : exploitabilité en production
 - **Un 403 de permissions sortait une trace Python.** Un exploitant ne pouvait pas savoir qu'il s'agissait d'un rôle de jeton insuffisant, ni dans quel état il avait laissé l'instance. Message actionnable nommant le rôle requis, codes de sortie distincts (3 = rien écrit, 4 = déploiement partiel), et l'emplacement des JSON générés pour un import manuel.

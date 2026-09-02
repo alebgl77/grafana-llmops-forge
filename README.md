@@ -110,6 +110,24 @@ The skill handles discovery → registry refresh → blueprint selection → dep
 <summary><b>As a standalone CLI (no AI required)</b></summary>
 
 Pure Python 3.8+ stdlib. No pip install. The three commands at the top of this README are the whole workflow. `--dry-run` writes JSON without touching your instance; `--selftest` renders all seven blueprints offline from a simulated capability map.
+
+Unknown or officially unpriced detected models can use an explicit third-party
+fallback:
+
+```bash
+export ARTIFICIAL_ANALYSIS_API_KEY="..."
+python3 scripts/forge_dashboards.py --capability capability_map.json \
+  --pricing-fallback artificial-analysis --dry-run
+```
+
+It is off by default. Only the fixed Artificial Analysis Free endpoint is
+called, only for detected models that need a price, and only the
+`ARTIFICIAL_ANALYSIS_API_KEY` environment variable is accepted. The key is not
+logged or written. Results are median multi-provider estimates, marked and
+attributed in dashboards and recording-rule labels, with a 24-hour atomic
+overlay in `model_registry.artificial-analysis.cache.json` next to the
+capability map. It never contains the merged registry. Official pricing always
+wins. See [pricing provenance](references/pricing_provenance.md).
 </details>
 
 <details>
@@ -169,10 +187,13 @@ Or delete it from the UI: Dashboards → AI Observability → Folder settings �
 Delete. Generated recording rules are separate: they are a file you copied into
 Prometheus, so removing them is removing that file and reloading.
 
-**What leaves your network: nothing.** The scripts talk only to your Grafana,
-which talks to your own Prometheus, Loki and Tempo. The one optional exception is
-the model-price refresh, a web search you can skip entirely; the bundled
-registry works offline and the dashboards display its verification date.
+**What leaves your network: nothing by default.** The scripts talk only to your
+Grafana, which talks to your own Prometheus, Loki and Tempo. The explicit
+`--pricing-fallback artificial-analysis` exception sends authenticated GET
+requests to `https://artificialanalysis.ai/api/v2/language/models/free`; it can
+be skipped entirely. No Grafana data, including detected model names, is sent
+in the request: model matching happens locally against the unfiltered paginated
+catalog. The bundled registry works offline.
 
 **What an agent sees.** Used as a skill, Claude reads the capability map, which
 contains metric names, model names, and team or service label values from your
@@ -186,7 +207,7 @@ Skills execute code, and [a 2026 Snyk audit found 36% of published skills had at
 
 - **Zero dependencies.** Python stdlib only (`urllib`, `json`, `hashlib`). ~2,000 lines total. Playwright is *optional*, only for the visual-audit fallback.
 - **Least privilege.** Works with an Editor service-account token. Alert provisioning degrades gracefully on 403 (exports JSON for manual import).
-- **No secret leakage.** The token is never logged, never embedded in dashboards, never placed in URLs.
+- **No secret leakage.** Grafana credentials and the optional Artificial Analysis key are never logged, embedded in dashboards, persisted, or placed in URLs.
 - **No prompt-content capture.** `gen_ai.input/output.messages` stay off by default; the docs treat enabling them as a GDPR decision, not a flag.
 - **Idempotent & reversible.** Deterministic UIDs, one folder, `overwrite` semantics: delete the folder and it's gone.
 - **Offline-testable.** `--selftest` + `tests/audit_harness.py` (4 simulated instance topologies plus regression tests) runs with zero network, `tests/live_query_check.py` executes every generated query against a real Prometheus, and the demo stack gives a full end-to-end deploy. That's the CI; the badge above is the live workflow status.
@@ -231,7 +252,7 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 
 **Grafana Cloud?** Yes. Cloud is auto-detected; the image renderer is built in, so visual audit works out of the box.
 
-**My models aren't in the registry.** They appear in an "unpriced models" panel instead of being billed wrong. Add a price or alias to `model_registry.json`, re-forge. (The matcher scores by specificity: `gpt-5.4-mini` will never be billed at `gpt-5.4` rates. There is a test for that.)
+**My models aren't in the registry.** They appear in an "unpriced models" panel instead of being billed wrong. Add a price or alias to `model_registry.json`, or explicitly opt in to `--pricing-fallback artificial-analysis`. The fallback accepts only a unique exact normalized ID, slug, name, or alias match. Ambiguous, absent, null, or failed responses stay unpriced.
 
 **Can I publish the generated dashboards?** Yes: `--export-portable` emits JSON with `__inputs`/`${DS_PROMETHEUS}` placeholders, the format grafana.com/dashboards requires.
 

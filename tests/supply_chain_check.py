@@ -95,6 +95,11 @@ def main() -> int:
         assert document["creationInfo"]["created"] == "1980-01-01T00:00:00Z"
         with zipfile.ZipFile(first) as package:
             members = sorted(package.namelist())
+        assert f"grafana-llmops-forge/scripts/pricing_sources.py" in members
+        assert not any(name.endswith(("model_registry.local.json",
+                                      "model_registry.artificial-analysis.cache.json"))
+                       for name in members), (
+            "aucun registre local ou cache de prix tiers ne doit etre redistribue")
         files = document["files"]
         assert [entry["fileName"][2:] for entry in files] == members
         assert document["packages"][0]["packageVerificationCode"][

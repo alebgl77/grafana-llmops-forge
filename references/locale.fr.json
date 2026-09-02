@@ -89,6 +89,8 @@
  "The low tail is the real signal; the mean hides the failures.": "La queue basse est le vrai signal : la moyenne masque les échecs.",
  "The shape of the mix tells you the real strategy: a cheaper model gaining share means a FinOps trade-off that is working.": "La forme du mix raconte la stratégie réelle : montée d'un modèle économique = arbitrage FinOps qui fonctionne.",
  "These models are observed but **excluded from cost** (unknown price):": "Ces modèles sont observés mais **exclus du calcul de coût** (prix inconnu) :",
+ "Third-party pricing estimates": "Estimations tarifaires tierces",
+ "Some cost estimates use **median multi-provider pricing** from [Artificial Analysis](https://artificialanalysis.ai/). They are marked `estimate=true`; official provider pricing remains the priority. Attribution: Artificial Analysis.": "Certaines estimations utilisent la **médiane tarifaire multi-provider** d'[Artificial Analysis](https://artificialanalysis.ai/). Elles portent `estimate=true` ; les tarifs officiels restent prioritaires. Attribution : Artificial Analysis.",
  "Time-to-first-token: the first sign of saturation.": "Time-to-first-token : premier signal de saturation.",
  "Token throughput (prompt vs generation)": "Débit tokens/s (prompt vs génération)",
  "Tokens per agent/s": "Tokens par agent / s",

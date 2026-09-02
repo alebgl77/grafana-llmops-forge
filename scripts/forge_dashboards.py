@@ -1,6 +1,6 @@
 """Forge : generation + déploiement de dashboards LLMOps sur Grafana.
 
-Traduit 6 blueprints (finops, gateway, agents, adoption, inference, governance)
+Traduit 7 blueprints (finops, gateway, agents, adoption, inference, quality, governance)
 dans le dialecte de télémétrie détecté par discover.py, compose les expressions
 de coût à partir du registre de modèles, déploie (API legacy, fallback resource),
 et provisionne les alertes SLO. Schéma classique v41 = compatible OSS/Cloud/
@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from grafana_client import (GrafanaClient, GrafanaError, alert_logical_identity,
                             det_uid)  # noqa: E402
+import pricing_sources  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REGISTRY_PATHS = ["model_registry.local.json",
@@ -221,10 +222,17 @@ class Q:
 #  Registre de modèles → expressions de coût                                  #
 # --------------------------------------------------------------------------- #
 
-def load_registry(path_override: str | None = None) -> dict:
-    paths = ([path_override] if path_override else []) + REGISTRY_PATHS
+def load_registry(path_override: str | None = None,
+                  local_path: str | None = None) -> dict:
+    paths = ([path_override] if path_override else [])
+    if local_path:
+        paths.append(local_path)
+    paths += REGISTRY_PATHS
+    seen_paths = set()
     for p in paths:
-        if p and os.path.exists(p):
+        key = os.path.abspath(p) if p else None
+        if p and key not in seen_paths and os.path.exists(p):
+            seen_paths.add(key)
             with open(p, encoding="utf-8") as f:
                 return json.load(f)
     return {"_meta": {"verified_at": "unknown"}, "models": []}
@@ -339,12 +347,26 @@ def _rule_lines(ctx, indent: str, window: str) -> list:
     L, n = [], 0
     for it in ctx.matched:
         m, seen = it["reg"], it["seen"]
-        lab = ("{" + json.dumps(ml) + ": " + json.dumps(seen)
-               + ", region: " + json.dumps(m.get("region", "?"))
-               + ", vendor: " + json.dumps(m.get("vendor", "?")) + "}")
         for rec, key in ((PRICE_IN, "input_per_mtok"), (PRICE_OUT, "output_per_mtok")):
             if m.get(key) is None:
                 continue
+            field_sources = m.get("pricing_field_sources")
+            field_source = (field_sources.get(key)
+                            if isinstance(field_sources, dict) else None)
+            provenance = field_source if isinstance(field_source, dict) else m
+            labels = {
+                ml: seen,
+                "region": m.get("region", "?"),
+                "vendor": m.get("vendor", "?"),
+                "pricing_source_kind": provenance.get(
+                    "pricing_source_kind", "unknown"),
+                "price_estimate": "true" if provenance.get("estimate") else "false",
+            }
+            if isinstance(provenance.get("pricing_source_url"), str):
+                labels["pricing_source_url"] = provenance["pricing_source_url"]
+            if isinstance(provenance.get("attribution"), str):
+                labels["pricing_attribution"] = provenance["attribution"]
+            lab = json.dumps(labels, ensure_ascii=False)
             L += [f"{indent}- record: {rec}", f"{indent}  expr: {m[key] / 1e6:.12g}",
                   f"{indent}  labels: {lab}"]
             n += 1
@@ -356,7 +378,9 @@ def _rule_lines(ctx, indent: str, window: str) -> list:
         price = PRICE_IN if direction == "input" else PRICE_OUT
         return [f"{indent}    sum by({ml_q}, region, vendor) (",
                 f"{indent}      rate({msel(q.tok + '_sum', sel)}[{window}])",
-                f"{indent}    ) * on({ml_q}) group_left(region, vendor) {price}"]
+                f"{indent}    ) * on({ml_q}) "
+                f"group_left(region, vendor, pricing_source_kind, price_estimate, "
+                f"pricing_source_url, pricing_attribution) {price}"]
 
     L += [f"{indent}- record: {COST_RECORDED}:input", f"{indent}  expr: |"] + side("input")
     L += [f"{indent}- record: {COST_RECORDED}:output", f"{indent}  expr: |"] + side("output")
@@ -592,6 +616,9 @@ class Ctx:
         seen = self.primary.s.models_seen if self.primary else []
         self.matched, self.unmatched = match_models(seen, registry)
         self.verified = registry.get("_meta", {}).get("verified_at", "?")
+        self.third_party_prices = [item for item in self.matched
+                                   if item["reg"].get("pricing_source_kind")
+                                   == "artificial_analysis"]
 
     def gpu(self) -> Q | None:
         return self.q.get("gpu_dcgm") or self.q.get("gpu_smi")
@@ -605,11 +632,14 @@ def bp_finops(ctx: Ctx) -> Board | None:
     q = ctx.primary
     if not q:
         return None
+    third_party_note = (" Third-party estimates: Artificial Analysis median "
+                        "multi-provider pricing; attribution: Artificial Analysis."
+                        if ctx.third_party_prices else "")
     b = Board(det_uid("ai-executive-finops", scope=ctx.uid_scope), "AI · Executive FinOps & Cost",
               f"Multi-provider LLM cost. Price registry verified {ctx.verified} "
               f"(USD per 1M tokens). Cost source: "
               f"{'recording rules (llm:cost_usd_per_second)' if ctx.recorded else 'on-the-fly composition'}. "
-              f"Generated by grafana-llmops-forge.", ["finops"])
+              f"Generated by grafana-llmops-forge.{third_party_note}", ["finops"])
     ds = q.s.ds_uid
     R = ctx.recorded
     spend_range = cost_rate_expr(q, ctx.matched, window="$__range", agg="increase",
@@ -660,6 +690,12 @@ def bp_finops(ctx: Ctx) -> Board | None:
                + "\n".join(f"- `{_md(m)}`" for m in ctx.unmatched[:20])
                + "\n\nAjouter leur prix dans `references/model_registry.json` "
                  "puis relancer la forge.", 24, 6)
+    if ctx.third_party_prices:
+        b.text("Third-party pricing estimates",
+               "Some cost estimates use **median multi-provider pricing** from "
+               "[Artificial Analysis](https://artificialanalysis.ai/). They are "
+               "marked `estimate=true`; official provider pricing remains the "
+               "priority. Attribution: Artificial Analysis.", 24, 5)
     return b
 
 
@@ -1388,7 +1424,7 @@ def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--capability", default="capability_map.json")
     ap.add_argument("--blueprints", default="auto",
-                    help="auto | liste: finops,gateway,agents,adoption,inference,governance")
+                    help="auto | liste: finops,gateway,agents,adoption,inference,quality,governance")
     ap.add_argument("--deploy", action="store_true")
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--with-alerts", action="store_true")
@@ -1427,12 +1463,19 @@ def main() -> int:
                          "partial/failed")
     ap.add_argument("--out-dir", default="generated_dashboards")
     ap.add_argument("--registry", default=None)
+    ap.add_argument("--pricing-fallback", choices=["artificial-analysis"],
+                    default=None,
+                    help="Fallback tiers opt-in pour les modeles detectes sans prix")
+    ap.add_argument("--pricing-cache-max-age-hours", type=float, default=24.0,
+                    help="Fraicheur maximale du cache de prix tiers (defaut 24h)")
     ap.add_argument("--selftest", action="store_true")
     ap.add_argument("--insecure", action="store_true")
     args = ap.parse_args()
 
     if args.org_id is not None and args.org_id <= 0:
         ap.error("--org-id must be a positive integer")
+    if (not 0 <= args.pricing_cache_max_age_hours <= 720):
+        ap.error("--pricing-cache-max-age-hours must be between 0 and 720")
 
     if args.selftest:
         cap = selftest_capability()
@@ -1442,7 +1485,30 @@ def main() -> int:
         with open(args.capability, encoding="utf-8") as f:
             cap = json.load(f)
 
-    ctx = Ctx(cap, load_registry(args.registry))
+    capability_dir = (os.path.dirname(os.path.abspath(args.capability))
+                      if not args.selftest else os.getcwd())
+    local_registry = os.path.join(capability_dir, "model_registry.local.json")
+    pricing_cache = os.path.join(capability_dir, pricing_sources.CACHE_FILENAME)
+    registry = pricing_sources.official_registry_base(
+        load_registry(args.registry, local_registry))
+    pricing_result = None
+    if args.pricing_fallback == "artificial-analysis":
+        initial_ctx = Ctx(cap, registry)
+        models_seen = initial_ctx.primary.s.models_seen if initial_ctx.primary else []
+        pricing_result = pricing_sources.apply_artificial_analysis_fallback(
+            registry, models_seen, pricing_cache,
+            os.environ.get(pricing_sources.AA_KEY_ENV),
+            max_age_hours=args.pricing_cache_max_age_hours)
+        registry = pricing_result["registry"]
+        for warning in pricing_result["warnings"]:
+            print(f"[warn] Artificial Analysis pricing fallback: {warning}",
+                  file=sys.stderr)
+        if pricing_result["priced"]:
+            via = "local cache" if pricing_result["cache_used"] and not pricing_result["fetched"] else "API"
+            print(f"[pricing] {len(pricing_result['priced'])} model(s) use "
+                  f"Artificial Analysis median multi-provider estimates via {via}. "
+                  "Attribution: Artificial Analysis.")
+    ctx = Ctx(cap, registry)
     client = None
     try:
         if args.deploy and not args.dry_run:

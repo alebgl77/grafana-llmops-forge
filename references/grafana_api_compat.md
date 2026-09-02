@@ -86,6 +86,14 @@ Depuis avril 2026, l'UI migre les dashboards ouverts vers le schéma v2
 erreurs structurées. Un échec demandé produit un code non nul; `--best-effort`
 autorise uniquement le code 0, sans transformer `partial|failed` en succès.
 
+Les prix tiers ne transitent jamais par Grafana. Le fallback opt-in Artificial
+Analysis est résolu avant la génération, puis les recording rules portent les
+labels `pricing_source_kind` et `price_estimate`. L'overlay
+`model_registry.artificial-analysis.cache.json` et les règles générées sont des
+objets distincts. Cet overlay ne contient jamais le registre fusionné et
+n'entre jamais dans le paquet. Le protocole de réseau, de matching et
+d'attribution est décrit dans `pricing_provenance.md`.
+
 ## 6. Où déposer les recording rules générées
 
 La forge écrit deux fichiers équivalents ; le contenu des règles est identique,

@@ -238,9 +238,13 @@ import zipfile as _zf
 _names = _zf.ZipFile(_pkg).namelist()
 check("aucun bytecode embarqué",
       not [n for n in _names if "__pycache__" in n or n.endswith(".pyc")])
-check("SKILL.md + 4 scripts + les references embarquees",
-      len([n for n in _names if n.endswith(".py")]) == 4
-      and len([n for n in _names if "/references/" in n]) >= 7, str(len(_names)))
+_scripts = sorted(f for f in os.listdir(SC) if f.endswith(".py"))
+_packaged_scripts = sorted(os.path.basename(n) for n in _names
+                           if "/scripts/" in n and n.endswith(".py"))
+check("SKILL.md + tous les scripts + les references embarquees",
+      _packaged_scripts == _scripts
+      and len([n for n in _names if "/references/" in n]) >= 7,
+      str({"scripts": _packaged_scripts, "entries": len(_names)}))
 check("le paquet n'est pas versionné (artefact de build)",
       "dist/grafana-llmops-forge.skill" not in subprocess.run(
           ["git", "ls-files"], cwd=SK, capture_output=True, text=True).stdout)
@@ -1168,6 +1172,591 @@ check("marqueurs DOM critiques et login distingues de No data",
        "Sign in to Grafana"}.issubset(
           set(_findings) & visual_audit.CRITICAL_DOM_MARKERS)
       and "No data" not in visual_audit.CRITICAL_DOM_MARKERS, str(_findings))
+
+# -------------------------------- 24. fallback de prix Artificial Analysis
+print("\n[24] Fallback de prix Artificial Analysis")
+import http.client
+import urllib.error
+import urllib.request
+import pricing_sources
+from datetime import datetime, timezone
+
+_aa_secret = "aa-test-secret-that-must-not-leak"
+_aa_now = datetime(2026, 9, 1, 12, 0, tzinfo=timezone.utc)
+
+def _aa_page(data, page=1, total=1):
+    return {"tier": "free", "pagination": {
+        "page": page, "page_size": 200, "total_pages": total,
+        "has_more": page < total}, "data": data}
+
+def _aa_model(name="acme-model", slug="acme-model", inp=1.25, out=4.5):
+    return {"id": "00000000-0000-0000-0000-000000000001", "name": name,
+            "slug": slug, "aliases": [],
+            "model_creator": {"name": "Acme AI"},
+            "pricing": {"price_1m_input_tokens": inp,
+                        "price_1m_output_tokens": out,
+                        "price_1m_cache_hit_tokens": 0.25}}
+
+class _AAResponse:
+    def __init__(self, value=None, raw=None, status=200, headers=None):
+        self.body = raw if raw is not None else json.dumps(value).encode()
+        self.status = status
+        self.headers = headers or {}
+    def __enter__(self): return self
+    def __exit__(self, *args): return False
+    def getcode(self): return self.status
+    def read(self, size): return self.body[:size]
+
+class _AAOpener:
+    def __init__(self, pages): self.pages, self.requests = list(pages), []
+    def open(self, request, timeout):
+        self.requests.append((request, timeout))
+        item = self.pages.pop(0)
+        if isinstance(item, BaseException): raise item
+        if isinstance(item, _AAResponse): return item
+        return _AAResponse(item)
+
+_aa_base = {"_meta": {"verified_at": "2026-09-01"}, "models": []}
+with tempfile.TemporaryDirectory(prefix="aa-pricing-") as _aa_tmp:
+    _aa_cache = os.path.join(_aa_tmp, pricing_sources.CACHE_FILENAME)
+    _aa_open = _AAOpener([_aa_page([_aa_model()])])
+    _aa_result = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["acme-model"], _aa_cache, _aa_secret,
+        opener=_aa_open, now=_aa_now)
+    _aa_entry = _aa_result["registry"]["models"][0]
+    _aa_cache_doc = json.load(open(_aa_cache))
+    _aa_request = _aa_open.requests[0][0]
+    check("succes: prix tiers marque, estime et attribue",
+          _aa_result["priced"] == ["acme-model"]
+          and _aa_entry["pricing_source_kind"] == "artificial_analysis"
+          and _aa_entry["estimate"] is True
+          and _aa_entry["attribution"] == "Artificial Analysis"
+          and _aa_entry["pricing_basis"] == "median_multi_provider")
+    check("cache AA est un overlay minimal, jamais un registre fusionne",
+          "models" not in _aa_cache_doc
+          and _aa_cache_doc["schema"] == pricing_sources.CACHE_SCHEMA
+          and len(_aa_cache_doc["entries"]) == 1
+          and "original" not in _aa_cache_doc["entries"][0])
+    check("cle uniquement dans x-api-key, jamais URL/cache",
+          dict(_aa_request.header_items()).get("X-api-key") == _aa_secret
+          and _aa_secret not in _aa_request.full_url
+          and _aa_secret not in open(_aa_cache).read())
+    _aa_bomb = _AAOpener([])
+    _aa_cached = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["acme-model"], _aa_cache, None,
+        opener=_aa_bomb, now=_aa_now)
+    check("cache frais 24h reutilise sans requete ni cle",
+          _aa_cached["cache_used"] and _aa_cached["priced"] == ["acme-model"]
+          and not _aa_bomb.requests)
+
+    _expired_doc = json.loads(json.dumps(_aa_cache_doc))
+    _expired_doc["entries"][0]["pricing_verified_at"] = "2026-08-30T00:00:00Z"
+    _expired_path = os.path.join(_aa_tmp, "expired.json")
+    json.dump(_expired_doc, open(_expired_path, "w"))
+    _expired = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["acme-model"], _expired_path, None, now=_aa_now)
+    check("cache expire ignore et base reste non tarifaire",
+          not _expired["priced"] and not _expired["registry"]["models"])
+
+    _updated_official = {"_meta": {"verified_at": "2026-09-02"}, "models": [{
+        "id": "acme-model", "aliases": [], "input_per_mtok": 7.0,
+        "output_per_mtok": 8.0, "pricing_source_kind": "official"}]}
+    _updated = pricing_sources.apply_artificial_analysis_fallback(
+        _updated_official, ["acme-model"], _aa_cache, None, now=_aa_now)
+    check("cache tiers ne masque jamais seed officiel mis a jour",
+          _updated["registry"]["models"][0]["input_per_mtok"] == 7.0
+          and not _updated["cache_used"])
+
+    _cap_off = json.loads(json.dumps(forge_dashboards.selftest_capability()))
+    _cap_off["signals"]["prom-selftest"]["otel_genai"]["models_seen"] = ["acme-model"]
+    _cap_off_path = os.path.join(_aa_tmp, "capability.json")
+    _base_path = os.path.join(_aa_tmp, "official-base.json")
+    json.dump(_cap_off, open(_cap_off_path, "w"))
+    json.dump(_aa_result["registry"], open(_base_path, "w"))
+    _off_out = os.path.join(_aa_tmp, "fallback-off")
+    _off_run = subprocess.run([
+        sys.executable, os.path.join(SC, "forge_dashboards.py"),
+        "--capability", _cap_off_path, "--registry", _base_path,
+        "--blueprints", "finops", "--out-dir", _off_out, "--org-id", "1"],
+        capture_output=True, text=True)
+    _off_board = json.load(open(os.path.join(_off_out, "finops.json")))
+    check("fallback desactive ne charge jamais overlay AA",
+          _off_run.returncode == 0
+          and "Artificial Analysis median" not in json.dumps(_off_board)
+          and "Models without a price" in _off_run.stdout)
+
+    _aa_no_key_open = _AAOpener([])
+    _aa_no_key = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["new-model"], os.path.join(_aa_tmp, "absent.json"), None,
+        opener=_aa_no_key_open, now=_aa_now)
+    check("cle absente: zero requete et modele non tarife",
+          not _aa_no_key_open.requests and not _aa_no_key["priced"]
+          and _aa_no_key["warnings"])
+
+    _bad_keys_ok = True
+    for _bad_key in ("bad\r\nheader", "bad\x01key",
+                     "x" * (pricing_sources.MAX_API_KEY_LENGTH + 1), "clé"):
+        _bad_open = _AAOpener([])
+        _bad_result = pricing_sources.apply_artificial_analysis_fallback(
+            _aa_base, ["bad-key-model"], os.path.join(_aa_tmp, "bad-key.json"),
+            _bad_key, opener=_bad_open, now=_aa_now)
+        _bad_keys_ok = (_bad_keys_ok and not _bad_open.requests
+                        and _bad_result["warnings"] == ["invalid API key"]
+                        and _bad_key not in "".join(_bad_result["warnings"]))
+    check("cles CRLF/controle/non-ASCII/trop longues refusees avant Request",
+          _bad_keys_ok)
+
+    class _AAValueErrorOpener:
+        def open(self, request, timeout):
+            raise ValueError(_aa_secret)
+    _value_error = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["value-error-model"], os.path.join(_aa_tmp, "value.json"),
+        _aa_secret, opener=_AAValueErrorOpener(), now=_aa_now)
+    check("ValueError devient erreur constante sans fuite",
+          _value_error["warnings"] == ["request rejected"]
+          and _aa_secret not in "".join(_value_error["warnings"]))
+
+    _bad_status_snapshot = json.loads(json.dumps(_aa_base))
+    _bad_status = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["bad-status-model"],
+        os.path.join(_aa_tmp, "bad-status.json"), _aa_secret,
+        opener=_AAOpener([http.client.BadStatusLine(_aa_secret)]),
+        now=_aa_now)
+    check("BadStatusLine avant reponse devient erreur constante et conserve la base",
+          _bad_status["warnings"] == ["HTTP protocol failure"]
+          and _aa_secret not in "".join(_bad_status["warnings"])
+          and _bad_status["registry"] == _bad_status_snapshot
+          and _aa_base == _bad_status_snapshot
+          and not _bad_status["priced"])
+
+    class _AAIncompleteResponse(_AAResponse):
+        def read(self, size):
+            raise http.client.IncompleteRead(_aa_secret.encode(), size)
+    _incomplete = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["incomplete-model"],
+        os.path.join(_aa_tmp, "incomplete.json"), _aa_secret,
+        opener=_AAOpener([_AAIncompleteResponse(value={})]), now=_aa_now)
+    check("IncompleteRead devient erreur constante et conserve la base",
+          _incomplete["warnings"] == ["response read failed"]
+          and _aa_secret not in "".join(_incomplete["warnings"])
+          and _incomplete["registry"] == _aa_base
+          and not _incomplete["priced"])
+
+    _real_json_loads = pricing_sources.json.loads
+    try:
+        def _raise_recursion(*args, **kwargs):
+            raise RecursionError(_aa_secret)
+        pricing_sources.json.loads = _raise_recursion
+        _recursive = pricing_sources.apply_artificial_analysis_fallback(
+            _aa_base, ["recursive-model"],
+            os.path.join(_aa_tmp, "recursive.json"), _aa_secret,
+            opener=_AAOpener([_AAResponse(value={})]), now=_aa_now)
+    finally:
+        pricing_sources.json.loads = _real_json_loads
+    check("RecursionError JSON devient erreur constante et conserve la base",
+          _recursive["warnings"] == ["invalid JSON response"]
+          and _aa_secret not in "".join(_recursive["warnings"])
+          and _recursive["registry"] == _aa_base
+          and not _recursive["priced"])
+
+    _huge_number = 10 ** 400
+    _huge_result = pricing_sources.apply_artificial_analysis_fallback(
+        _aa_base, ["huge-model"], os.path.join(_aa_tmp, "huge.json"),
+        _aa_secret, opener=_AAOpener([_aa_page([
+            _aa_model("huge-model", "huge-model", _huge_number, 2.0)])]),
+        now=_aa_now)
+    check("entier JSON enorme refusé sans exception et conserve la base",
+          _huge_result["statuses"] == {"huge-model": "null"}
+          and _huge_result["registry"] == _aa_base
+          and not _huge_result["priced"])
+
+    _aa_http_ok = True
+    for _status in (401, 403, 429, 500, 503):
+        _err = urllib.error.HTTPError(pricing_sources.AA_URL, _status,
+                                     "simulated", {}, None)
+        _result = pricing_sources.apply_artificial_analysis_fallback(
+            _aa_base, ["error-model"], os.path.join(_aa_tmp, f"e{_status}.json"),
+            _aa_secret, opener=_AAOpener([_err]), now=_aa_now)
+        _aa_http_ok = _aa_http_ok and not _result["priced"] and _result["warnings"]
+    check("401/403/429/5xx degradent sans prix invente", _aa_http_ok)
+
+    _aa_pages = _AAOpener([_aa_page([], 1, 2),
+                           _aa_page([_aa_model()], 2, 2)])
+    _catalog = pricing_sources.fetch_artificial_analysis(
+        _aa_secret, opener=_aa_pages)
+    check("pagination bornee suit page=2",
+          len(_catalog) == 1 and len(_aa_pages.requests) == 2
+          and _aa_pages.requests[1][0].full_url.endswith("?page=2"))
+
+    _ambiguous = [_aa_model("same", "one"), _aa_model("Same", "two")]
+    _null = _aa_model("null-model", "null-model", None, 2.0)
+    check("match strict ambigu ou prix null refuse",
+          pricing_sources.strict_catalog_match("same", _ambiguous)[1] == "ambiguous"
+          and pricing_sources.strict_catalog_match("same-extra", _ambiguous)[1] == "absent"
+          and pricing_sources.strict_catalog_match("null-model", [_null])[1] == "null")
+
+    _tamper_cases = {
+        "nan": ("input_per_mtok", float("nan")),
+        "negative": ("output_per_mtok", -1),
+        "string": ("input_per_mtok", "1.25"),
+        "provenance": ("attribution", "Mallory"),
+        "url": ("pricing_source_url", "https://evil.example/prices"),
+        "estimate": ("estimate", 1),
+        "timestamp": ("pricing_verified_at", "not-an-iso-date"),
+        "non-utc": ("pricing_verified_at", "2026-09-01T13:00:00+01:00"),
+    }
+    _tamper_ok = True
+    for _label, (_field, _value) in _tamper_cases.items():
+        _tampered = json.loads(json.dumps(_aa_cache_doc))
+        _tampered["entries"][0][_field] = _value
+        _tampered_path = os.path.join(_aa_tmp, f"tampered-{_label}.json")
+        json.dump(_tampered, open(_tampered_path, "w"))
+        _tampered_result = pricing_sources.apply_artificial_analysis_fallback(
+            _aa_base, ["acme-model"], _tampered_path, None, now=_aa_now)
+        _tamper_ok = (_tamper_ok and not _tampered_result["priced"]
+                      and not _tampered_result["registry"]["models"])
+    check("cache falsifie NaN/negatif/chaine/provenance/URL/estimate/date ignore",
+          _tamper_ok)
+    try:
+        pricing_sources.fetch_artificial_analysis(
+            _aa_secret, opener=_AAOpener([_AAResponse(raw=b"not-json")]))
+        _invalid_json = False
+    except pricing_sources.PricingSourceError:
+        _invalid_json = True
+    check("JSON invalide refuse sans exception brute", _invalid_json)
+
+    _official = {"_meta": {}, "models": [{"id": "acme-model", "aliases": [],
+        "input_per_mtok": 9.0, "output_per_mtok": 10.0,
+        "pricing_source_kind": "official"}]}
+    _official_open = _AAOpener([])
+    _official_result = pricing_sources.apply_artificial_analysis_fallback(
+        _official, ["acme-model"], os.path.join(_aa_tmp, "official.json"),
+        _aa_secret, opener=_official_open, now=_aa_now)
+    check("prix officiel complet prioritaire et zero requete",
+          _official_result["registry"]["models"][0]["input_per_mtok"] == 9.0
+          and not _official_open.requests)
+    _partial = {"_meta": {}, "models": [{"id": "acme-model", "aliases": [],
+        "input_per_mtok": 9.0, "output_per_mtok": None,
+        "pricing_source_kind": "official",
+        "pricing_source_url": "https://provider.example/pricing"}]}
+    _partial_snapshot = _copy.deepcopy(_partial)
+    _partial_result = pricing_sources.apply_artificial_analysis_fallback(
+        _partial, ["acme-model"], os.path.join(_aa_tmp, "partial.json"),
+        _aa_secret, opener=_AAOpener([_aa_page([_aa_model()])]), now=_aa_now)
+    _partial_entry = _partial_result["registry"]["models"][0]
+    check("champ officiel partiel conserve, seul le null recoit le fallback",
+          _partial_entry["input_per_mtok"] == 9.0
+          and _partial_entry["output_per_mtok"] == 4.5
+          and _partial == _partial_snapshot
+          and _partial_entry["pricing_field_sources"]["input_per_mtok"][
+              "pricing_source_kind"] == "official")
+    _partial_ctx = forge_dashboards.Ctx(_cap_off, _partial_result["registry"])
+    _partial_rules_path = os.path.join(_aa_tmp, "partial-rules.yml")
+    forge_dashboards.emit_recording_rules(_partial_ctx, _partial_rules_path)
+    _partial_rules = yaml.safe_load(open(_partial_rules_path))["groups"][0]["rules"]
+    _partial_prices = {rule["record"]: rule for rule in _partial_rules
+                       if rule["record"] in (forge_dashboards.PRICE_IN,
+                                             forge_dashboards.PRICE_OUT)}
+    _input_labels = _partial_prices[forge_dashboards.PRICE_IN]["labels"]
+    _output_labels = _partial_prices[forge_dashboards.PRICE_OUT]["labels"]
+    check("recording rules conservent la provenance propre a chaque champ",
+          _input_labels["pricing_source_kind"] == "official"
+          and _input_labels["price_estimate"] == "false"
+          and "pricing_attribution" not in _input_labels
+          and _input_labels["pricing_source_url"]
+              == "https://provider.example/pricing"
+          and _output_labels["pricing_source_kind"] == "artificial_analysis"
+          and _output_labels["price_estimate"] == "true"
+          and _output_labels["pricing_source_url"] == pricing_sources.AA_URL
+          and _output_labels["pricing_attribution"]
+              == pricing_sources.AA_ATTRIBUTION)
+    _aa_rules_path = os.path.join(_aa_tmp, "aa-rules.yml")
+    forge_dashboards.emit_recording_rules(
+        forge_dashboards.Ctx(_cap_off, _aa_result["registry"]), _aa_rules_path)
+    _aa_rules = yaml.safe_load(open(_aa_rules_path))["groups"][0]["rules"]
+    _aa_price_labels = [rule["labels"] for rule in _aa_rules
+                        if rule["record"] in (forge_dashboards.PRICE_IN,
+                                              forge_dashboards.PRICE_OUT)]
+    check("attribution AA presente sur les series input et output AA",
+          len(_aa_price_labels) == 2
+          and all(labels["pricing_attribution"]
+                  == pricing_sources.AA_ATTRIBUTION
+                  for labels in _aa_price_labels))
+
+    _legacy_partial = {"_meta": {}, "models": [{
+        "id": "legacy-partial", "aliases": [],
+        "input_per_mtok": 9.0, "output_per_mtok": None,
+        "cached_input_per_mtok": 0.75}]}
+    _legacy_api = _aa_model("legacy-partial", "legacy-partial", 1.0, 4.5)
+    _legacy_result = pricing_sources.apply_artificial_analysis_fallback(
+        _legacy_partial, ["legacy-partial"],
+        os.path.join(_aa_tmp, "legacy-partial.json"), _aa_secret,
+        opener=_AAOpener([_aa_page([_legacy_api])]), now=_aa_now)
+    _legacy_entry = _legacy_result["registry"]["models"][0]
+    check("registre legacy partiel conserve tout non-null et source locale explicite",
+          _legacy_entry["input_per_mtok"] == 9.0
+          and _legacy_entry["output_per_mtok"] == 4.5
+          and _legacy_entry["cached_input_per_mtok"] == 0.75
+          and _legacy_entry["pricing_field_sources"]["input_per_mtok"][
+              "pricing_source_kind"] == "local_registry_legacy"
+          and _legacy_entry["pricing_field_sources"]["cached_input_per_mtok"][
+              "pricing_source_kind"] == "local_registry_legacy"
+          and _legacy_entry["pricing_field_sources"]["output_per_mtok"][
+              "pricing_source_kind"] == "artificial_analysis")
+
+    _converging_registry = {"_meta": {}, "models": [{
+        "id": "shared-model", "aliases": ["alias-one", "alias-two"],
+        "input_per_mtok": None, "output_per_mtok": None,
+        "pricing_source_kind": "unavailable"}]}
+
+    _matrix_base = {"_meta": {}, "models": [{
+        "id": "matrix-shared",
+        "aliases": ["matrix-a", "matrix-b", "matrix-c"],
+        "input_per_mtok": None, "output_per_mtok": None,
+        "pricing_source_kind": "unavailable"}]}
+    _matrix_snapshot = _copy.deepcopy(_matrix_base)
+
+    def _matrix_model(alias, identity, price):
+        item = _aa_model(alias, alias, price, price * 2)
+        item["id"] = identity
+        return item
+
+    def _matrix_seed(path, alias, identity, price):
+        return pricing_sources.apply_artificial_analysis_fallback(
+            _matrix_base, [alias], path, _aa_secret,
+            opener=_AAOpener([_aa_page([
+                _matrix_model(alias, identity, price)])]), now=_aa_now)
+
+    def _matrix_rejected(result, aliases, path, unchanged_cache=None):
+        cache_ok = (open(path, "rb").read() == unchanged_cache
+                    if unchanged_cache is not None
+                    else json.load(open(path))["entries"] == [])
+        return (result["registry"] == _matrix_snapshot
+                and _matrix_base == _matrix_snapshot
+                and not result["priced"]
+                and result["statuses"] == {
+                    alias: "ambiguous" for alias in aliases}
+                and cache_ok)
+
+    _matrix_cache_a = os.path.join(_aa_tmp, "matrix-cache-a.json")
+    _matrix_seed_a = _matrix_seed(
+        _matrix_cache_a, "matrix-a", "identity-a", 1.0)
+    _matrix_cache_only = pricing_sources.apply_artificial_analysis_fallback(
+        _matrix_base, ["matrix-a"], _matrix_cache_a, None, now=_aa_now)
+    check("resolveur: cache A seul ecrit une fois la destination D",
+          _matrix_seed_a["priced"] == ["matrix-a"]
+          and _matrix_cache_only["priced"] == ["matrix-a"]
+          and _matrix_cache_only["cache_used"]
+          and _matrix_cache_only["registry"]["models"][0][
+              "input_per_mtok"] == 1.0
+          and _matrix_base == _matrix_snapshot
+          and len(json.load(open(_matrix_cache_a))["entries"]) == 1)
+
+    _matrix_cache_ab = os.path.join(_aa_tmp, "matrix-cache-ab.json")
+    _matrix_seed(_matrix_cache_ab, "matrix-a", "identity-a", 1.0)
+    _matrix_seed(_matrix_cache_ab, "matrix-b", "identity-b", 2.0)
+    _matrix_ab_before = open(_matrix_cache_ab, "rb").read()
+    _matrix_cache_conflict = pricing_sources.apply_artificial_analysis_fallback(
+        _matrix_base, ["matrix-a", "matrix-b"], _matrix_cache_ab, None,
+        now=_aa_now)
+    check("resolveur: caches A et B distincts vers D sont tous refuses",
+          _matrix_rejected(
+              _matrix_cache_conflict, ["matrix-a", "matrix-b"],
+              _matrix_cache_ab, unchanged_cache=_matrix_ab_before))
+
+    _matrix_api_bc = os.path.join(_aa_tmp, "matrix-api-bc.json")
+    _matrix_api_conflict = pricing_sources.apply_artificial_analysis_fallback(
+        _matrix_base, ["matrix-b", "matrix-c"], _matrix_api_bc, _aa_secret,
+        opener=_AAOpener([_aa_page([
+            _matrix_model("matrix-b", "identity-b", 2.0),
+            _matrix_model("matrix-c", "identity-c", 3.0)])]), now=_aa_now)
+    check("resolveur: API B et C distincts vers D sont tous refuses",
+          _matrix_rejected(
+              _matrix_api_conflict, ["matrix-b", "matrix-c"],
+              _matrix_api_bc))
+
+    _matrix_cache_api_b = os.path.join(_aa_tmp, "matrix-cache-api-b.json")
+    _matrix_seed(_matrix_cache_api_b, "matrix-a", "identity-a", 1.0)
+    _matrix_cache_api_b_result = pricing_sources.apply_artificial_analysis_fallback(
+        _matrix_base, ["matrix-a", "matrix-b"], _matrix_cache_api_b,
+        _aa_secret, opener=_AAOpener([_aa_page([
+            _matrix_model("matrix-b", "identity-b", 2.0)])]), now=_aa_now)
+    check("resolveur: cache A et API B distincts vers D sont tous refuses",
+          _matrix_rejected(
+              _matrix_cache_api_b_result, ["matrix-a", "matrix-b"],
+              _matrix_cache_api_b))
+
+    _matrix_cache_api_bc = os.path.join(_aa_tmp, "matrix-cache-api-bc.json")
+    _matrix_seed(_matrix_cache_api_bc, "matrix-a", "identity-a", 1.0)
+    _matrix_cache_api_bc_result = pricing_sources.apply_artificial_analysis_fallback(
+        _matrix_base, ["matrix-a", "matrix-b", "matrix-c"],
+        _matrix_cache_api_bc, _aa_secret,
+        opener=_AAOpener([_aa_page([
+            _matrix_model("matrix-b", "identity-b", 2.0),
+            _matrix_model("matrix-c", "identity-c", 3.0)])]), now=_aa_now)
+    check("resolveur: cache A plus API B et C vers D rejette tout le groupe",
+          _matrix_rejected(
+              _matrix_cache_api_bc_result,
+              ["matrix-a", "matrix-b", "matrix-c"],
+              _matrix_cache_api_bc))
+
+    _matrix_cache_ab_api_c = os.path.join(
+        _aa_tmp, "matrix-cache-ab-api-c.json")
+    _matrix_seed(_matrix_cache_ab_api_c, "matrix-a", "identity-a", 1.0)
+    _matrix_seed(_matrix_cache_ab_api_c, "matrix-b", "identity-b", 2.0)
+    _matrix_cache_ab_api_c_result = (
+        pricing_sources.apply_artificial_analysis_fallback(
+            _matrix_base, ["matrix-a", "matrix-b", "matrix-c"],
+            _matrix_cache_ab_api_c, _aa_secret,
+            opener=_AAOpener([_aa_page([
+                _matrix_model("matrix-c", "identity-c", 3.0)])]),
+            now=_aa_now))
+    check("resolveur: caches A et B plus API C vers D rejettent tout le groupe",
+          _matrix_rejected(
+              _matrix_cache_ab_api_c_result,
+              ["matrix-a", "matrix-b", "matrix-c"],
+              _matrix_cache_ab_api_c))
+
+    _matrix_api_blocked = os.path.join(
+        _aa_tmp, "matrix-api-ambiguity-blocks-cache.json")
+    _matrix_seed(_matrix_api_blocked, "matrix-a", "identity-a", 1.0)
+    _matrix_api_blocked_result = (
+        pricing_sources.apply_artificial_analysis_fallback(
+            _matrix_base, ["matrix-a", "matrix-b"], _matrix_api_blocked,
+            _aa_secret, opener=_AAOpener([_aa_page([
+                _matrix_model("matrix-b", "identity-b", 2.0),
+                _matrix_model("matrix-b", "identity-c", 3.0)])]),
+            now=_aa_now))
+    check("resolveur: ambiguite API sans plan bloque le cache vers D",
+          _matrix_rejected(
+              _matrix_api_blocked_result, ["matrix-a", "matrix-b"],
+              _matrix_api_blocked))
+
+    _matrix_cache_blocked = os.path.join(
+        _aa_tmp, "matrix-cache-ambiguity-blocks-api.json")
+    _matrix_seed(_matrix_cache_blocked, "matrix-a", "identity-a", 1.0)
+    _matrix_cache_blocked_doc = json.load(open(_matrix_cache_blocked))
+    _matrix_duplicate_overlay = _copy.deepcopy(
+        _matrix_cache_blocked_doc["entries"][0])
+    _matrix_duplicate_overlay["aa_model_id"] = "identity-b"
+    _matrix_cache_blocked_doc["entries"].append(_matrix_duplicate_overlay)
+    json.dump(_matrix_cache_blocked_doc, open(_matrix_cache_blocked, "w"))
+    _matrix_cache_blocked_result = (
+        pricing_sources.apply_artificial_analysis_fallback(
+            _matrix_base, ["matrix-a"], _matrix_cache_blocked, _aa_secret,
+            opener=_AAOpener([_aa_page([
+                _matrix_model("matrix-a", "identity-c", 3.0)])]),
+            now=_aa_now))
+    check("resolveur: ambiguite cache sans plan bloque l API vers D",
+          _matrix_rejected(
+              _matrix_cache_blocked_result, ["matrix-a"],
+              _matrix_cache_blocked))
+
+    _aa_one = _aa_model("alias-one", "alias-one")
+    _aa_one["id"] = "aa-one"
+    _aa_two = _aa_model("alias-two", "alias-two")
+    _aa_two["id"] = "aa-two"
+    _converging = pricing_sources.apply_artificial_analysis_fallback(
+        _converging_registry, ["alias-one", "alias-two"],
+        os.path.join(_aa_tmp, "converging.json"), _aa_secret,
+        opener=_AAOpener([_aa_page([_aa_one, _aa_two])]), now=_aa_now)
+    check("deux objets AA distincts convergeant vers une entree sont refuses",
+          not _converging["priced"]
+          and _converging["registry"]["models"][0]["input_per_mtok"] is None
+          and set(_converging["statuses"].values()) == {"ambiguous"})
+
+    _cross_cache = os.path.join(_aa_tmp, "cross-source-convergence.json")
+    _cross_seed = pricing_sources.apply_artificial_analysis_fallback(
+        _converging_registry, ["alias-one"], _cross_cache, _aa_secret,
+        opener=_AAOpener([_aa_page([_aa_one])]), now=_aa_now)
+    _cross_result = pricing_sources.apply_artificial_analysis_fallback(
+        _converging_registry, ["alias-one", "alias-two"], _cross_cache,
+        _aa_secret, opener=_AAOpener([_aa_page([_aa_two])]), now=_aa_now)
+    check("convergence croisee cache A et API B refusee avant toute mutation",
+          _cross_seed["priced"] == ["alias-one"]
+          and not _cross_result["priced"]
+          and _cross_result["registry"]["models"][0]["input_per_mtok"] is None
+          and set(_cross_result["statuses"].values()) == {"ambiguous"})
+
+    _supersession_cache = os.path.join(_aa_tmp, "api-supersession.json")
+    _same_old = _aa_model("alias-one", "alias-one", 1.25, 4.5)
+    _same_old["id"] = "aa-shared"
+    _supersession_seed = pricing_sources.apply_artificial_analysis_fallback(
+        _converging_registry, ["alias-one"], _supersession_cache, _aa_secret,
+        opener=_AAOpener([_aa_page([_same_old])]), now=_aa_now)
+    _same_new = _aa_model("alias-two", "alias-two", 2.5, 9.0)
+    _same_new["id"] = "aa-shared"
+    _new_now = datetime(2026, 9, 1, 13, 0, tzinfo=timezone.utc)
+    _supersession = pricing_sources.apply_artificial_analysis_fallback(
+        _converging_registry, ["alias-one", "alias-two"],
+        _supersession_cache, _aa_secret,
+        opener=_AAOpener([_aa_page([_same_new])]), now=_new_now)
+    _supersession_doc = json.load(open(_supersession_cache))
+    _supersession_restart = pricing_sources.apply_artificial_analysis_fallback(
+        _converging_registry, ["alias-two", "alias-one"],
+        _supersession_cache, None, opener=_AAOpener([]), now=_new_now)
+    check("plan API supplante cache de meme identite et reste stable au redemarrage",
+          _supersession_seed["priced"] == ["alias-one"]
+          and _supersession["registry"]["models"][0]["input_per_mtok"] == 2.5
+          and _supersession["registry"]["models"][0]["output_per_mtok"] == 9.0
+          and _supersession["statuses"]["alias-one"] == "superseded"
+          and _supersession["priced"] == ["alias-two"]
+          and len(_supersession_doc["entries"]) == 1
+          and _supersession_doc["entries"][0]["seen"] == "alias-two"
+          and _supersession_doc["entries"][0]["input_per_mtok"] == 2.5
+          and _supersession_restart["registry"]["models"][0][
+              "input_per_mtok"] == 2.5
+          and _supersession_restart["registry"]["models"][0][
+              "output_per_mtok"] == 9.0
+          and _supersession_restart["priced"] == ["alias-two"])
+
+    _tie_registry = {"_meta": {}, "models": [
+        {"id": "foo-model-a", "aliases": [], "input_per_mtok": None,
+         "output_per_mtok": None},
+        {"id": "foo-model-b", "aliases": [], "input_per_mtok": None,
+         "output_per_mtok": None}]}
+    _tie_result = pricing_sources.apply_artificial_analysis_fallback(
+        _tie_registry, ["foo-model"], os.path.join(_aa_tmp, "tie.json"),
+        _aa_secret, opener=_AAOpener([_aa_page([_aa_model("foo-model", "foo-model")])]),
+        now=_aa_now)
+    check("egalite de score registre refusee avant mutation",
+          not _tie_result["priced"]
+          and all(model["input_per_mtok"] is None
+                  for model in _tie_result["registry"]["models"]))
+
+    _atomic_path = os.path.join(_aa_tmp, "atomic.json")
+    open(_atomic_path, "w").write("old")
+    _real_replace = pricing_sources.os.replace
+    try:
+        pricing_sources.os.replace = lambda *_: (_ for _ in ()).throw(OSError("stop"))
+        try:
+            pricing_sources._atomic_write_json(_atomic_path, {"new": True})
+        except OSError:
+            pass
+    finally:
+        pricing_sources.os.replace = _real_replace
+    check("echec de remplacement conserve ancien cache et nettoie temporaire",
+          open(_atomic_path).read() == "old"
+          and not [n for n in os.listdir(_aa_tmp)
+                   if n.startswith(".artificial-analysis-pricing.")])
+
+    _cap_aa = json.loads(json.dumps(forge_dashboards.selftest_capability()))
+    _cap_aa["signals"]["prom-selftest"]["otel_genai"]["models_seen"] = ["acme-model"]
+    _ctx_aa = forge_dashboards.Ctx(_cap_aa, _aa_result["registry"])
+    _board_aa = forge_dashboards.bp_finops(_ctx_aa).d
+    _board_text = json.dumps(_board_aa, ensure_ascii=False)
+    check("dashboard signale mediane multi-provider et attribution",
+          "median multi-provider" in _board_text
+          and "Attribution: Artificial Analysis" in _board_text)
+
+try:
+    pricing_sources.SameOriginRedirectHandler().redirect_request(
+        urllib.request.Request(pricing_sources.AA_URL), None, 302, "redirect", {},
+        "https://evil.example/collect")
+    _redirect_blocked = False
+except pricing_sources.PricingSourceError:
+    _redirect_blocked = True
+check("redirect hors origine bloque", _redirect_blocked)
 
 print("\n[12] Coherence documentation")
 _readme = open(os.path.join(SK, "README.md")).read()

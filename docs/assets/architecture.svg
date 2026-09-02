@@ -38,9 +38,10 @@
   <!-- Phase 2 registry -->
   <rect x="650" y="70" width="250" height="120" class="box" rx="10"/>
   <text x="775" y="96" text-anchor="middle" class="t">② model registry</text>
-  <text x="775" y="118" text-anchor="middle" class="s">30+ models · US · EU · Asia</text>
-  <text x="775" y="136" text-anchor="middle" class="s">$/1M in · out · cached · tiers</text>
-  <text x="775" y="162" text-anchor="middle" class="c">web-refresh if &gt; 30 days</text>
+  <text x="775" y="116" text-anchor="middle" class="s">pricing_sources.py</text>
+  <text x="775" y="134" text-anchor="middle" class="s">30+ models · US · EU · Asia</text>
+  <text x="775" y="152" text-anchor="middle" class="s">$/1M in · out · cached · tiers</text>
+  <text x="775" y="174" text-anchor="middle" class="c">web-refresh if &gt; 30 days</text>
   <path class="flow" d="M580 130 H646"/>
 
   <!-- Phase 4 forge -->

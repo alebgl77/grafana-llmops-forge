@@ -30,6 +30,8 @@ NAME = "grafana-llmops-forge"
 PAYLOAD = ["SKILL.md", "scripts", "references"]
 EXCLUDE_DIRS = {"__pycache__", ".git", ".pytest_cache"}
 EXCLUDE_SUFFIX = {".pyc", ".pyo", ".skill"}
+EXCLUDE_NAMES = {"model_registry.local.json",
+                 "model_registry.artificial-analysis.cache.json"}
 ZIP_DATE = (1980, 1, 1, 0, 0, 0)
 ZIP_MODE = 0o100644
 
@@ -45,7 +47,8 @@ def sources() -> list[tuple[pathlib.Path, str]]:
             for f in sorted(p.rglob("*")):
                 if not f.is_file():
                     continue
-                if set(f.parts) & EXCLUDE_DIRS or f.suffix in EXCLUDE_SUFFIX:
+                if (set(f.parts) & EXCLUDE_DIRS or f.suffix in EXCLUDE_SUFFIX
+                        or f.name in EXCLUDE_NAMES):
                     continue
                 out.append((f, f"{NAME}/{f.relative_to(ROOT).as_posix()}"))
         else:

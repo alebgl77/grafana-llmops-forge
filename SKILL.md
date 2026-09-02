@@ -47,6 +47,20 @@ Produces the capability map: version/edition/namespace, API availability (legacy
 
 Read `references/model_registry.json`. If `_meta.verified_at` is more than 30 days old AND web search is available: refresh the prices of the models actually present in the capability map (not the whole registry) from the URLs in `_meta.sources`, then write `model_registry.local.json` next to the capability map. The generator loads the local file first. Without web access, use the seed as-is; cost dashboards display the registry date in their description.
 
+Artificial Analysis is a third-party fallback, never an automatic refresh.
+Use `--pricing-fallback artificial-analysis` only after the user opts in and
+only with `ARTIFICIAL_ANALYSIS_API_KEY` in the environment. The forge calls the
+fixed Free endpoint, caches results next to the capability map for 24 hours,
+and accepts only a unique exact normalized ID, slug, name, or alias match.
+The cache is the separate overlay
+`model_registry.artificial-analysis.cache.json`; it never replaces the official
+local registry `model_registry.local.json` or the seed.
+Official prices always win. Ambiguous, absent, null, invalid, unauthorized,
+rate-limited, or server-error responses leave the model unpriced and do not
+stop the forge. Relay that these values are Artificial Analysis median
+multi-provider estimates. Never print or persist the key. Full protocol:
+`references/pricing_provenance.md`.
+
 ### Phase 2b: Cost recording rules (strongly recommended)
 
 Every run writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_*_usd_per_token{<model_label>=…}`) and cost becomes an aggregate metric (`llm:cost_usd_per_second`) joined by vector matching. Two files are written: the portable rule file and a `PrometheusRule` manifest for Kubernetes clusters running the Prometheus Operator, which is where most enterprise deployments live. Same rules, different packaging; the loading recipe per backend (Mimir, Thanos, VictoriaMetrics, AMP, Google Managed Prometheus) is in `references/grafana_api_compat.md` §6. Copy the portable file into Prometheus `rule_files` and reload: on the next run `discover.py` detects the `recorded` dialect and cost panels drop from a 2N-term sum to an O(1) query: unlimited models, and prices updatable without regenerating dashboards. Without it, on-the-fly composition stays active (40-model ceiling).
@@ -76,6 +90,8 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 # Useful options:
 #   --slo-target 0.995      burn-rate SLO target (default 0.99)
 #   --cost-mode recorded    force recording rules (default: auto-detected)
+#   --pricing-fallback artificial-analysis  opt-in third-party price estimates
+#   --pricing-cache-max-age-hours 24         local cache freshness
 #   --export-portable       ${DS_*} JSON, publishable on grafana.com/dashboards
 #   --datasource <uid|name> pin one datasource
 #   --locale fr             translate panel labels (default: English)
