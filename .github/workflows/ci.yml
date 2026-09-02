@@ -2,9 +2,10 @@ name: CI
 on:
   push: {branches: [main]}
   pull_request:
+  workflow_call:
 permissions: {}
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
+  group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   audit:
@@ -60,8 +61,13 @@ jobs:
         run: |
           python - <<'PY'
           import json
+          import sys
+          sys.path.insert(0, "scripts")
+          from pricing_sources import validate_registry
+
           r = json.load(open("references/model_registry.json"))
-          assert r["models"] and r["_meta"]["sources"], "registry incomplete"
+          validate_registry(r)
+          assert r["models"], "registry incomplete"
           print(len(r["models"]), "models OK")
           PY
 

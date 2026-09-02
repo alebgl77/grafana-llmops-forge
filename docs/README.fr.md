@@ -6,7 +6,7 @@
 
 ## Les trois questions auxquelles il répond
 
-**« Combien l'IA nous coûte, et chez qui ? »** Dépense par jour, coût par requête, ventilation par souveraineté du fournisseur, la donnée que demandent les directions achats pour les clauses contractuelles et la dépendance extra-européenne. Les coûts sont composés depuis un registre de 33 modèles à prix vérifiés, ou calculés par des *recording rules* Prometheus quand vous les installez, ce qui rend les panneaux O(1) et les tarifs modifiables sans regénérer un seul tableau de bord. Un modèle absent du registre est **exclu du calcul et listé**, jamais facturé au mauvais tarif.
+**« Combien l'IA nous coûte, et chez qui ? »** Dépense par jour, coût par requête, ventilation par souveraineté du fournisseur, la donnée que demandent les directions achats pour les clauses contractuelles et la dépendance extra-européenne. Les coûts sont composés depuis un registre de 33 modèles à provenance vérifiée, ou calculés par des *recording rules* Prometheus quand vous les installez, ce qui rend les panneaux O(1) et les tarifs modifiables sans regénérer un seul tableau de bord. Les entrées sans tarif restent **exclues du calcul et listées**, jamais facturées au mauvais tarif.
 
 **« Sommes-nous prêts pour l'audit ? »** Le même socle de télémétrie se lit contre trois référentiels (`--framework eu-ai-act,iso-42001,nist-rmf`). Le même volume de logs atteste l'Art. 12 de l'AI Act, le contrôle A.6.2.8 d'ISO/IEC 42001 et MANAGE 4.1 du NIST AI RMF ; le même inventaire de modèles répond à l'Art. 26, à A.10 et à GOVERN 6.1. Les panneaux mesurés sont identiques : seule la lecture change. Le tableau de bord dit aussi, noir sur blanc, **ce qu'il ne prouve pas** : ni système de management, ni analyse de risque, ni efficacité de la supervision humaine. *Support de preuve, pas un avis juridique.*
 
@@ -20,7 +20,7 @@ Les tableaux de bord sont générés **en anglais par défaut**, la langue de tr
 
 ## Côté sécurité et réversibilité
 
-Python standard uniquement, **zéro dépendance**, environ 2 500 lignes lisibles d'une traite. Le jeton n'est jamais journalisé, le contenu des prompts jamais capturé par défaut. Déploiement idempotent et réversible : un dossier, des UID déterministes, relancer met à jour sans dupliquer. Le paquet `.skill` n'est jamais committé : la CI le construit de façon reproductible depuis les sources, vérifie fichier par fichier qu'il leur correspond, et le publie avec son empreinte.
+Python standard uniquement, **zéro dépendance**. Le jeton n'est jamais journalisé, le contenu des prompts jamais capturé par défaut. Déploiement idempotent et réversible : un dossier, des UID déterministes, relancer met à jour sans dupliquer. Le paquet `.skill` n'est jamais committé : la CI le construit de façon reproductible depuis les sources, vérifie fichier par fichier qu'il leur correspond, et le publie avec son empreinte.
 
 Le projet est scanné par [NVIDIA SkillSpector](https://github.com/NVIDIA/SkillSpector), qui ne relève **aucun constat** sur le livrable ; `SECURITY.md` explique ce qu'un scan du dépôt entier fait remonter et pourquoi chacun de ces points reste.
 

@@ -47,8 +47,8 @@ Deployment writes a v2 manifest with `success|partial|failed`; `--best-effort`
 changes only the exit code. Visual audit likewise remains `failed` when an
 expected capture is absent, even when `--allow-empty` explicitly permits exit 0.
 
-<div align="center"><img src="docs/assets/dashboard-finops.svg" alt="Generated FinOps dashboard" width="100%"/>
-<sub><i><b>Illustration</b> (hand-drawn SVG, not a screenshot) of the FinOps blueprint: cost composed from a 30-model price registry, split by provider sovereignty. For the real thing on real data, run <code>make demo</code>: it boots Grafana + Prometheus + a synthetic LLM workload and deploys these dashboards for real in about a minute.</i></sub></div>
+<div align="center"><img src="docs/assets/dashboard-finops.svg" alt="FinOps dashboard illustration" width="100%"/>
+<sub><i><b>Illustration</b> (hand-drawn SVG, not a screenshot) of the FinOps blueprint: cost composed from a 33-model price registry, split by provider sovereignty. For the real thing on real data, run <code>make demo</code>: it boots Grafana + Prometheus + a synthetic LLM workload and deploys these dashboards for real in about a minute.</i></sub></div>
 
 ## Why this is different
 
@@ -56,7 +56,7 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 
 1. **Discovery-first, never assume.** `discover.py` probes your datasources and captures the *actual* metric names present (OTel exporters disagree on suffixes: `_seconds`, `_token`, `_total`). Panels are only generated for queries that will return data. Missing signals become an **instrumentation gap report** with exact configs, not empty panels.
 2. **Four telemetry dialects, one mental model.** OpenTelemetry GenAI (`gen_ai_*`), LiteLLM gateway (`litellm_*`, native USD spend), inference engines (`vllm:*`, `tgi_*`), GPU (`DCGM_*`). Each blueprint is translated into whatever you actually emit.
-3. **Cost is computed, not hoped for.** Native gateway spend when available; otherwise PromQL composed by joining your token counters with a bundled **30-model price registry** (US/EU/Asia, input/output/cached, tiered pricing), refreshable from official pricing pages when stale.
+3. **Cost is computed, not hoped for.** Native gateway spend when available; otherwise PromQL composed by joining your token counters with a bundled **33-model price registry** (US/EU/Asia, input/output/cached, tiered pricing), refreshable from official pricing pages when stale.
 4. **Governance is observable.** The EU AI Act dashboard maps articles (12, 26§6, 50, 73) to live signals: logging evidence, retention posture, incident watch, an auto-built model inventory with sovereignty and GPAI flags, and the post-Digital-Omnibus timeline.
 5. **Verified by eye, not just by API.** HTTP 200 proves the JSON was accepted, not that the render is right. After deploy, `visual_audit.py` captures every panel (native Grafana renderer, Playwright fallback) and an AI vision pass checks scale plausibility, "No data" panels, p50>p95 impossibilities, cross-panel coherence, then loops remediation (max 2 iterations, then a report of what remains).
 
@@ -84,7 +84,10 @@ Plus **provisioned SLO alerts** built the way SREs expect them: **multi-window b
 
 ### Cost that scales
 
-By default the forge composes cost from token counters × a bundled price registry. That's fine to bootstrap and slow past ~15 models. So every run also writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. Load it into Prometheus and your FinOps panels go from a 2N-term sum to `sum(llm:cost_usd_per_second)`: unlimited models, O(1) queries, and price updates without regenerating a single dashboard. The forge detects the recorded metric on the next discovery run and switches automatically.
+By default the forge composes cost from token counters × a bundled price registry. That's fine to bootstrap and slow past ~15 models. When discovery finds OTel GenAI signals, token counters, a model label, and usable prices, the forge also writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. Load it into Prometheus and your FinOps panels go from a 2N-term sum to `sum(llm:cost_usd_per_second)`: unlimited models, O(1) queries, and price updates without regenerating a single dashboard. The forge detects the recorded metric on the next discovery run and switches automatically.
+
+<div align="center"><img src="docs/assets/pricing-flow.png" alt="Cost flow from native LiteLLM spend directly to FinOps, or from OTel GenAI token counters through the official registry and opt-in Artificial Analysis fallback to Prometheus rules and FinOps dashboards; models with ambiguous matches or no price remain unpriced" width="100%"/>
+<sub><i>Conceptual cost flow for native gateway spend and OTel GenAI token pricing. Not a Grafana screenshot.</i></sub></div>
 
 ## Try it in 60 seconds (no Grafana needed)
 
@@ -109,7 +112,7 @@ The skill handles discovery → registry refresh → blueprint selection → dep
 <details>
 <summary><b>As a standalone CLI (no AI required)</b></summary>
 
-Pure Python 3.8+ stdlib. No pip install. The three commands at the top of this README are the whole workflow. `--dry-run` writes JSON without touching your instance; `--selftest` renders all seven blueprints offline from a simulated capability map.
+Pure Python 3.9+ stdlib. No pip install. The three commands at the top of this README are the whole workflow. `--dry-run` writes JSON without touching your instance; `--selftest` renders all seven blueprints offline from a simulated capability map.
 
 Unknown or officially unpriced detected models can use an explicit third-party
 fallback:
@@ -154,8 +157,8 @@ layers:
 | End-to-end deploy on the demo stack | the full pipeline against a real Grafana | CI `e2e` job |
 | Vision pass on rendered panels | what only an eye sees: empty panels, implausible scales | `scripts/visual_audit.py` |
 
-All of it runs in CI on every push, with no network access to anything but your
-own infrastructure.
+All of it runs in CI on every push. The forge runtime makes no third-party calls
+by default; CI downloads pinned test tools and container images.
 
 ## What it touches, and how to back it out
 
@@ -205,7 +208,7 @@ model at all.
 
 Skills execute code, and [a 2026 Snyk audit found 36% of published skills had at least one flaw](https://github.com/obviousworks/Claude-AI-skills-collection-2026#security). This repo is designed to be auditable in one sitting:
 
-- **Zero dependencies.** Python stdlib only (`urllib`, `json`, `hashlib`). ~2,000 lines total. Playwright is *optional*, only for the visual-audit fallback.
+- **Zero dependencies.** Python 3.9+ stdlib only (`urllib`, `json`, `hashlib`). Playwright is *optional*, only for the visual-audit fallback.
 - **Least privilege.** Works with an Editor service-account token. Alert provisioning degrades gracefully on 403 (exports JSON for manual import).
 - **No secret leakage.** Grafana credentials and the optional Artificial Analysis key are never logged, embedded in dashboards, persisted, or placed in URLs.
 - **No prompt-content capture.** `gen_ai.input/output.messages` stay off by default; the docs treat enabling them as a GDPR decision, not a flag.

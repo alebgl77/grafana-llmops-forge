@@ -10,7 +10,7 @@ Do not bump `_meta.verified_at` without checking the official provider pages;
 releases fail once the verified data is more than 30 days old.
 
 ## 🔌 New dialects (gateways/engines)
-Add a signature in `discover.py` (`DIALECT_SIGNATURES` + label candidates), extend `Q` in `forge_dashboards.py`, add a topology to `tests/audit_harness.py`. PRs without a harness topology won't be merged.
+Add a signature in `scripts/discover.py` (`DIALECT_SIGNATURES` + label candidates), extend `Q` in `scripts/forge_dashboards.py`, add a topology to `tests/audit_harness.py`. PRs without a harness topology won't be merged.
 
 ## Reviewing generated code
 
@@ -33,7 +33,7 @@ So the bar for a change is evidence, not plausibility:
   variants and the harness greps for token shapes on every run.
 
 ## Ground rules
-- `python3 tests/audit_harness.py` must print `AUDIT PROPRE` (27/27).
+- `python3 tests/audit_harness.py` must print `AUDIT PROPRE`.
 - `python3 tests/supply_chain_check.py` must prove that the package and SPDX
   SBOM are reproducible and reject tampering.
 - stdlib only in `scripts/` (Playwright stays optional).

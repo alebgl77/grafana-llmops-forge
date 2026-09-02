@@ -36,14 +36,167 @@ MAX_MODELS = 5000
 MAX_CACHE_BYTES = 2 * 1024 * 1024
 MAX_PRICE_PER_MTOK = 1_000_000
 _PRICE_KEYS = ("input_per_mtok", "output_per_mtok", "cached_input_per_mtok")
+_ALLOWED_REGIONS = {"us", "eu", "asia", "unknown"}
 
 
 class PricingSourceError(RuntimeError):
     """Erreur volontairement depourvue de secret, URL variable ou corps HTTP."""
 
 
+class RegistryValidationError(ValueError):
+    """Le registre ne respecte pas le schema de confiance minimal."""
+
+
 def normalize_model_name(value: object) -> str:
     return re.sub(r"[^a-z0-9]", "", str(value).lower())
+
+
+def _registry_date(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return bool(re.fullmatch(r"\d{4}-\d{2}-\d{2}", value) or parsed.tzinfo)
+
+
+def _registry_https_url(value: object) -> bool:
+    if not isinstance(value, str) or not value:
+        return False
+    try:
+        parsed = urllib.parse.urlsplit(value)
+        port = parsed.port
+    except ValueError:
+        return False
+    return (parsed.scheme.lower() == "https" and bool(parsed.hostname)
+            and parsed.username is None and parsed.password is None
+            and port in (None, 443))
+
+
+def _registry_number(value: object) -> bool:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return False
+    try:
+        number = float(value)
+    except (OverflowError, ValueError):
+        return False
+    return math.isfinite(number) and 0 <= number <= MAX_PRICE_PER_MTOK
+
+
+def _validate_registry_source(source: object, where: str) -> None:
+    if not isinstance(source, dict):
+        raise RegistryValidationError(f"{where}: missing pricing provenance")
+    kind = source.get("pricing_source_kind")
+    if not isinstance(kind, str) or not kind.strip() or kind == "unavailable":
+        raise RegistryValidationError(f"{where}: missing pricing provenance")
+    if kind == "local_registry_legacy":
+        if not isinstance(source.get("attribution"), str) or not source["attribution"].strip():
+            raise RegistryValidationError(f"{where}: legacy provenance needs attribution")
+        return
+    if not _registry_https_url(source.get("pricing_source_url")):
+        raise RegistryValidationError(f"{where}: pricing source must be HTTPS")
+    if not _registry_date(source.get("pricing_verified_at")):
+        raise RegistryValidationError(f"{where}: invalid pricing verification date")
+    if kind != "official":
+        if (source.get("estimate") is not True
+                or not isinstance(source.get("attribution"), str)
+                or not source["attribution"].strip()):
+            raise RegistryValidationError(
+                f"{where}: third-party pricing needs estimate and attribution")
+
+
+def validate_registry(registry: object) -> dict:
+    """Valide un registre sans le modifier et retourne le meme objet."""
+    if not isinstance(registry, dict):
+        raise RegistryValidationError("registry must be an object")
+    meta = registry.get("_meta")
+    models = registry.get("models")
+    if not isinstance(meta, dict) or not isinstance(models, list) or not models:
+        raise RegistryValidationError("registry needs _meta and models")
+    if not _registry_date(meta.get("verified_at")):
+        raise RegistryValidationError("_meta.verified_at is invalid")
+    sources = meta.get("sources")
+    if sources is not None:
+        if (not isinstance(sources, dict) or not sources
+                or any(not isinstance(name, str) or not name.strip()
+                       or not _registry_https_url(url)
+                       for name, url in sources.items())):
+            raise RegistryValidationError("_meta.sources must contain HTTPS URLs")
+
+    owners: dict[str, int] = {}
+    for index, model in enumerate(models):
+        where = f"models[{index}]"
+        if not isinstance(model, dict):
+            raise RegistryValidationError(f"{where}: model must be an object")
+        model_id = model.get("id")
+        aliases = model.get("aliases")
+        vendor = model.get("vendor")
+        region = model.get("region")
+        if (not isinstance(model_id, str) or not model_id.strip()
+                or not normalize_model_name(model_id)):
+            raise RegistryValidationError(f"{where}: invalid id")
+        if (not isinstance(aliases, list)
+                or any(not isinstance(alias, str) or not alias.strip()
+                       or not normalize_model_name(alias) for alias in aliases)):
+            raise RegistryValidationError(f"{where}: invalid aliases")
+        if not isinstance(vendor, str) or not vendor.strip():
+            raise RegistryValidationError(f"{where}: invalid vendor")
+        if region not in _ALLOWED_REGIONS:
+            raise RegistryValidationError(f"{where}: invalid region")
+        for name in [model_id] + aliases:
+            normalized = normalize_model_name(name)
+            owner = owners.setdefault(normalized, index)
+            if owner != index:
+                raise RegistryValidationError(
+                    f"{where}: normalized id or alias collision")
+
+        for key in _PRICE_KEYS:
+            value = model.get(key)
+            if value is not None and not _registry_number(value):
+                raise RegistryValidationError(f"{where}.{key}: invalid price")
+        if (model.get("cached_input_per_mtok") is not None
+                and model.get("input_per_mtok") is None):
+            raise RegistryValidationError(
+                f"{where}: cached input price needs an input price")
+        priced = [key for key in _PRICE_KEYS if model.get(key) is not None]
+        kind = model.get("pricing_source_kind")
+        if not priced and kind != "unavailable":
+            raise RegistryValidationError(
+                f"{where}: unpriced model must be unavailable")
+        if kind == "unavailable":
+            if priced:
+                raise RegistryValidationError(
+                    f"{where}: unavailable model cannot have prices")
+            if (not _registry_https_url(model.get("pricing_source_url"))
+                    or not _registry_date(model.get("availability_checked_at"))):
+                raise RegistryValidationError(
+                    f"{where}: unavailable model needs HTTPS source and date")
+        field_sources = model.get("pricing_field_sources")
+        if field_sources is not None and not isinstance(field_sources, dict):
+            raise RegistryValidationError(f"{where}: invalid pricing_field_sources")
+        for key in priced:
+            source = (field_sources.get(key) if isinstance(field_sources, dict)
+                      and key in field_sources else model)
+            _validate_registry_source(source, f"{where}.{key}")
+
+        tiered = model.get("tiered_pricing")
+        if tiered is not None:
+            if not isinstance(tiered, dict):
+                raise RegistryValidationError(f"{where}: invalid tiered_pricing")
+            threshold = tiered.get("threshold_tokens")
+            if (isinstance(threshold, bool) or not isinstance(threshold, int)
+                    or threshold <= 0):
+                raise RegistryValidationError(f"{where}: invalid tier threshold")
+            for key in _PRICE_KEYS:
+                value = tiered.get(key)
+                if value is not None and not _registry_number(value):
+                    raise RegistryValidationError(
+                        f"{where}.tiered_pricing.{key}: invalid price")
+                if value is not None and model.get(key) is None:
+                    raise RegistryValidationError(
+                        f"{where}.tiered_pricing.{key}: missing base price")
+    return registry
 
 
 def _safe_text(value: object, maximum: int = 512) -> str | None:
@@ -224,7 +377,7 @@ def strict_catalog_match(seen: str, catalog: list[dict]) -> tuple[dict | None, s
 
 
 def _match_score(needle: str, key: str) -> int:
-    if len(key) < 4:
+    if not needle or len(key) < 4:
         return 0
     if key == needle:
         return 10000 + len(key)
@@ -235,7 +388,8 @@ def _match_score(needle: str, key: str) -> int:
     return 0
 
 
-def _registry_match(seen: str, models: list[dict]) -> tuple[int | None, dict | None, str]:
+def resolve_registry_model(seen: str, models: list[dict]
+                           ) -> tuple[int | None, dict | None, str]:
     """Refuse tout ex aequo de specificite entre entrees du registre."""
     needle = normalize_model_name(seen)
     scored = []
@@ -254,6 +408,10 @@ def _registry_match(seen: str, models: list[dict]) -> tuple[int | None, dict | N
         return None, None, "ambiguous"
     index = winners[0]
     return index, models[index], "matched"
+
+
+def _registry_match(seen: str, models: list[dict]) -> tuple[int | None, dict | None, str]:
+    return resolve_registry_model(seen, models)
 
 
 def _registry_destinations(seen: str, models: list[dict]) -> set[tuple]:
@@ -318,15 +476,19 @@ def official_registry_base(registry: dict) -> dict:
 def _third_party_entry(seen: str, item: dict, original: dict | None,
                        verified_at: str) -> dict:
     prices = _catalog_prices(item)
-    if prices is None:
+    creator = item.get("model_creator")
+    vendor = (_safe_text(creator.get("name"))
+              if isinstance(creator, dict) else None)
+    if prices is None or _safe_text(seen) is None or vendor is None:
         raise PricingSourceError("invalid pricing entry")
     entry = copy.deepcopy(original) if original is not None else {
         "id": seen,
         "aliases": [],
-        "vendor": ((item.get("model_creator") or {}).get("name")
-                   if isinstance(item.get("model_creator"), dict) else "Unknown"),
+        "vendor": vendor,
         "region": "unknown",
     }
+    entry.setdefault("vendor", vendor)
+    entry.setdefault("region", "unknown")
     if original is None:
         entry["aliases"] = [value for value in (item.get("slug"), item.get("name"))
                             if _safe_text(value)
@@ -496,6 +658,12 @@ def _apply_plans(registry: dict, writers: list[dict]) -> dict:
             merged.setdefault("models", []).append(entry)
         else:
             merged["models"][plan["index"]] = entry
+    if not writers:
+        return merged
+    try:
+        validate_registry(merged)
+    except (RegistryValidationError, OverflowError, TypeError, ValueError):
+        raise PricingSourceError("pricing overlay rejected") from None
     return merged
 
 
@@ -753,7 +921,14 @@ def apply_artificial_analysis_fallback(registry: dict, models_seen: list[str],
     def finish_with_cache_only(warning: str | None = None) -> dict:
         decision = _resolve_plans(cached_plans, [], cached_statuses,
                                   cached_blocked)
-        merged = _apply_plans(base, decision["writers"])
+        try:
+            merged = _apply_plans(base, decision["writers"])
+        except PricingSourceError:
+            result["statuses"] = decision["statuses"]
+            result["warnings"].append("pricing overlay rejected")
+            if warning:
+                result["warnings"].append(warning)
+            return result
         result.update({"registry": merged, "priced": decision["priced"],
                        "statuses": decision["statuses"],
                        "cache_used": bool(decision["accepted_cache"])})
@@ -779,7 +954,12 @@ def apply_artificial_analysis_fallback(registry: dict, models_seen: list[str],
     statuses.update(api_statuses)
     decision = _resolve_plans(cached_plans, api_plans, statuses,
                               cached_blocked | api_blocked)
-    merged = _apply_plans(base, decision["writers"])
+    try:
+        merged = _apply_plans(base, decision["writers"])
+    except PricingSourceError:
+        result["statuses"] = decision["statuses"]
+        result["warnings"].append("pricing overlay rejected")
+        return result
     result.update({"registry": merged, "statuses": decision["statuses"],
                    "priced": decision["priced"],
                    "cache_used": bool(decision["accepted_cache"])})

@@ -18,6 +18,7 @@ import re
 import ssl
 import sys
 import time
+import unicodedata
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -28,6 +29,97 @@ class GrafanaError(RuntimeError):
         super().__init__(f"HTTP {status}: {message}")
         self.status = status
         self.body = body
+
+
+def normalized_http_origin(url: str) -> tuple[str, str, int]:
+    """Retourne une origine HTTP canonique, ports implicites compris."""
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        scheme = parsed.scheme.lower()
+        if scheme not in ("http", "https") or not parsed.hostname:
+            raise ValueError
+        hostname = parsed.hostname.rstrip(".").encode("idna").decode("ascii").lower()
+        port = parsed.port or (443 if scheme == "https" else 80)
+    except (UnicodeError, ValueError):
+        raise GrafanaError(502, "redirect blocked") from None
+    return scheme, hostname, port
+
+
+class SameOriginRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Autorise uniquement les redirections restant sur l'origine Grafana."""
+
+    def __init__(self, allowed_origin: tuple[str, str, int]):
+        super().__init__()
+        self.allowed_origin = allowed_origin
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        try:
+            absolute = urllib.parse.urljoin(req.full_url, newurl)
+        except ValueError:
+            raise GrafanaError(502, "redirect blocked") from None
+        if normalized_http_origin(absolute) != self.allowed_origin:
+            raise GrafanaError(502, "redirect blocked")
+        return super().redirect_request(req, fp, code, msg, headers, absolute)
+
+
+_PROMQL_LEGACY_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
+_PROMQL_CONTROL_ESCAPES = {
+    "\b": r"\b",
+    "\f": r"\f",
+    "\n": r"\n",
+    "\r": r"\r",
+    "\t": r"\t",
+}
+
+
+def promql_string_content(value: object) -> str:
+    """Encode le contenu d'une chaine PromQL sans guillemets bruts."""
+    out = []
+    for char in str(value):
+        if char == "\\":
+            out.append(r"\\")
+        elif char == '"':
+            out.append(r'\"')
+        elif char in _PROMQL_CONTROL_ESCAPES:
+            out.append(_PROMQL_CONTROL_ESCAPES[char])
+        elif unicodedata.category(char) in ("Cc", "Cs"):
+            point = ord(char)
+            if point <= 0xFF:
+                out.append(f"\\x{point:02x}")
+            elif point <= 0xFFFF:
+                out.append(f"\\u{point:04x}")
+            else:
+                out.append(f"\\U{point:08x}")
+        else:
+            out.append(char)
+    return "".join(out)
+
+
+def promql_string(value: object) -> str:
+    return '"' + promql_string_content(value) + '"'
+
+
+def promql_name(value: object) -> str:
+    name = str(value)
+    return name if _PROMQL_LEGACY_NAME.fullmatch(name) else promql_string(name)
+
+
+def promql_metric_selector(metric: object, selector: str = "") -> str:
+    """Rend un nom de metrique, y compris UTF-8, avec son selecteur."""
+    name = str(metric)
+    if not name:
+        return name
+    if _PROMQL_LEGACY_NAME.fullmatch(name):
+        return name + selector
+    inner = (selector[1:-1].strip()
+             if selector.startswith("{") and selector.endswith("}") else "")
+    return "{" + promql_string(name) + ("," + inner if inner else "") + "}"
+
+
+def promql_matcher(label: object, operator: str, value: object) -> str:
+    if operator not in ("=", "!=", "=~", "!~"):
+        raise ValueError("invalid PromQL matcher operator")
+    return "{" + promql_name(label) + operator + promql_string(value) + "}"
 
 
 def det_uid(name: str, prefix: str = "llmops", scope: str | None = None) -> str:
@@ -62,6 +154,11 @@ class GrafanaClient:
         self.timeout = timeout
         self.retries = retries
         self.ctx = ssl._create_unverified_context() if insecure else None
+        self._origin = normalized_http_origin(self.base)
+        handlers = [SameOriginRedirectHandler(self._origin)]
+        if self.ctx is not None:
+            handlers.append(urllib.request.HTTPSHandler(context=self.ctx))
+        self._opener = urllib.request.build_opener(*handlers)
         self._health = None
         self._namespace = None
         self._scoped_org_id = None
@@ -80,16 +177,19 @@ class GrafanaClient:
 
     def request(self, method: str, path: str, payload=None, params: dict | None = None,
                 raw: bool = False):
+        method = method.upper()
         url = self.base + path
         if params:
             sep = "&" if "?" in url else "?"
             url += sep + urllib.parse.urlencode(params, doseq=True)
         data = json.dumps(payload).encode() if payload is not None else None
         last_err = None
-        for attempt in range(self.retries):
+        retryable = method in {"GET", "HEAD", "OPTIONS", "PUT"}
+        attempts = max(1, self.retries) if retryable else 1
+        for attempt in range(attempts):
             req = urllib.request.Request(url, data=data, method=method, headers=self._headers())
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout, context=self.ctx) as resp:
+                with self._opener.open(req, timeout=self.timeout) as resp:
                     body = resp.read().decode("utf-8", "replace")
                     if raw:
                         return body
@@ -102,17 +202,18 @@ class GrafanaClient:
                                            body[:2000]) from e
             except urllib.error.HTTPError as e:
                 body = e.read().decode("utf-8", "replace")[:2000]
-                if e.code in (429, 500, 502, 503, 504) and attempt < self.retries - 1:
+                if (e.code in (429, 500, 502, 503, 504)
+                        and attempt < attempts - 1):
                     time.sleep(1.5 * (attempt + 1))
-                    last_err = GrafanaError(e.code, e.reason, body)
+                    last_err = GrafanaError(e.code, "request failed", body)
                     continue
-                raise GrafanaError(e.code, e.reason, body)
+                raise GrafanaError(e.code, "request failed", body)
             except (urllib.error.URLError, TimeoutError, ssl.SSLError) as e:
-                if attempt < self.retries - 1:
+                if attempt < attempts - 1:
                     time.sleep(1.5 * (attempt + 1))
                     last_err = e
                     continue
-                raise SystemExit(f"Instance injoignable ({self.base}) : {e}")
+                raise SystemExit("Instance Grafana injoignable") from None
         raise last_err  # pragma: no cover
 
     def get(self, path, **kw):
@@ -125,11 +226,13 @@ class GrafanaClient:
             url += ("&" if "?" in url else "?") + urllib.parse.urlencode(params, doseq=True)
         req = urllib.request.Request(url, headers=self._headers())
         try:
-            with urllib.request.urlopen(req, timeout=max(self.timeout, 90),
-                                        context=self.ctx) as resp:
+            with self._opener.open(req, timeout=max(self.timeout, 90)) as resp:
                 return resp.read(), resp.headers.get("Content-Type", "")
         except urllib.error.HTTPError as e:
-            raise GrafanaError(e.code, e.reason, e.read().decode("utf-8", "replace")[:500])
+            raise GrafanaError(e.code, "request failed",
+                               e.read().decode("utf-8", "replace")[:500])
+        except (urllib.error.URLError, TimeoutError, ssl.SSLError):
+            raise SystemExit("Instance Grafana injoignable") from None
 
     def post(self, path, payload=None, **kw):
         return self.request("POST", path, payload=payload, **kw)
@@ -304,7 +407,7 @@ class GrafanaClient:
     def prom_metric_names(self, ds: dict, match: str) -> list:
         """Noms de métriques matchant un sélecteur ; le cœur du discovery-first."""
         r = self.ds_proxy(ds, "api/v1/label/__name__/values",
-                          params={"match[]": f'{{__name__=~"{match}"}}'})
+                          params={"match[]": promql_matcher("__name__", "=~", match)})
         return sorted(self._proxy_list(r, "Prometheus metric names"))
 
     def prom_label_values(self, ds: dict, label: str, match: str | None = None) -> list:

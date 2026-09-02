@@ -17,6 +17,7 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 PACKAGE = ROOT / "tools" / "package.py"
 SBOM = ROOT / "tools" / "sbom.py"
+CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 RELEASE_WORKFLOW = ROOT / ".github" / "workflows" / "release.yml"
 
 
@@ -48,6 +49,7 @@ def verification_code(files: list[dict[str, object]]) -> str:
 
 def verify_release_workflow() -> None:
     workflow = RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    ci_workflow = CI_WORKFLOW.read_text(encoding="utf-8")
     lines = workflow.splitlines()
     starts = [index for index, line in enumerate(lines)
               if line.strip() == "python - <<'PY'"]
@@ -59,6 +61,14 @@ def verify_release_workflow() -> None:
     compile(fragment, f"{RELEASE_WORKFLOW}:freshness-check", "exec")
 
     assert "--clobber" not in workflow
+    assert "workflow_call:" in ci_workflow
+    assert "group: ci-${{ github.ref }}" in ci_workflow
+    assert "uses: ./.github/workflows/ci.yml" in workflow
+    assert "needs: ci" in workflow
+    ci_job = workflow.index("  ci:")
+    package_job = workflow.index("  package:")
+    assert ci_job < package_job
+    assert "contents: write" not in workflow[ci_job:package_job]
     draft = workflow.index("gh release create \"${GITHUB_REF_NAME}\" --draft")
     attest_build = workflow.index("- name: Attest build provenance")
     attest_sbom = workflow.index("- name: Attest SPDX SBOM")
@@ -95,6 +105,7 @@ def main() -> int:
         assert document["creationInfo"]["created"] == "1980-01-01T00:00:00Z"
         with zipfile.ZipFile(first) as package:
             members = sorted(package.namelist())
+        assert len(members) == 16, f"payload count changed: {len(members)}"
         assert f"grafana-llmops-forge/scripts/pricing_sources.py" in members
         assert not any(name.endswith(("model_registry.local.json",
                                       "model_registry.artificial-analysis.cache.json"))
@@ -126,6 +137,35 @@ def main() -> int:
                 package.writestr(member.filename, content)
         run(PACKAGE, "--out", duplicate, "--verify", expect=1)
         run(SBOM, duplicate, "--out", tmp / "duplicate.json", expect=1)
+
+        generated_dir = ROOT / "scripts" / "selftest_output"
+        generated_existed = generated_dir.exists()
+        generated_dir.mkdir(exist_ok=True)
+        generated = generated_dir / "package-exclusion-probe.json"
+        generated.write_text("generated", encoding="utf-8")
+        try:
+            excluded = tmp / "excluded.skill"
+            run(PACKAGE, "--out", excluded)
+            with zipfile.ZipFile(excluded) as package:
+                assert not any("selftest_output" in name
+                               for name in package.namelist())
+        finally:
+            generated.unlink(missing_ok=True)
+            if not generated_existed:
+                generated_dir.rmdir()
+
+        outside = tmp / "outside.txt"
+        outside.write_text("outside", encoding="utf-8")
+        link = ROOT / "scripts" / "package-symlink-probe.py"
+        try:
+            link.symlink_to(outside)
+        except (NotImplementedError, OSError):
+            print("symlink probe skipped: platform does not permit symlinks")
+        else:
+            try:
+                run(PACKAGE, "--out", tmp / "symlink.skill", expect=1)
+            finally:
+                link.unlink(missing_ok=True)
 
     print("SUPPLY CHAIN PROPRE: paquet + SPDX reproductibles et vérifiés")
     return 0

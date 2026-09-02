@@ -22,7 +22,8 @@ from datetime import datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from grafana_client import (GrafanaClient, GrafanaError, alert_logical_identity,
-                            det_uid)  # noqa: E402
+                            det_uid, promql_metric_selector, promql_name,
+                            promql_string, promql_string_content)  # noqa: E402
 import pricing_sources  # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -71,11 +72,10 @@ class Signals:
 
 
 def _esc(v: str) -> str:
-    return re.sub(r'([\\"])', r"\\\1", v)
+    return promql_string_content(v)
 
 
 RE2_META = set(r".+*?()[]{}|\\^$")
-_LEGACY = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
 Q1, B1, B2 = chr(34), chr(123), chr(125)
 
 
@@ -83,19 +83,12 @@ def msel(metric: str, sel: str = "") -> str:
     """Rend `metric{...}` ou, pour un nom UTF-8 (points conservés par
     translation_strategy: NoTranslation), la forme `{"metric",...}`, un nom
     pointé nu fait renvoyer 400 par Prometheus. Vérifié sur instance réelle."""
-    if not metric:
-        return metric
-    if _LEGACY.fullmatch(metric):
-        return metric + sel
-    inner = sel[1:-1].strip() if sel.startswith("{") and sel.endswith("}") else ""
-    return '{"' + metric + '"' + ("," + inner if inner else "") + "}"
+    return promql_metric_selector(metric, sel)
 
 
 def qlbl(label: str | None) -> str:
     """Nom de label utilisable dans by()/matcher : quoté s'il n'est pas legacy."""
-    if not label:
-        return ""
-    return label if _LEGACY.fullmatch(label) else '"' + label + '"'
+    return promql_name(label) if label else ""
 
 
 def _rx(s: str) -> str:
@@ -108,15 +101,11 @@ def _rx(s: str) -> str:
     """
     out = []
     for c in s:
-        if c == '"':
-            out.append('\\"')            # ferme la chaîne : échappement chaîne seul
-        elif c == "\\":
-            out.append("\\" * 4)         # backslash littéral à travers les deux couches
-        elif c in RE2_META:
-            out.append("\\" * 2 + c)     # méta RE2, échappé pour la regex
+        if c in RE2_META:
+            out.append("\\" + c)
         else:
             out.append(c)
-    return "".join(out)
+    return promql_string_content("".join(out))
 
 
 def _md(s: str) -> str:
@@ -204,7 +193,7 @@ class Q:
                     w: str = RATE) -> str | None:
         d = self.s.dialect
         if d == "otel_genai" and self.tok:
-            sel = f'{{{qlbl(self.s.token_type_label)}="{direction}"{sel_extra}}}'
+            sel = f'{{{qlbl(self.s.token_type_label)}={promql_string(direction)}{sel_extra}}}'
             return f"sum{self.by(by)}(rate({msel(self.tok + chr(95) + 'sum', sel)}[{w}]))"
         if d == "litellm":
             m = self.tok_in if direction == "input" else self.tok_out
@@ -234,7 +223,8 @@ def load_registry(path_override: str | None = None,
         if p and key not in seen_paths and os.path.exists(p):
             seen_paths.add(key)
             with open(p, encoding="utf-8") as f:
-                return json.load(f)
+                registry = json.load(f)
+            return pricing_sources.validate_registry(registry)
     return {"_meta": {"verified_at": "unknown"}, "models": []}
 
 
@@ -247,24 +237,10 @@ def match_models(models_seen: list, registry: dict) -> tuple[list, list]:
     """
     matched, unmatched = [], []
     for seen in models_seen:
-        ns = _norm(seen)
-        best, best_score = None, 0
-        for m in registry.get("models", []):
-            for k in [m["id"]] + m.get("aliases", []):
-                nk = _norm(k)
-                if len(nk) < 4:
-                    continue
-                if nk == ns:
-                    score = 10000 + len(nk)
-                elif nk in ns:
-                    score = 1000 + len(nk)
-                elif ns in nk:
-                    score = len(nk)
-                else:
-                    continue
-                if score > best_score:
-                    best, best_score = m, score
-        if best and best.get("input_per_mtok") is not None:
+        _, best, status = pricing_sources.resolve_registry_model(
+            seen, registry.get("models", []))
+        if (status == "matched" and best
+                and best.get("input_per_mtok") is not None):
             matched.append({"seen": seen, "reg": best})
         else:
             unmatched.append(seen)
@@ -288,27 +264,27 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
        de ~15 modèles, d'où la voie 1).
     """
     if recorded:
-        sel = f'{{region="{region}"}}' if region else ""
+        sel = f'{{region={promql_string(region)}}}' if region else ""
         if agg == "increase":  # intégrer un taux enregistré sur la période
             return f"sum(increase(({COST_RECORDED}{sel})[{window}:])) or vector(0)"
         return f"sum({COST_RECORDED}{sel}) or vector(0)"
     if q.s.dialect == "litellm" and getattr(q, "spend", None):
         if region:
             return None  # la ventilation régionale passe par la voie otel/registre
-        return f"sum({agg}({q.spend}[{window}])) or vector(0)"
+        return f"sum({agg}({msel(q.spend)}[{window}])) or vector(0)"
     if q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
         return None
     terms = []
     for it in matched[:INLINE_MODEL_CAP]:
         if region and it["reg"].get("region") != region:
             continue
-        m, lbl = it["reg"], _esc(it["seen"])
+        m, lbl = it["reg"], promql_string(it["seen"])
         for direction, price in (("input", m.get("input_per_mtok")),
                                  ("output", m.get("output_per_mtok"))):
             if price is None:
                 continue
-            sel = (f'{{{qlbl(q.s.token_type_label)}="{direction}",'
-                   f'{qlbl(q.s.model_label)}="{lbl}"}}')
+            sel = (f'{{{qlbl(q.s.token_type_label)}={promql_string(direction)},'
+                   f'{qlbl(q.s.model_label)}={lbl}}}')
             terms.append(f'(sum({agg}({msel(q.tok + "_sum", sel)}[{window}])) '
                          f"or vector(0)) * {price / 1e6:.9g}")
     return "(" + " + ".join(terms) + ")" if terms else None
@@ -374,7 +350,7 @@ def _rule_lines(ctx, indent: str, window: str) -> list:
         return [], 0
 
     def side(direction):
-        sel = B1 + qlbl(tt) + "=" + Q1 + direction + Q1 + B2
+        sel = B1 + qlbl(tt) + "=" + promql_string(direction) + B2
         price = PRICE_IN if direction == "input" else PRICE_OUT
         return [f"{indent}    sum by({ml_q}, region, vendor) (",
                 f"{indent}      rate({msel(q.tok + '_sum', sel)}[{window}])",
@@ -741,9 +717,10 @@ def bp_gateway(ctx: Ctx) -> Board | None:
     elif q.err_rate():
         b.ts("Errors/s", ds, [(q.err_rate(), "errors")], 12, 8, "short")
     if q.s.dialect == "litellm" and getattr(q, "remaining_req", None):
+        provider = q.s.provider_label or "api_provider"
         b.ts("Remaining quota (min per provider)", ds,
-             [(f"min by({q.s.provider_label or 'api_provider'})({q.remaining_req})",
-               "{{" + (q.s.provider_label or "api_provider") + "}}")], 12, 8, "short",
+             [(f"min by({qlbl(provider)})({msel(q.remaining_req)})",
+               "{{" + provider + "}}")], 12, 8, "short",
              desc="Remaining provider rate limits: anticipate throttling.")
     elif q.s.provider_label:
         b.ts("Requests/s by provider", ds,
@@ -1069,8 +1046,10 @@ def bp_governance(ctx: Ctx) -> Board:
                       "steering and GPAI contractual clauses.")
     if ctx.loki:
         lbl = (ctx.loki.get("labels") or ["service_name"])[0]
+        lbl_q = qlbl(lbl)
         b.ts("Logging evidence (log volume)", ctx.loki["uid"],
-             [(f'sum by({lbl})(rate({{{lbl}=~".+"}}[{RATE}]))', "{{" + lbl + "}}")],
+             [(f'sum by({lbl_q})(rate({{{lbl_q}=~".+"}}[{RATE}]))',
+               "{{" + lbl + "}}")],
              12, 8, "short", dstype="loki", topk=12,
              desc="Art. 12 (logging) and Art. 26(6) (deployer retention of at "
                   "least six months). Check Loki retention ≥ 4320h.")

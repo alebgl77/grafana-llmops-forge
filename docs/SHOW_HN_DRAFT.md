@@ -67,13 +67,19 @@ cross-panel incoherence such as tokens/s above zero while cost sits at zero,
 which means a model didn't match the registry. HTTP 200 means the JSON was
 accepted, not that the render is right.
 
-Other things people might care about. Zero dependencies, stdlib only, about
-2500 lines, deliberately readable in one sitting given that a Snyk audit this
-year found roughly a third of published agent skills had at least one flaw.
+Other things people might care about. Zero dependencies, stdlib only,
+deliberately readable in one sitting given that a Snyk audit this year found
+roughly a third of published agent skills had at least one flaw.
 Cost scales through generated Prometheus recording rules, so prices become
 series and the FinOps panels collapse to one O(1) query instead of a 2N-term
 sum; those rules also ship as a PrometheusRule manifest, because most enterprise
 clusters run the Prometheus Operator and will not read a flat rule file.
+
+The agent workflow refreshes the bundled registry from official provider pages.
+Separately, --pricing-fallback artificial-analysis is an explicit, on-demand
+fallback for detected models that remain unpriced; it is off by default,
+accepts only unique exact matches, exposes provenance, and leaves ambiguous or
+missing matches unpriced.
 
 The governance board reads the same telemetry against the EU AI Act, ISO/IEC
 42001 and NIST AI RMF, selected with --framework. That is less clever than it
@@ -84,9 +90,9 @@ also states what it does not prove (a management system, a risk assessment,
 effective human oversight), because a governance dashboard oversold is worse
 than none.
 
-Dashboards render in English by default, French with --locale; adding a language
-is a JSON file rather than a change to any blueprint. It works as a plain CLI or
-as an agent skill.
+Dashboards render in English by default; --locale en|fr selects English or
+French. Adding a language is a JSON file rather than a change to any blueprint.
+It works as a plain CLI or as an agent skill.
 
 make demo boots Grafana, Prometheus and a synthetic workload and deploys the
 whole thing in about a minute if you want to poke at it before reading code.
@@ -105,7 +111,7 @@ as illustrations rather than fake screenshots.
 > Different layer. Those are platforms you adopt instead of what you have. This assumes you already run Grafana, which most platform teams do, and turns it into the AI surface. No new tool, no new login, no new vendor security review.
 
 **« Does it phone home? »**
-> No. It talks to your Grafana, which talks to your own Prometheus/Loki/Tempo. No telemetry, no third-party calls, except an optional price-registry refresh you can skip.
+> Not by default. The CLI talks to your Grafana, which talks to your own Prometheus/Loki/Tempo. The agent workflow can refresh the bundled registry from official provider pages. Separately, `--pricing-fallback artificial-analysis` makes an on-demand third-party request only when you opt in.
 
 **« Is the AI Act part legal advice? »**
 > No, and the dashboard says so on itself. It is the evidence layer your counsel will ask for: logging continuity, retention posture, an auto-built inventory of the models you actually consume, and incident watch.

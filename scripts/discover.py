@@ -15,7 +15,7 @@ import json
 import sys
 from datetime import datetime, timezone
 
-from grafana_client import GrafanaClient, GrafanaError
+from grafana_client import GrafanaClient, GrafanaError, promql_matcher
 
 # Signatures des dialectes de télémétrie IA. Regex volontairement larges :
 # la capability map capture ensuite les noms exacts, base du résolveur de la forge.
@@ -74,7 +74,7 @@ def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
         names = client.prom_metric_names(ds, pattern)
         if names:
             entry = {"metric_names": names[:400]}
-            sample = f'{{__name__=~"{pattern}"}}'
+            sample = promql_matcher("__name__", "=~", pattern)
             for cand in MODEL_LABEL_CANDIDATES.get(dialect, []):
                 vals = client.prom_label_values(ds, cand, match=sample)
                 if vals:

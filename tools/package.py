@@ -28,7 +28,7 @@ import zipfile
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NAME = "grafana-llmops-forge"
 PAYLOAD = ["SKILL.md", "scripts", "references"]
-EXCLUDE_DIRS = {"__pycache__", ".git", ".pytest_cache"}
+EXCLUDE_DIRS = {"__pycache__", ".git", ".pytest_cache", "selftest_output"}
 EXCLUDE_SUFFIX = {".pyc", ".pyo", ".skill"}
 EXCLUDE_NAMES = {"model_registry.local.json",
                  "model_registry.artificial-analysis.cache.json"}
@@ -36,21 +36,43 @@ ZIP_DATE = (1980, 1, 1, 0, 0, 0)
 ZIP_MODE = 0o100644
 
 
+def _checked_source(path: pathlib.Path) -> pathlib.Path:
+    current = path
+    while current != ROOT:
+        if current.is_symlink():
+            raise SystemExit(f"symbolic link refused: {path.relative_to(ROOT)}")
+        current = current.parent
+    try:
+        resolved = path.resolve(strict=True)
+        resolved.relative_to(ROOT)
+    except (OSError, ValueError):
+        raise SystemExit(f"source outside repository: {path}") from None
+    if not resolved.is_file():
+        raise SystemExit(f"source is not a regular file: {path}")
+    return resolved
+
+
 def sources() -> list[tuple[pathlib.Path, str]]:
     """(chemin absolu, chemin dans l'archive), ordonné pour un zip reproductible."""
     out = []
     for item in PAYLOAD:
         p = ROOT / item
+        if p.is_symlink():
+            raise SystemExit(f"symbolic link refused: {p.relative_to(ROOT)}")
         if p.is_file():
-            out.append((p, f"{NAME}/{item}"))
+            out.append((_checked_source(p), f"{NAME}/{item}"))
         elif p.is_dir():
             for f in sorted(p.rglob("*")):
+                if f.is_symlink():
+                    raise SystemExit(
+                        f"symbolic link refused: {f.relative_to(ROOT)}")
                 if not f.is_file():
                     continue
-                if (set(f.parts) & EXCLUDE_DIRS or f.suffix in EXCLUDE_SUFFIX
+                relative = f.relative_to(ROOT)
+                if (set(relative.parts) & EXCLUDE_DIRS or f.suffix in EXCLUDE_SUFFIX
                         or f.name in EXCLUDE_NAMES):
                     continue
-                out.append((f, f"{NAME}/{f.relative_to(ROOT).as_posix()}"))
+                out.append((_checked_source(f), f"{NAME}/{relative.as_posix()}"))
         else:
             raise SystemExit(f"source manquante : {p}")
     return sorted(out, key=lambda t: t[1])

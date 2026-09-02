@@ -218,6 +218,47 @@ rq = [(mm["id"], k) for mm in reg["models"] for k in ("id", "vendor", "region")
 check("registre : champs requis présents", not rq, str(rq[:3]))
 check("registre : régions valides",
       all(mm["region"] in ("us", "eu", "asia") for mm in reg["models"]))
+_registry_snapshot = json.loads(json.dumps(reg))
+pricing_sources = __import__("pricing_sources")
+pricing_sources.validate_registry(reg)
+check("validation registre ne mute pas la source", reg == _registry_snapshot)
+_invalid_registry_cases = {}
+for _name, _field, _value in (
+        ("string", "input_per_mtok", "1.0"),
+        ("bool", "input_per_mtok", True),
+        ("negative", "input_per_mtok", -1),
+        ("nan", "input_per_mtok", float("nan")),
+        ("infinity", "input_per_mtok", float("inf")),
+        ("huge", "input_per_mtok", 10 ** 400),
+        ("over-limit", "input_per_mtok", pricing_sources.MAX_PRICE_PER_MTOK + 1),
+        ("date", "pricing_verified_at", "not-a-date"),
+        ("http-url", "pricing_source_url", "http://provider.example/pricing")):
+    _case = _copy.deepcopy(reg) if "_copy" in globals() else json.loads(json.dumps(reg))
+    _case["models"][0][_field] = _value
+    _invalid_registry_cases[_name] = _case
+_missing_provenance = json.loads(json.dumps(reg))
+_missing_provenance["models"][0].pop("pricing_source_kind")
+_invalid_registry_cases["missing-provenance"] = _missing_provenance
+_collision = json.loads(json.dumps(reg))
+_collision["models"][1]["aliases"].append(_collision["models"][0]["id"])
+_invalid_registry_cases["normalized-collision"] = _collision
+_registry_matrix_ok = True
+for _name, _case in _invalid_registry_cases.items():
+    try:
+        pricing_sources.validate_registry(_case)
+        _registry_matrix_ok = False
+    except pricing_sources.RegistryValidationError:
+        pass
+check("registre refuse string/bool/negatif/NaN/inf/provenance/HTTP/collision",
+      _registry_matrix_ok)
+_tie = {"models": [
+    {"id": "foo-model-a", "aliases": [], "input_per_mtok": 1},
+    {"id": "foo-model-b", "aliases": [], "input_per_mtok": 2}]}
+_tie_match, _tie_unmatched = match_models(["foo-model"], _tie)
+check("forge et fallback refusent la meme egalite de meilleur score",
+      not _tie_match and _tie_unmatched == ["foo-model"]
+      and pricing_sources.resolve_registry_model(
+          "foo-model", _tie["models"])[2] == "ambiguous")
 
 # ---------------------------------------------------------------- 7. visual_audit
 print("\n[16] Packaging du livrable")
@@ -415,6 +456,81 @@ check("label pointé quoté dans by()/matchers",
 check("helpers msel/qlbl corrects",
       msel("a.b", '{x="1"}') == '{"a.b",x="1"}' and msel("a_b", '{x="1"}') == 'a_b{x="1"}'
       and qlbl("a.b") == '"a.b"' and qlbl("a_b") == "a_b")
+_hostile = '"}[$__rate_interval])) or vector(999) #\\line\nnext'
+
+def _outside_promql_strings(expr):
+    outside, quoted, escaped = [], False, False
+    for _char in expr:
+        if quoted:
+            if escaped:
+                escaped = False
+            elif _char == "\\":
+                escaped = True
+            elif _char == '"':
+                quoted = False
+        elif _char == '"':
+            quoted = True
+        else:
+            outside.append(_char)
+    return "".join(outside)
+
+_hostile_helpers = (msel(_hostile), qlbl(_hostile))
+check("msel/qlbl confinent guillemet, backslash et controles",
+      all(_hostile not in value and "\n" not in value
+          and "or vector(999)" not in _outside_promql_strings(value)
+          for value in _hostile_helpers), str(_hostile_helpers))
+_hostile_cap = _variant(lambda n: n, lambda n: _hostile)
+_hostile_signal = _hostile_cap["signals"][_prom]["otel_genai"]
+_hostile_signal["metric_names"] = [
+    n[:-len(_suffix)] + _hostile + _suffix
+    for n in _hostile_signal["metric_names"]
+    for _suffix in ("_bucket", "_sum", "_count") if n.endswith(_suffix)]
+_hostile_signal["models_seen"] = [_hostile]
+_hostile_registry = {"_meta": {"verified_at": "2026-09-01"}, "models": [{
+    "id": _hostile, "aliases": [], "vendor": "Acme", "region": "us",
+    "input_per_mtok": 1.0, "output_per_mtok": 2.0,
+    "pricing_source_kind": "official",
+    "pricing_source_url": "https://provider.example/pricing",
+    "pricing_verified_at": "2026-09-01"}]}
+_hostile_rules_path = os.path.join(TMP, "hostile-promql.yml")
+forge_dashboards.emit_recording_rules(
+    forge_dashboards.Ctx(_hostile_cap, _hostile_registry), _hostile_rules_path)
+_hostile_rules = yaml.safe_load(open(_hostile_rules_path))["groups"][0]["rules"]
+_hostile_exprs = [str(rule["expr"]) for rule in _hostile_rules]
+check("YAML hostile parse et ne contient aucune injection PromQL",
+      _hostile_exprs and all(
+          _hostile not in expr
+          and "or vector(999)" not in _outside_promql_strings(expr)
+          for expr in _hostile_exprs), str(_hostile_exprs[:1]))
+
+def _litellm_security_exprs(spend, remaining, provider):
+    cap = _copy.deepcopy(cap_l)
+    entry = cap["signals"]["p1"]["litellm"]
+    entry["metric_names"] = [spend, remaining]
+    entry["provider_label"] = provider
+    ctx = forge_dashboards.Ctx(cap, reg)
+    q = ctx.q["litellm"]
+    gateway = forge_dashboards.bp_gateway(ctx).d
+    return [forge_dashboards.cost_rate_expr(q, ctx.matched),
+            *(expr for _, expr in all_exprs(gateway))]
+
+_lite_attack = '"}[$__rate_interval])) or vector(999) #\n'
+_lite_hostile_exprs = _litellm_security_exprs(
+    "litellm_spend" + _lite_attack,
+    "litellm_remaining_requests" + _lite_attack,
+    "api_provider" + _lite_attack)
+check("metriques et label LiteLLM hostiles restent dans leurs litteraux",
+      all(_lite_attack not in expr and "\n" not in expr
+          and "or vector(999)" not in _outside_promql_strings(expr)
+          for expr in _lite_hostile_exprs), str(_lite_hostile_exprs))
+_lite_dotted_exprs = _litellm_security_exprs(
+    "litellm.spend.metric.total", "litellm.remaining.requests.metric",
+    "api.provider")
+_lite_dotted = "\n".join(_lite_dotted_exprs)
+check("noms pointes LiteLLM utilisent msel et qlbl",
+      '{"litellm.spend.metric.total"}' in _lite_dotted
+      and 'min by("api.provider")({"litellm.remaining.requests.metric"})'
+          in _lite_dotted, _lite_dotted)
 
 # ----------------------------- 14. recording rules : ordre d'évaluation
 print("\n[14] Recording rules")
@@ -535,7 +651,8 @@ check("des workflows sont presents", len(_wf) >= 3, str(len(_wf)))
 _txt = {f.name: f.read_text() for f in _wf}
 _uses = [(n, u) for n, s in _txt.items()
          for u in re.findall(r"uses:\s*(\S+)", s)]
-_unpinned = [(n, u) for n, u in _uses if not re.search(r"@[0-9a-f]{40}$", u)]
+_unpinned = [(n, u) for n, u in _uses
+             if not u.startswith("./") and not re.search(r"@[0-9a-f]{40}$", u)]
 check("toute action est epinglee a un SHA de commit (tag mutable = reprise possible)",
       not _unpinned, str(_unpinned[:2]))
 _docs = {n: yaml.safe_load(s) for n, s in _txt.items()}
@@ -551,11 +668,18 @@ check("checkout sans credentials persistants",
       all("persist-credentials: false" in s
           for n, s in _txt.items() if "actions/checkout" in s))
 _runs = [(n, r) for n, d in _docs.items() for j in d["jobs"].values()
-         for st in j["steps"] for r in [st.get("run", "")] if r]
+         for st in j.get("steps", []) for r in [st.get("run", "")] if r]
 _inj = [(n, r[:60]) for n, r in _runs if re.search(r"\$\{\{\s*(github|inputs|steps)\.", r)]
 check("aucune interpolation d'expression dans un bloc run (injection de script)",
       not _inj, str(_inj[:1]))
 _ci_txt = _txt.get("ci.yml", "")
+_release_txt = _txt.get("release.yml", "")
+check("release appelle la CI reutilisable avant le job avec droits ecriture",
+      "workflow_call:" in _ci_txt
+      and "group: ci-${{ github.ref }}" in _ci_txt
+      and "uses: ./.github/workflows/ci.yml" in _release_txt
+      and _release_txt.index("needs: ci")
+          < _release_txt.index("contents: write"))
 _blind = re.findall(r"sleep (\d+)", _ci_txt)
 check("aucune attente longue en dur dans la CI (attendre l'etat, pas une duree)",
       all(int(s) <= 30 for s in _blind), f"sleep {[s for s in _blind if int(s) > 30]}")
@@ -854,7 +978,10 @@ def _free_port():
 
 def _fake_session(mode, action):
     port = _free_port()
-    srv = subprocess.Popen([sys.executable, os.path.join(SK, "tests", "fake_grafana.py"),
+    # Sous Windows, l'executable d'un venv est un lanceur. Le terminer ne tue
+    # pas forcement l'interpreteur enfant; le binaire de base evite cet orphelin.
+    python_server = getattr(sys, "_base_executable", sys.executable)
+    srv = subprocess.Popen([python_server, os.path.join(SK, "tests", "fake_grafana.py"),
                             mode, str(port)], stdout=subprocess.DEVNULL,
                            stderr=subprocess.DEVNULL)
     try:
@@ -954,7 +1081,121 @@ _alert_best = json.load(open(os.path.join(_fake_out("alertfail"),
 check("--best-effort autorise exit 0 sans maquiller le manifeste",
       r.returncode == 0 and _alert_best["deployment_status"] != "success")
 
-from grafana_client import GrafanaClient, GrafanaError, alert_logical_identity
+from grafana_client import (GrafanaClient, GrafanaError, alert_logical_identity,
+                            normalized_http_origin)
+import http.server
+import threading
+import urllib.error
+
+class _HTTPProbeHandler(http.server.BaseHTTPRequestHandler):
+    def _handle(self):
+        self.server.seen.append((self.command, self.path, dict(self.headers)))
+        count = sum(method == self.command and path == self.path
+                    for method, path, _ in self.server.seen)
+        status, headers, body = 200, {"Content-Type": "application/json"}, b'{"ok":true}'
+        if self.server.source and self.path in ("/cross", "/bytes-cross"):
+            status, headers, body = 302, {"Location": self.server.cross_target}, b""
+        elif self.server.source and self.path == "/relative":
+            status, headers, body = 302, {"Location": "/ok"}, b""
+        elif self.server.source and self.path == "/retry-get" and count == 1:
+            status, body = 500, b"temporary"
+        elif self.server.source and self.path == "/post-500":
+            status, body = 500, b"failed"
+        self.send_response(status)
+        for name, value in headers.items():
+            self.send_header(name, value)
+        self.end_headers()
+        self.wfile.write(body)
+    do_GET = _handle
+    do_POST = _handle
+    def log_message(self, *args): pass
+
+_target_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HTTPProbeHandler)
+_target_server.source, _target_server.seen = False, []
+_source_server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), _HTTPProbeHandler)
+_source_server.source, _source_server.seen = True, []
+_source_server.cross_target = (
+    f"http://127.0.0.1:{_target_server.server_address[1]}/collect")
+_servers = (_source_server, _target_server)
+_threads = [threading.Thread(target=server.serve_forever, daemon=True)
+            for server in _servers]
+for _thread in _threads: _thread.start()
+try:
+    check("origines normalisent hostname et ports HTTP effectifs",
+          normalized_http_origin("http://GRAFANA.EXAMPLE")
+          == normalized_http_origin("http://grafana.example:80")
+          and normalized_http_origin("https://GRAFANA.EXAMPLE")
+          == normalized_http_origin("https://grafana.example:443"))
+    _source_url = f"http://127.0.0.1:{_source_server.server_address[1]}"
+    _bearer_http = GrafanaClient(_source_url, token="bearer-secret", retries=2)
+    _bearer_http._scoped_org_id = 7
+    try:
+        _bearer_http.get("/cross")
+        _bearer_blocked = False
+    except GrafanaError as _e:
+        _bearer_blocked = (_e.status == 502 and str(_e) == "HTTP 502: redirect blocked"
+                           and "bearer-secret" not in str(_e))
+    check("redirect Bearer cross-origin bloque avant seconde requete",
+          _bearer_blocked and not _target_server.seen)
+    check("redirect relatif same-origin conserve auth et org",
+          _bearer_http.get("/relative") == {"ok": True}
+          and all(item[2].get("Authorization") == "Bearer bearer-secret"
+                  and item[2].get("X-Grafana-Org-Id") == "7"
+                  for item in _source_server.seen if item[1] in ("/relative", "/ok")))
+
+    _basic_http = GrafanaClient(_source_url, token="bootstrap", retries=2)
+    _basic_http.token, _basic_http.user, _basic_http.password = "", "alice", "secret"
+    _basic_http._scoped_org_id = 9
+    try:
+        _basic_http.get_bytes("/bytes-cross")
+        _basic_blocked = False
+    except GrafanaError as _e:
+        _basic_blocked = _e.status == 502 and "secret" not in str(_e)
+    check("redirect Basic get_bytes cross-origin sans fuite auth/org",
+          _basic_blocked and not _target_server.seen
+          and any(headers.get("Authorization") == "Basic YWxpY2U6c2VjcmV0"
+                  and headers.get("X-Grafana-Org-Id") == "9"
+                  for _, path, headers in _source_server.seen
+                  if path == "/bytes-cross"))
+
+    import grafana_client as _grafana_client
+    _real_sleep = _grafana_client.time.sleep
+    _grafana_client.time.sleep = lambda *_: None
+    try:
+        try:
+            _bearer_http.post("/post-500", {"x": 1})
+        except GrafanaError:
+            pass
+        _get_retry_ok = _bearer_http.get("/retry-get") == {"ok": True}
+    finally:
+        _grafana_client.time.sleep = _real_sleep
+    check("POST 5xx non rejoue, GET idempotent conserve retry borne",
+          sum(method == "POST" and path == "/post-500"
+              for method, path, _ in _source_server.seen) == 1
+          and sum(method == "GET" and path == "/retry-get"
+                  for method, path, _ in _source_server.seen) == 2
+          and _get_retry_ok)
+
+    class _NetworkFailure:
+        def __init__(self): self.attempts = 0
+        def open(self, *args, **kwargs):
+            self.attempts += 1
+            raise urllib.error.URLError("untrusted transport detail")
+    _network = _NetworkFailure()
+    _bearer_http._opener = _network
+    try:
+        _bearer_http.post("/network", {"x": 1})
+        _network_blocked = False
+    except SystemExit as _e:
+        _network_blocked = str(_e) == "Instance Grafana injoignable"
+    check("POST erreur reseau non rejoue et erreur assainie",
+          _network.attempts == 1 and _network_blocked)
+finally:
+    for _server in _servers:
+        _server.shutdown()
+        _server.server_close()
+    for _thread in _threads: _thread.join(timeout=2)
+
 _sample_rule = {"uid": "llmops-alr-sample", "title": "Sample", "folderUID": "f1",
                 "orgID": 7, "ruleGroup": "llmops-slo",
                 "labels": {"origin": "llmops-forge",
@@ -1237,6 +1478,53 @@ with tempfile.TemporaryDirectory(prefix="aa-pricing-") as _aa_tmp:
           and _aa_cache_doc["schema"] == pricing_sources.CACHE_SCHEMA
           and len(_aa_cache_doc["entries"]) == 1
           and "original" not in _aa_cache_doc["entries"][0])
+    _strict_base = {"_meta": {"verified_at": "2026-09-01"}, "models": [{
+        "id": "existing-model", "aliases": [], "vendor": "Acme", "region": "us",
+        "input_per_mtok": None, "output_per_mtok": None,
+        "cached_input_per_mtok": None, "pricing_source_kind": "unavailable",
+        "pricing_source_url": "https://provider.example/pricing",
+        "availability_checked_at": "2026-09-01"}]}
+    _strict_snapshot = _copy.deepcopy(_strict_base)
+    _invalid_price_results = []
+    for _label, _value in (
+            ("extreme", pricing_sources.MAX_PRICE_PER_MTOK + 1),
+            ("bool", True), ("nan", float("nan")), ("inf", float("inf"))):
+        _invalid_item = _aa_model("new-model", "new-model")
+        _invalid_item["pricing"]["price_1m_input_tokens"] = _value
+        _invalid_price_results.append(
+            pricing_sources.apply_artificial_analysis_fallback(
+                _strict_base, ["new-model"],
+                os.path.join(_aa_tmp, f"invalid-price-{_label}.json"), _aa_secret,
+                opener=_AAOpener([_aa_page([_invalid_item])]), now=_aa_now))
+    check("prix tiers extreme/bool/NaN/inf refuses avant les regles",
+          pricing_sources._registry_number(pricing_sources.MAX_PRICE_PER_MTOK)
+          and not pricing_sources._registry_number(
+              pricing_sources.MAX_PRICE_PER_MTOK + 1)
+          and all(not result["priced"] and result["registry"] == _strict_snapshot
+                  for result in _invalid_price_results)
+          and _strict_base == _strict_snapshot)
+
+    _bad_vendor = _aa_model("new-model", "new-model")
+    _bad_vendor["model_creator"] = {"name": 7}
+    _bad_vendor_path = os.path.join(_aa_tmp, "invalid-vendor.json")
+    _bad_vendor_result = pricing_sources.apply_artificial_analysis_fallback(
+        _strict_base, ["new-model"], _bad_vendor_path, _aa_secret,
+        opener=_AAOpener([_aa_page([_bad_vendor])]), now=_aa_now)
+    _bad_schema = _aa_model("existing-model", "existing-model")
+    _bad_schema["aliases"] = ["new-model"]
+    _bad_schema_path = os.path.join(_aa_tmp, "invalid-schema.json")
+    _bad_schema_result = pricing_sources.apply_artificial_analysis_fallback(
+        _strict_base, ["new-model"], _bad_schema_path, _aa_secret,
+        opener=_AAOpener([_aa_page([_bad_schema])]), now=_aa_now)
+    check("fusion tierce invalide revient au registre officiel avec warning sain",
+          _bad_vendor_result["registry"] == _strict_snapshot
+          and _bad_schema_result["registry"] == _strict_snapshot
+          and not _bad_vendor_result["priced"] and not _bad_schema_result["priced"]
+          and _bad_vendor_result["warnings"] == ["pricing overlay rejected"]
+          and _bad_schema_result["warnings"] == ["pricing overlay rejected"]
+          and not os.path.exists(_bad_vendor_path)
+          and not os.path.exists(_bad_schema_path)
+          and _strict_base == _strict_snapshot)
     check("cle uniquement dans x-api-key, jamais URL/cache",
           dict(_aa_request.header_items()).get("X-api-key") == _aa_secret
           and _aa_secret not in _aa_request.full_url
@@ -1435,10 +1723,12 @@ with tempfile.TemporaryDirectory(prefix="aa-pricing-") as _aa_tmp:
     check("prix officiel complet prioritaire et zero requete",
           _official_result["registry"]["models"][0]["input_per_mtok"] == 9.0
           and not _official_open.requests)
-    _partial = {"_meta": {}, "models": [{"id": "acme-model", "aliases": [],
+    _partial = {"_meta": {"verified_at": "2026-09-01"}, "models": [{
+        "id": "acme-model", "aliases": [], "vendor": "Acme", "region": "us",
         "input_per_mtok": 9.0, "output_per_mtok": None,
         "pricing_source_kind": "official",
-        "pricing_source_url": "https://provider.example/pricing"}]}
+        "pricing_source_url": "https://provider.example/pricing",
+        "pricing_verified_at": "2026-09-01"}]}
     _partial_snapshot = _copy.deepcopy(_partial)
     _partial_result = pricing_sources.apply_artificial_analysis_fallback(
         _partial, ["acme-model"], os.path.join(_aa_tmp, "partial.json"),
@@ -1483,8 +1773,8 @@ with tempfile.TemporaryDirectory(prefix="aa-pricing-") as _aa_tmp:
                   == pricing_sources.AA_ATTRIBUTION
                   for labels in _aa_price_labels))
 
-    _legacy_partial = {"_meta": {}, "models": [{
-        "id": "legacy-partial", "aliases": [],
+    _legacy_partial = {"_meta": {"verified_at": "2026-09-01"}, "models": [{
+        "id": "legacy-partial", "aliases": [], "vendor": "Legacy", "region": "unknown",
         "input_per_mtok": 9.0, "output_per_mtok": None,
         "cached_input_per_mtok": 0.75}]}
     _legacy_api = _aa_model("legacy-partial", "legacy-partial", 1.0, 4.5)
@@ -1504,16 +1794,22 @@ with tempfile.TemporaryDirectory(prefix="aa-pricing-") as _aa_tmp:
           and _legacy_entry["pricing_field_sources"]["output_per_mtok"][
               "pricing_source_kind"] == "artificial_analysis")
 
-    _converging_registry = {"_meta": {}, "models": [{
+    _converging_registry = {"_meta": {"verified_at": "2026-09-01"}, "models": [{
         "id": "shared-model", "aliases": ["alias-one", "alias-two"],
+        "vendor": "Acme", "region": "unknown",
         "input_per_mtok": None, "output_per_mtok": None,
-        "pricing_source_kind": "unavailable"}]}
+        "pricing_source_kind": "unavailable",
+        "pricing_source_url": "https://provider.example/pricing",
+        "availability_checked_at": "2026-09-01"}]}
 
-    _matrix_base = {"_meta": {}, "models": [{
+    _matrix_base = {"_meta": {"verified_at": "2026-09-01"}, "models": [{
         "id": "matrix-shared",
         "aliases": ["matrix-a", "matrix-b", "matrix-c"],
+        "vendor": "Acme", "region": "unknown",
         "input_per_mtok": None, "output_per_mtok": None,
-        "pricing_source_kind": "unavailable"}]}
+        "pricing_source_kind": "unavailable",
+        "pricing_source_url": "https://provider.example/pricing",
+        "availability_checked_at": "2026-09-01"}]}
     _matrix_snapshot = _copy.deepcopy(_matrix_base)
 
     def _matrix_model(alias, identity, price):
