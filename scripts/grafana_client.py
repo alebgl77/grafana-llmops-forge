@@ -130,6 +130,7 @@ def det_uid(name: str, prefix: str = "llmops", scope: str | None = None) -> str:
     change, ce qui garde des UIDs courts et lisibles.
     """
     seed = name if scope is None else f"{scope}\0{name}"
+    # SHA-1 ne protege aucun secret : il conserve des UIDs publics et deterministes.
     h = hashlib.sha1(seed.encode("utf-8")).hexdigest()[:10]
     slug = re.sub(r"[^a-z0-9]+", "-", name.lower()).strip("-")[:26]
     return f"{prefix}-{slug}-{h}"[:40]
@@ -259,9 +260,13 @@ class GrafanaClient:
         m = re.match(r"(\d+)", self.version())
         return int(m.group(1)) if m else 0
 
+    def _is_grafana_cloud_host(self) -> bool:
+        hostname = self._origin[1].lower().rstrip(".")
+        return hostname == "grafana.net" or hostname.endswith(".grafana.net")
+
     def edition(self) -> str:
         """oss | enterprise | cloud (heuristique robuste)."""
-        if ".grafana.net" in self.base:
+        if self._is_grafana_cloud_host():
             return "cloud"
         try:
             lic = self.get("/api/licensing/check")
@@ -352,7 +357,7 @@ class GrafanaClient:
         """Namespace des APIs resource : 'default' (self-hosted) ou 'stacks-<id>' (Cloud)."""
         if self._namespace:
             return self._namespace
-        if ".grafana.net" in self.base:
+        if self._is_grafana_cloud_host():
             try:
                 fs = self.get("/api/frontend/settings")
                 ns = fs.get("namespace") or ""
