@@ -292,7 +292,7 @@ def fetch_artificial_analysis(api_key: str, opener=None,
             request = urllib.request.Request(
                 url, method="GET",
                 headers={"x-api-key": key, "Accept": "application/json",
-                         "User-Agent": "grafana-llmops-forge/2.0.1"})
+                         "User-Agent": "grafana-llmops-forge/2.0.2"})
             with client.open(request, timeout=timeout) as response:
                 status = response.getcode()
                 if status != 200:

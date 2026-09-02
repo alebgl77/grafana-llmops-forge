@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.0.2] - 2026-09-02
+### Fixed : classification des hôtes Grafana Cloud
+- La détection utilise désormais le hostname canonique, refuse les hôtes et chemins trompeurs, couvre ces cas par des tests de régression et conserve les UID publics historiques.
+
 ## [2.0.1] - 2026-09-02
 ### Fixed : durcissement de la chaîne de publication
 - Ajout du flux tarifaire au README avec un visuel distinguant coût natif, registre officiel, fallback Artificial Analysis opt-in et modèles non tarifés.
