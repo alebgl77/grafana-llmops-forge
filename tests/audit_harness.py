@@ -1126,6 +1126,25 @@ try:
           == normalized_http_origin("http://grafana.example:80")
           and normalized_http_origin("https://GRAFANA.EXAMPLE")
           == normalized_http_origin("https://grafana.example:443"))
+    class _HostClassificationClient(GrafanaClient):
+        def get(self, path, **kwargs):
+            if path == "/api/frontend/settings" and self._is_grafana_cloud_host():
+                return {"namespace": "stacks-42"}
+            raise GrafanaError(404, "simulated")
+
+    for _url, _cloud in (
+            ("https://grafana.net", True),
+            ("https://foo.grafana.net", True),
+            ("https://FOO.GRAFANA.NET.", True),
+            ("https://grafana.net.evil.example", False),
+            ("https://notgrafana.net", False),
+            ("https://evil.example/path/.grafana.net", False)):
+        _host_client = _HostClassificationClient(_url, token="test")
+        check(f"classification Cloud limitee au hostname: {_url}",
+              _host_client.edition() == ("cloud" if _cloud else "oss")
+              and _host_client.namespace()
+                  == ("stacks-42" if _cloud else "default"))
+
     _source_url = f"http://127.0.0.1:{_source_server.server_address[1]}"
     _bearer_http = GrafanaClient(_source_url, token="bearer-secret", retries=2)
     _bearer_http._scoped_org_id = 7
