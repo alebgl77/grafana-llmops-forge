@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.1] - 2026-09-02
+### Fixed : durcissement de la chaîne de publication
+- Ajout du flux tarifaire au README avec un visuel distinguant coût natif, registre officiel, fallback Artificial Analysis opt-in et modèles non tarifés.
+- Les redirections Grafana inter-origines ne transmettent plus les en-têtes d'authentification, et les requêtes POST ne sont plus rejouées automatiquement.
+- Les noms de métriques, labels et valeurs PromQL sont échappés, tandis que les correspondances tarifaires ambiguës restent non chiffrées.
+- Le registre et ses prix sont validés avant usage, notamment la provenance, les URL HTTPS, les valeurs numériques et les collisions.
+- Le packaging rejette les liens symboliques et les chemins hors dépôt, et la publication attend désormais la réussite de la CI sur le même code source.
+
 ## [2.0.0] - 2026-09-01
 ### Changed : chaîne de déploiement et de preuve v2
 - **Rupture de compatibilité : manifests v2 et portée organisationnelle stricte.** Les artefacts de déploiement portent désormais leur contrat de version, l'organisation cible est vérifiée sans repli implicite, et un garde-fou bloque les collisions avant toute écriture.
