@@ -269,13 +269,14 @@ refuses to overwrite an existing dashboard UID found in another folder.
 
 ## Roadmap
 
-- [ ] `--diff` against what is already deployed, for change-advisory boards
-- [ ] Native schema-v2 output (tabs/conditional layouts) for Grafana 13+ as-code shops
-- [ ] Cache-savings & budget burn-down panels (specs in `dashboard_blueprints.md`)
-- [ ] Conversation-level cost attribution via exemplars (click a cost spike → the exact agent run)
-- [ ] OpenAI/Gemini usage-API pollers for orgs with zero telemetry
-- [ ] More governance readings (Colorado AI Act, Korea AI Framework Act): a row in the crosswalk, not new instrumentation
-- [ ] Terraform/Grafana-as-code export mode
+The next planned horizons are:
+
+- **v2.1, safer decisions:** deployment diff, generated cache-savings panels, and budget burn-down.
+- **v2.2, GitOps delivery:** Terraform around the existing portable JSON export, plus experimental schema v2 for homogeneous Grafana 13+ estates.
+- **v3.0, trace-level economics:** cost by trace or conversation, versioned OpenTelemetry crosswalks, privacy-safe correlation, and optional provider usage adapters.
+- **Continuous maintenance:** pricing provenance, governance crosswalks, compatibility, security, and supply chain.
+
+See the [full roadmap](ROADMAP.md) for scope boundaries and graduation criteria.
 
 ## Support
 
