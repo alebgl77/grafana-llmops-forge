@@ -52,6 +52,7 @@ jobs:
         run: |
           python tests/recorded_cost_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
           python tests/financial_source_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
+          python tests/financial_coverage_invariants.py
 
       - name: Workflows are code, lint them too
         if: matrix.python == '3.13'

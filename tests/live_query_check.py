@@ -93,12 +93,12 @@ def build_map(base: str) -> dict:
         for cand in discover.MODEL_LABEL_CANDIDATES.get(dialect, []):
             v = label_values(base, cand, sample)
             if v:
-                e["model_label"], e["models_seen"] = cand, v[:60]
+                e["model_label"], e["models_seen"] = cand, sorted(v)
                 break
         for cand in discover.PROVIDER_LABEL_CANDIDATES.get(dialect, []):
             v = label_values(base, cand, sample)
             if v:
-                e["provider_label"], e["providers_seen"] = cand, v[:40]
+                e["provider_label"], e["providers_seen"] = cand, sorted(v)
                 break
         if dialect == "otel_genai":
             for cand in ("gen_ai_token_type", "gen_ai.token.type", "token_type"):
@@ -110,6 +110,7 @@ def build_map(base: str) -> dict:
             if v and len(v) <= 500:
                 e.setdefault("group_labels", []).append(
                     {"label": cand, "cardinality": len(v)})
+        e["discovery_coverage"] = discover.returned_values_coverage(e)
         sig[dialect] = e
     return {"org_id": 1,
             "instance": {"version": "0.0.0", "major": 12, "edition": "oss"},

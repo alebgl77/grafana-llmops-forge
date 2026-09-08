@@ -71,8 +71,8 @@ Other things people might care about. Zero dependencies, stdlib only,
 deliberately readable in one sitting given that a Snyk audit this year found
 roughly a third of published agent skills had at least one flaw.
 Cost scales through generated Prometheus recording rules, so prices become
-series and the FinOps panels collapse to one O(1) query instead of a 2N-term
-sum; those rules also ship as a PrometheusRule manifest, because most enterprise
+series and the FinOps panels use shorter queries instead of a 2N-term
+sum; execution still depends on series count and time window. The rules also ship as a PrometheusRule manifest, because most enterprise
 clusters run the Prometheus Operator and will not read a flat rule file.
 
 The agent workflow refreshes the bundled registry from official provider pages.

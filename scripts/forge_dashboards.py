@@ -49,6 +49,7 @@ class Signals:
         self.token_type_label = entry.get("token_type_label") or "gen_ai_token_type"
         self.models_seen = entry.get("models_seen", [])
         self.providers_seen = entry.get("providers_seen", [])
+        self.discovery_coverage = entry.get("discovery_coverage")
         groups = sorted(entry.get("group_labels", []), key=lambda g: g["cardinality"])
         self.group_label = groups[0]["label"] if groups else None
         self.group_card = groups[0]["cardinality"] if groups else 0
@@ -304,8 +305,8 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
                    recorded: bool = False, recorded_interval: str = "1m") -> str | None:
     """Coût USD/s. Trois voies, par ordre de préférence :
 
-    1. recording rules `llm:cost_usd_per_second` (O(1) séries, prix modifiables
-       sans regénérer les dashboards, aucune limite de modèles) ;
+    1. recording rules `llm:cost_usd_per_second` (requête plus courte, travail
+       dépendant des séries et de la fenêtre interrogées) ;
     2. spend natif de la passerelle LiteLLM (USD déjà agrégé) ;
     3. on-the-fly composition depuis le registre (bootstrap ; coûteux au-delà
        de ~15 modèles, d'où la voie 1).
@@ -321,8 +322,10 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
         return f"sum({agg}({msel(q.spend)}[{window}]))"
     if q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
         return None
+    if len(matched) > INLINE_MODEL_CAP:
+        return None  # la couche FinancialSource explique le refus; jamais les 40 premiers
     terms = []
-    for it in matched[:INLINE_MODEL_CAP]:
+    for it in matched:
         if region and it["reg"].get("region") != region:
             continue
         m, lbl = it["reg"], promql_string(it["seen"])
@@ -642,6 +645,69 @@ class FinancialSource:
                                         if mode == "inline" else ([], []))
         self.third_party_prices = [item for item in self.matched
                                    if item["reg"].get("pricing_source_kind") == "artificial_analysis"]
+        self.partially_priced = [item["seen"] for item in self.matched
+                                 if item["reg"].get("output_per_mtok") is None]
+        self.is_subtotal = mode == "inline" and bool(self.unmatched or self.partially_priced)
+        self.coverage = self._coverage()
+
+    def _coverage(self) -> dict:
+        if self.mode != "inline":
+            return {"status": f"{self.mode}_upstream_unverified", "registry_applicable": False,
+                    "models_seen": None, "priced_models": None, "partially_priced_models": None,
+                    "unpriced_models": None, "backend_completeness": "unknown",
+                    "budget_eligible": True, "budget_omission_reason": None}
+        info = self.q.s.discovery_coverage
+        counts = {"metric_names": len(self.q.s.names), "models_seen": len(self.q.s.models_seen),
+                  "providers_seen": len(self.q.s.providers_seen)}
+        preserved = (isinstance(info, dict) and info.get("scope") == "backend_returned_values"
+                     and info.get("local_truncation") is False and info.get("counts") == counts
+                     and all(type(n) is int for n in info["counts"].values())
+                     and info.get("backend_completeness") == "unknown")
+        reason = None
+        if len(self.matched) > INLINE_MODEL_CAP:
+            status = "inline_limit_exceeded"
+            reason = (f"{len(self.matched)} models have usable prices; the inline limit is "
+                      f"{INLINE_MODEL_CAP}. No monetary subtotal is calculated. Re-run forge "
+                      f"with --datasource {self.ds_uid!r}, load the generated "
+                      "prometheus_rules_llmops.yml into that backend, then re-run discover and forge.")
+        elif not self.matched:
+            status = "unpriced"
+            reason = "No usable model prices; add prices to model_registry.local.json and re-run forge."
+        elif self.is_subtotal:
+            status = "partial_prices"
+            reason = ("Known prices cover only part of the listed usage; a subtotal cannot "
+                      "monitor the full budget. Add missing input/output prices and re-run forge.")
+        elif not preserved:
+            status = "discovery_unknown"
+            reason = ("Discovery coverage metadata is missing or inconsistent; the estimate "
+                      "is limited to listed models. Re-run discover, then forge, before enabling the budget.")
+        else:
+            status = "all_returned_models_priced"
+        if reason and not preserved and status != "discovery_unknown":
+            reason += " Discovery metadata is also unknown; re-run discover before enabling the budget."
+        return {"status": status, "registry_applicable": True,
+                "models_seen": len(self.q.s.models_seen),
+                "priced_models": len(self.matched) - len(self.partially_priced),
+                "partially_priced_models": len(self.partially_priced),
+                "unpriced_models": len(self.unmatched), "inline_limit": INLINE_MODEL_CAP,
+                "discovery_scope": "backend_returned_values" if preserved else "listed_models",
+                "local_preservation": "not_truncated" if preserved else "unknown",
+                "backend_completeness": "unknown", "budget_eligible": reason is None,
+                "budget_omission_reason": reason}
+
+    def coverage_note(self) -> str:
+        coverage = self.coverage
+        if self.mode != "inline":
+            return (f"Coverage: {coverage['status']}; registry coverage is not applicable. "
+                    "Upstream completeness is unverified.")
+        note = (f"Coverage: {coverage['status']}. Listed models: {coverage['models_seen']}; "
+                f"fully priced: {coverage['priced_models']}; partially priced: "
+                f"{coverage['partially_priced_models']}; unpriced: {coverage['unpriced_models']}. "
+                f"Local discovery preservation: {coverage['local_preservation']}. "
+                "The scope is limited to listed/backend-returned values; backend completeness is unknown.")
+        if coverage["budget_omission_reason"]:
+            note += " Budget omitted: " + coverage["budget_omission_reason"]
+        return note
 
     def expr(self, *, region=None, window=RATE, agg="rate", interval="1m"):
         return cost_rate_expr(self.q, self.matched, region=region, window=window,
@@ -736,6 +802,7 @@ class Ctx:
                 "mode": source.mode if source else None,
                 "datasource_uid": source.ds_uid if source else None,
                 "provenance": source.provenance if source else None,
+                "coverage": source.coverage if source else None,
                 "availability": "not_checked", "candidates": self.financial_candidates,
                 "message": self.financial_error}
 
@@ -771,26 +838,38 @@ def bp_finops(ctx: Ctx) -> Board | None:
     b = Board(det_uid("ai-executive-finops", scope=ctx.uid_scope), "AI · Executive FinOps & Cost",
               f"Multi-provider LLM cost. Financial source selected: mode={source.mode}, "
               f"datasource UID={source.ds_uid}; live availability not checked. {provenance_note} "
+              f"{source.coverage_note()} "
               f"Generated by grafana-llmops-forge.{third_party_note}", ["finops"])
     ds = source.ds_uid
     R = source.mode == "recorded"
     spend_range = source.expr(window="$__range", agg="increase", interval=ctx.rules_interval)
     spend_rate = source.expr()
-    b.stat("Spend (selected range)", ds, spend_range, 6, 5, "currencyUSD",
+    inline = source.mode == "inline"
+    range_title = ("Subtotal (priced usage, selected range)" if source.is_subtotal else
+                   "Estimated spend (listed models, selected range)" if inline else
+                   "Spend (selected range)")
+    rate_title = ("Subtotal rate per day (priced usage)" if source.is_subtotal else
+                  "Estimated spend rate per day (listed models)" if inline else "Spend rate per day")
+    ratio_title = ("Priced subtotal per observed request" if source.is_subtotal else
+                   "Estimated cost per request (listed models)" if inline else "Average cost per request")
+    money_note = ("Only usage with known input/output prices is included; missing prices "
+                  "make this a subtotal, not overall spend." if source.is_subtotal else
+                  "Estimate for listed models only; backend completeness is unknown.")
+    b.stat(range_title, ds, spend_range, 6, 5, "currencyUSD",
            ("Estimated total: aggregate USD/s sampled on a grid of at least 1m "
             f"(configured recording cadence {ctx.rules_interval}) × range seconds. "
             "--rules-interval must match the installed rules. Changes within a grid "
             "cell and time-range boundaries are approximate. Missing aggregate "
             "cells or a range shorter than the grid return No data; coverage does "
             "not prove that every model reported."
-            if R else "Total over the dashboard's time range."))
-    b.stat("Spend rate per day", ds,
+            if R else money_note if inline else "Total over the dashboard's time range."))
+    b.stat(rate_title, ds,
            f"({spend_rate}) * 86400" if spend_rate else None, 6, 5, "currencyUSD",
-           "Projection: instantaneous rate × 86400.")
+           "Projection: instantaneous rate × 86400." + (" " + money_note if inline else ""))
     rr = q.req_rate()
-    b.stat("Average cost per request", ds,
+    b.stat(ratio_title, ds,
            f"({spend_rate}) / clamp_min({rr}, 1e-9)" if spend_rate and rr else None,
-           6, 5, "currencyUSD")
+           6, 5, "currencyUSD", money_note if inline else "")
     if not rr:
         b.text("Cost per request unavailable",
                "No request-rate signal is available in the selected financial datasource "
@@ -803,9 +882,13 @@ def bp_finops(ctx: Ctx) -> Board | None:
     region_exprs = [(source.expr(region=r), lbl)
                     for r, lbl in regions]
     if any(e for e, _ in region_exprs):
-        b.ts("Spend by provider sovereignty (USD/s)", ds, region_exprs, 12, 8,
+        region_title = ("Priced subtotal by provider sovereignty (USD/s)" if source.is_subtotal else
+                        "Estimated spend by provider sovereignty (USD/s)" if inline else
+                        "Spend by provider sovereignty (USD/s)")
+        b.ts(region_title, ds, region_exprs, 12, 8,
              "currencyUSD", stacked=True,
-             desc="Split by provider region: sovereignty and AI Act steering.")
+             desc="Split by provider region: sovereignty and AI Act steering."
+             + (" " + money_note if inline else ""))
     if source.mode == "native" and q.s.group_label:
         b.ts("Spend by team (USD/s)", ds,
              [(f"sum by({qlbl(q.s.group_label)})(rate({msel(q.spend)}[{RATE}]))",
@@ -824,13 +907,17 @@ def bp_finops(ctx: Ctx) -> Board | None:
                f"(increase({msel(q.tok + chr(95) + 'sum')}[$__range])))" if q.s.dialect == "otel_genai" and q.tok
                else None)
         b.table("Top models (tokens, range)", ds, top, 12, 8)
-    if source.unmatched:
+    if inline:
+        b.text("Financial coverage", source.coverage_note(), 24, 6)
+    missing_prices = source.unmatched + source.partially_priced
+    if missing_prices:
         b.text("Models missing from the price registry",
-               "Ces modèles sont observés mais **exclus du calcul de coût** "
-               "(prix inconnu) :\n\n"
-               + "\n".join(f"- `{_md(m)}`" for m in source.unmatched[:20])
-               + "\n\nAjouter leur prix dans `references/model_registry.json` "
-                 "puis relancer la forge.", 24, 6)
+               "Prices are missing or incomplete for these listed models. Usage without "
+               "known input/output prices is excluded from any estimate.\n\n"
+               + "\n".join(f"- `{_md(m)}`" for m in missing_prices[:20])
+               + f"\n\nShowing {min(20, len(missing_prices))} of {len(missing_prices)} models; "
+               f"{max(0, len(missing_prices) - 20)} not displayed. "
+               "Add missing prices to `model_registry.local.json` and re-run forge.", 24, 6)
     if source.third_party_prices:
         b.text("Third-party pricing estimates",
                "Some cost estimates use **median multi-provider pricing** from "
@@ -1375,13 +1462,17 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
                 q.pXX(ttft, 0.95, w="10m"), 3, "gt", folder_uid,
                 "First token takes over 3s at p95: saturation is likely.",
                 "warning", "10m", "OK", org, uid_scope=ctx.uid_scope))
-    spend = source.expr(window="10m") if source else None
+    spend = source.expr(window="10m") if source and source.coverage["budget_eligible"] else None
     if spend:
         financial_rule = _rule(
-            "llm-daily-budget", "LLM · Daily budget exceeded", source.ds_uid,
+            "llm-daily-budget", ("LLM · Budget exceeded for returned models" if source.mode == "inline"
+                                 else "LLM · Daily budget exceeded"), source.ds_uid,
             f"({spend}) * 86400", daily_budget, "gt", folder_uid,
-            f"Spend rate above {daily_budget} USD per day. Missing financial data "
-            "means cost is unknown, not zero.",
+            f"Spend rate above {daily_budget} USD per day. "
+            + ("This estimate covers models returned by the backend only; backend completeness "
+               "and signal freshness are unverified. Missing inline counters may return zero."
+               if source.mode == "inline" else
+               "Missing financial data means cost is unknown, not zero."),
             "warning", "30m", "NoData", org, uid_scope=ctx.uid_scope)
         # A range query reduced with last() could keep a cost point from hours
         # ago after the source disappears. Evaluate the current cost expression.
@@ -1684,6 +1775,9 @@ def main() -> int:
                   "financial sources retain their own provenance. Attribution: Artificial Analysis.")
     ctx = Ctx(cap, registry, args.cost_mode)
     ctx.rules_interval = args.rules_interval
+    if financial_requested and ctx.cost_source:
+        print(f"[coverage] datasource={ctx.cost_source.ds_uid}: "
+              + ctx.cost_source.coverage_note())
     client = None
     try:
         if args.deploy and not args.dry_run:
@@ -1891,7 +1985,8 @@ def main() -> int:
               f"{os.path.join(os.path.dirname(rules_path) or '.', 'prometheusrule_llmops.yaml')}"
               + ("" if ctx.recorded else
                  "\n     copy into Prometheus (rule_files), then rerun "
-                 "discover+forge : les panels de coût passeront en O(1)."))
+                 "discover+forge for shorter cost queries; execution still depends "
+                 "on series count and the queried window."))
     elif os.path.exists(rules_path):
         os.remove(rules_path)
 
@@ -1909,7 +2004,8 @@ def main() -> int:
           f"registry verified {ctx.verified}.")
     if ctx.unmatched:
         print(f"Models without a price ({len(ctx.unmatched)}): "
-              + ", ".join(ctx.unmatched[:8]))
+              + ", ".join(ctx.unmatched[:8])
+              + (f" ({len(ctx.unmatched) - 8} not displayed)" if len(ctx.unmatched) > 8 else ""))
     if manifest["deployed"]:
         print("VISUAL CHECK (recommended): "
               f"python3 scripts/visual_audit.py --dashboards {args.out_dir} "

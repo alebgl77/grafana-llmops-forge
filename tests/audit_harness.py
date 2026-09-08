@@ -359,7 +359,7 @@ check("panel Loki typé loki (bug v1.1)",
 gw = bs.get("gateway", {})
 ex = [t for p in gw.get("panels", []) for t in p.get("targets", []) if t.get("exemplar")]
 check("exemplars posés quand la datasource les route", bool(ex))
-# mode recorded : requêtes O(1)
+# mode recorded : expressions plus courtes, sans composition par modèle
 _recorded_cap = json.load(open(os.path.join(TMP, "audit_v12.json")))
 _recorded_cap["signals"]["prom-selftest"]["recorded"] = {
     "metric_names": [forge_dashboards.COST_RECORDED]}
