@@ -287,14 +287,18 @@ refuses to overwrite an existing dashboard UID found in another folder.
 
 ## Roadmap
 
-The next planned horizons are:
+**Make every AI change a decision you can defend.** The proposed direction is reproducible operational decisions for European enterprises on self-hosted Grafana, using their existing telemetry and evaluation tools.
 
-- **v2.1, safer decisions:** deployment diff, generated cache-savings panels, and budget burn-down.
-- **v2.2, GitOps delivery:** Terraform around the existing portable JSON export, plus experimental schema v2 for homogeneous Grafana 13+ estates.
-- **v3.0, trace-level economics:** cost by trace or conversation, versioned OpenTelemetry crosswalks, privacy-safe correlation, and optional provider usage adapters.
-- **Continuous maintenance:** pricing provenance, governance crosswalks, compatibility, security, and supply chain.
+These are planned horizons, with evidence gates rather than release dates:
 
-See the [full roadmap](ROADMAP.md) for scope boundaries and graduation criteria.
+- **H0 · Trusted foundations:** interpretable measurements, explicit gaps and read-only configuration diffs.
+- **H1 · Compare a change:** cost per successful task at explicit quality and latency criteria, including a reasoned refusal when evidence is insufficient.
+- **H2 · Ship with evidence:** portable promotion dossiers and checks consumed by the customer's existing CI and provisioning tools.
+- **H3 · Rehearse the next migration:** executed migration tests or clearly labeled sensitivity scenarios, after the earlier workflow proves useful.
+
+As of 2026-09-08, **v2.0.2 is the released baseline**; the five foundation corrections in [PR #5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) are under review, not merged or released. The proposed comparison and dossier workflows are future work.
+
+Read the [canonical roadmap](ROADMAP.md) or its [French translation](docs/ROADMAP.fr.md) for the future demonstration, scope and pass/fail criteria.
 
 ## Support
 
