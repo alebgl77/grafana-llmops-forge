@@ -1345,11 +1345,14 @@ def bp_quality(ctx: Ctx) -> Board | None:
         is_hist = f"{base}_bucket" in names
         avg = (f"histogram_quantile(0.5, sum by(le)(rate({base}_bucket[{RATE}])))"
                if is_hist else f"avg({score})")
-        b.stat("Median score", ds, avg, 6, 5, "percentunit")
+        b.stat("Median score" if is_hist else "Mean score", ds, avg, 6, 5, "percentunit",
+               "" if is_hist else "Unweighted mean across current score series; not an "
+               "observation-weighted mean or a population quantile.")
         low = (f"histogram_quantile(0.1, sum by(le)(rate({base}_bucket[{RATE}])))"
                if is_hist else f"min({score})")
-        b.stat("Low decile (p10)", ds, low, 6, 5, "percentunit",
-               "The low tail is the real signal; the mean hides the failures.")
+        b.stat("Low decile (p10)" if is_hist else "Minimum score", ds, low, 6, 5, "percentunit",
+               "The low tail is the real signal; the mean hides the failures." if is_hist else
+               "Minimum across current score series; not a population quantile.")
     if guard:
         b.stat("Guardrail blocks/s", ds,
                f"sum(rate({guard}[{RATE}]))" if guard.endswith("_total")
