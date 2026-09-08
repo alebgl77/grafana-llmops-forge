@@ -182,7 +182,8 @@ def main() -> int:
                      if t.get("expr") and p.get("datasource", {}).get("type")
                      == "prometheus"]
         for title, expr in items:
-            e = expr.replace("$__rate_interval", "5m").replace("$__range", "30m")
+            e = (expr.replace("$__rate_interval", "5m")
+                 .replace("$__range_s", "1800").replace("$__range", "30m"))
             e = e.replace("$__interval", "1m").replace('=~"$model"', '=~".+"')
             status, n = q(base, e)
             checks += 1

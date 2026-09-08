@@ -252,9 +252,55 @@ PRICE_IN, PRICE_OUT = "llm:price_input_usd_per_token", "llm:price_output_usd_per
 INLINE_MODEL_CAP = 40
 
 
+def _duration_milliseconds(value: str) -> int:
+    """Parse only positive, ordered Prometheus duration literals (no macros)."""
+    pattern = (r"(?:([0-9]+)y)?(?:([0-9]+)w)?(?:([0-9]+)d)?(?:([0-9]+)h)?"
+               r"(?:([0-9]+)m)?(?:([0-9]+)s)?(?:([0-9]+)ms)?")
+    match = re.fullmatch(pattern, value) if isinstance(value, str) and len(value) <= 64 else None
+    if not match:
+        raise ValueError("expected a positive Prometheus duration, e.g. 1m or 1h30m")
+    units = (31536000000, 604800000, 86400000, 3600000, 60000, 1000, 1)
+    milliseconds = sum(int(n or 0) * unit for n, unit in zip(match.groups(), units))
+    if not 0 < milliseconds <= 9223372036854:
+        raise ValueError("Prometheus duration must be positive and within its int64 limit")
+    return milliseconds
+
+
+def _seconds_literal(milliseconds: int) -> str:
+    seconds, remainder = divmod(milliseconds, 1000)
+    return (f"{seconds}.{remainder:03d}".rstrip("0") if remainder else str(seconds))
+
+
+def _recorded_cost_total_expr(selector: str, window: str, interval: str) -> str:
+    """Estimate USD from a USD/s gauge, requiring every aggregate grid point.
+
+    Sum models BEFORE temporal averaging: a model born halfway through the
+    range must not have its own average extrapolated over the whole range.
+    The grid is at least 1m, or the installed recording cadence if slower.
+    last_over_time bounds freshness to one grid cell, avoiding Prometheus's
+    implicit 5m lookback across gaps. Counts use the SAME aligned subquery
+    grid, including its boundary points; averaging then multiplying seconds
+    avoids a one-sample overcharge on a constant rate.
+
+    This is a sampled estimate, not a billing ledger. Complete aggregate
+    coverage does not establish per-model completeness. A shorter window or
+    any missing aggregate cell yields no result, never a synthetic zero.
+    """
+    cadence_ms = _duration_milliseconds(interval)
+    step = interval if cadence_ms >= 60000 else "1m"
+    step_seconds = _seconds_literal(max(cadence_ms, 60000))
+    seconds = ("$__range_s" if window == "$__range"
+               else _seconds_literal(_duration_milliseconds(window)))
+    samples = f"(sum(last_over_time({selector}[{step}])))[{window}:{step}]"
+    expected = f"count_over_time((vector(1))[{window}:{step}])"
+    return (f"(avg_over_time({samples}) * {seconds}) "
+            f"and (count_over_time({samples}) == {expected}) "
+            f"and (vector({seconds}) >= {step_seconds})")
+
+
 def cost_rate_expr(q: Q, matched: list, region: str | None = None,
                    window: str = RATE, agg: str = "rate",
-                   recorded: bool = False) -> str | None:
+                   recorded: bool = False, recorded_interval: str = "1m") -> str | None:
     """Coût USD/s. Trois voies, par ordre de préférence :
 
     1. recording rules `llm:cost_usd_per_second` (O(1) séries, prix modifiables
@@ -266,7 +312,7 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
     if recorded:
         sel = f'{{region={promql_string(region)}}}' if region else ""
         if agg == "increase":  # intégrer un taux enregistré sur la période
-            return f"sum(increase(({COST_RECORDED}{sel})[{window}:])) or vector(0)"
+            return _recorded_cost_total_expr(COST_RECORDED + sel, window, recorded_interval)
         return f"sum({COST_RECORDED}{sel}) or vector(0)"
     if q.s.dialect == "litellm" and getattr(q, "spend", None):
         if region:
@@ -581,6 +627,7 @@ class Ctx:
         self.frameworks = ["eu-ai-act", "iso-42001", "nist-rmf"]
         self.recorded = "recorded" in self.q and any(
             n.startswith("llm:cost") for n in self.q["recorded"].s.names)
+        self.rules_interval = "1m"
         self.exemplars = any(m.get("exemplars") for m in dss.get("prometheus", []))
         raw_org = cap.get("org_id", cap.get("instance", {}).get("org_id"))
         self.org_id = int(raw_org) if raw_org is not None else None
@@ -619,10 +666,16 @@ def bp_finops(ctx: Ctx) -> Board | None:
     ds = q.s.ds_uid
     R = ctx.recorded
     spend_range = cost_rate_expr(q, ctx.matched, window="$__range", agg="increase",
-                                 recorded=R)
+                                 recorded=R, recorded_interval=ctx.rules_interval)
     spend_rate = cost_rate_expr(q, ctx.matched, recorded=R)
     b.stat("Spend (selected range)", ds, spend_range, 6, 5, "currencyUSD",
-           "Total over the dashboard's time range.")
+           ("Estimated total: aggregate USD/s sampled on a grid of at least 1m "
+            f"(configured recording cadence {ctx.rules_interval}) × range seconds. "
+            "--rules-interval must match the installed rules. Changes within a grid "
+            "cell and time-range boundaries are approximate. Missing aggregate "
+            "cells or a range shorter than the grid return No data; coverage does "
+            "not prove that every model reported."
+            if R else "Total over the dashboard's time range."))
     b.stat("Spend rate per day", ds,
            f"({spend_rate}) * 86400" if spend_rate else None, 6, 5, "currencyUSD",
            "Projection: instantaneous rate × 86400.")
@@ -1424,6 +1477,8 @@ def main() -> int:
                          "l'intervalle de scrape (défaut 5m).")
     ap.add_argument("--rules-interval", default="1m",
                     help="Intervalle d'évaluation du groupe de règles (défaut 1m). "
+                         "Doit correspondre aux règles installées : le total de coût "
+                         "enregistré utilise cette cadence, avec une grille d'au moins 1m. "
                          "Les backends managés refusent souvent le sous-minute.")
     ap.add_argument("--locale", default="en",
                     help="Langue des libellés générés : en (défaut) ou fr. "
@@ -1453,6 +1508,10 @@ def main() -> int:
 
     if args.org_id is not None and args.org_id <= 0:
         ap.error("--org-id must be a positive integer")
+    try:
+        _duration_milliseconds(args.rules_interval)
+    except ValueError as e:
+        ap.error(f"--rules-interval: {e}")
     if (not 0 <= args.pricing_cache_max_age_hours <= 720):
         ap.error("--pricing-cache-max-age-hours must be between 0 and 720")
 
@@ -1488,6 +1547,7 @@ def main() -> int:
                   f"Artificial Analysis median multi-provider estimates via {via}. "
                   "Attribution: Artificial Analysis.")
     ctx = Ctx(cap, registry)
+    ctx.rules_interval = args.rules_interval
     client = None
     try:
         if args.deploy and not args.dry_run:

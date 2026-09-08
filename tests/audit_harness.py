@@ -366,8 +366,34 @@ fin = load_boards(d2).get("finops", {})
 ex2 = [t["expr"] for p in fin.get("panels", []) for t in p.get("targets", [])
        if "cost_usd" in t.get("expr", "")]
 check("mode recorded → llm:cost_usd_per_second", bool(ex2), "aucune expr recorded")
-check("recorded = expressions courtes", all(len(e) < 200 for e in ex2),
+check("recorded = expressions bornees, independantes du nombre de modeles",
+      all(len(e) < 600 for e in ex2),
       str(max((len(e) for e in ex2), default=0)))
+_range_panel = next(p for p in fin["panels"] if p["title"] == "Spend (selected range)")
+_range_expr = _range_panel["targets"][0]["expr"]
+check("total recorded integre USD/s en secondes avec grille et couverture",
+      "avg_over_time" in _range_expr and "$__range_s" in _range_expr
+      and "count_over_time" in _range_expr and ":1m]" in _range_expr
+      and "increase(" not in _range_expr and "or vector(0)" not in _range_expr)
+check("total recorded explique estimation, cadence et absence de couverture",
+      all(word in _range_panel.get("description", "")
+          for word in ("Estimated", "--rules-interval", "No data", "every model")))
+r_interval, d_interval = run_forge(
+    forge_dashboards.selftest_capability(), "audit_recorded_interval",
+    extra=("--cost-mode", "recorded", "--rules-interval", "2m"))
+_interval_panel = next(p for p in load_boards(d_interval)["finops"]["panels"]
+                       if p["title"] == "Spend (selected range)")
+check("--rules-interval 2m est propage au total recorded",
+      r_interval.returncode == 0
+      and "[2m]" in _interval_panel["targets"][0]["expr"]
+      and ":2m]" in _interval_panel["targets"][0]["expr"]
+      and "cadence 2m" in _interval_panel["description"])
+r_interval_bad, _ = run_forge(
+    forge_dashboards.selftest_capability(), "audit_recorded_interval_bad",
+    extra=("--cost-mode", "recorded", "--rules-interval", "1m] or vector(9)"))
+check("--rules-interval refuse une duree injectee sans traceback",
+      r_interval_bad.returncode == 2 and "--rules-interval" in r_interval_bad.stderr
+      and "Traceback" not in r_interval_bad.stderr)
 
 # ------------------------------------------------ 10. bornage cardinalité
 print("\n[10] Cardinalité & coût de requête")

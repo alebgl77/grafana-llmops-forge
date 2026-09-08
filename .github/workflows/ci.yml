@@ -47,6 +47,12 @@ jobs:
           EOF
           ../prometheus-${PROM_VER}.linux-amd64/promtool check rules /tmp/crd.yml
 
+      - name: Recorded cost integrates rates and rejects incomplete coverage
+        if: matrix.python == '3.13'
+        run: >-
+          python tests/recorded_cost_invariants.py
+          --promtool ./prometheus-3.14.0.linux-amd64/promtool
+
       - name: Workflows are code, lint them too
         if: matrix.python == '3.13'
         run: |
