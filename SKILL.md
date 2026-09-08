@@ -12,7 +12,7 @@ Turns any Grafana instance into an AI/LLM command centre for a platform team: di
 
 1. **Discovery-first, never assume.** Never generate a panel "just in case". Probe the instance and its datasources, capture the **real metric names**, and only build panels whose queries will return data. OTel exporters disagree on suffixes (`_seconds`, `_token`, `_total`): the capability map is the source of truth, not theory.
 2. **Four telemetry dialects, one mental model.** LLM signals arrive in four practical shapes: OTel GenAI conventions (`gen_ai_*`, Development status, v1.4x, opt-in `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`), LiteLLM gateway (`litellm_*`, native USD spend), inference engines (`vllm:*`, `tgi_*`), and GPU (`DCGM_*`). Evaluation signals (`gen_ai_evaluation_*`, RAGAS, guardrails) form a fifth, optional one. Each blueprint is translated into whatever is actually emitted.
-3. **Cost is computed, not hoped for.** Prefer recorded cost (`llm:cost_usd_per_second`), then native gateway spend, then on-the-fly composition against the bundled price registry. The registry carries a verification date; if it is older than 30 days and web search is available, refresh the prices of the **detected** models from the official pages BEFORE generating cost panels (protocol in `references/model_registry.json`, key `_meta.refresh_protocol`).
+3. **Cost is computed, not hoped for.** Resolve one financial source across all datasources: the exact recorded total (`llm:cost_usd_per_second`), then native LiteLLM spend, then OTel composition against the price registry. Equal-priority candidates require `--datasource <UID|unique name>`; never silently mix scopes. Native spend is not an audited invoice. Registry/Artificial Analysis provenance applies to OTel estimates and generated rules, not automatically to a selected native or recorded amount. The registry carries a verification date; if it is older than 30 days and web search is available, refresh the prices of the **detected** models from the official pages BEFORE generating cost panels (protocol in `references/model_registry.json`, key `_meta.refresh_protocol`).
 4. **Governance is observable, and the framework is a reading, not a rebuild.** The same telemetry answers three regimes: EU AI Act (Art. 12 logging, Art. 26(6) retention, Art. 73 incidents, Art. 50 transparency), ISO/IEC 42001 (A.6.2.6 operation and monitoring, A.6.2.8 event logs, A.9 use, A.10 suppliers) and NIST AI RMF (MANAGE 4.1 post-deployment monitoring, MEASURE 2.x evaluation, GOVERN 6.x third-party). `--framework` selects which readings the governance board renders; the measured panels are identical either way. Ask which regime applies before assuming the AI Act; it is the wrong default outside Europe. Crosswalk and caveats in `references/ai_governance_frameworks.md`. Never present this as legal advice or as certification.
 5. **Total idempotence.** Deterministic UIDs (name hash), upsert with overwrite, a single "AI Observability" folder. Re-running the forge is always safe. `--dry-run` covers everything that writes.
 6. **Graceful degradation.** No LLM signal is not a failure: produce an **instrumentation gap report** (what to wire, in which order, with the exact configs from `references/instrumentation_guide.md`), and still deploy the governance dashboard (it works without metrics).
@@ -89,11 +89,12 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints auto --dry-run
 # Useful options:
 #   --slo-target 0.995      burn-rate SLO target (default 0.99)
-#   --cost-mode recorded    force recording rules (default: auto-detected)
+#   --cost-mode recorded    require a discovered exact total (default: auto)
+#   --cost-mode inline      ignore recorded; prefer native spend, then OTel
 #   --pricing-fallback artificial-analysis  opt-in third-party price estimates
 #   --pricing-cache-max-age-hours 24         local cache freshness
 #   --export-portable       ${DS_*} JSON, publishable on grafana.com/dashboards
-#   --datasource <uid|name> pin one datasource
+#   --datasource <uid|name> filter forge inputs by UID or unique name
 #   --locale fr             translate panel labels (default: English)
 #   --framework iso-42001   governance readings: eu-ai-act, iso-42001, nist-rmf
 #   --rules-window 10m      rate() window; keep it ≥ 4× your scrape interval
@@ -104,6 +105,8 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 ```
 
 The script generates the JSON (classic schema v41, identical behaviour across OSS/Cloud/Enterprise from v9 to v13, deployed through the legacy API with a K8s-style resource-API fallback), creates the folder, upserts the dashboards, provisions SLO alerts (`--with-alerts`: two-window error burn-rate at 5m/1h and 30m/6h per the SRE method, TTFT p95, daily budget, KV-cache saturation, eval-score drop, and signal loss; that last one gets `noDataState: Alerting`, without which it would stay silent precisely when telemetry dies), writes the v2 `deploy_manifest.json` (`success|partial|failed`, org/folder/scope, per-type counts and structured errors), then prints the URLs. Any requested-resource failure is nonzero unless `--best-effort` was explicit; that flag never changes the manifest status. Always relay the final URLs to the user.
+
+Financial ambiguity or an unavailable forced recorded total fails before deployment or pricing fallback when FinOps/alerts are requested. Gateway/governance-only generation can continue. The manifest's `financial_source` records UID/mode/status and unverified live availability; `recording_rules.datasource_uid` separately identifies where OTel rules belong. All FinOps queries and budget costs use the financial datasource; omit cost/request ratios without a request signal there. Missing recorded/native money remains absent, and budget `noDataState: NoData` reports unknown cost rather than zero.
 
 **Backing it out.** Say this without being asked when deploying to a production instance: everything created lives in one folder, the tool has no delete path of its own, and removing that folder removes the whole deployment: dashboards and alert rules together. Generated recording rules are a separate file in Prometheus. The exact command is in the README under "What it touches".
 
@@ -149,7 +152,7 @@ The scripts cover the deterministic core. To extend (extra panels, specific quer
 - **Cardinality**: never group by `gen_ai.conversation.id` or any unique ID in a time series. The forge drops group-by labels above 300 values and bounds grouped panels with `topk`.
 - **Tiered pricing**: some models change price beyond a context threshold; the registry carries `tiered_pricing` and the cost panel then notes "low estimate".
 - **Grafana Cloud**: the legacy dashboard API works, but provisioned alerts need the right `folderUID` and a sufficient role; on 403, degrade by exporting the rules as JSON and explain manual import.
-- **Multi-datasource**: the forge uses one datasource per dialect. If discovery reports several (prod + staging), ask which one and re-run with `--datasource`.
+- **Multi-datasource**: operational blueprints retain one datasource per dialect. Financial selection examines every datasource and rejects equal-priority ambiguity. Pin forge or discovery with `--datasource <UID|unique name>`; do not infer prod/staging relationships or combine financial scopes.
 - **Exemplars**: if Tempo exists but the Prometheus datasource does not route exemplars, flag it: that is the missing metric→trace navigation.
 - **Prompt content**: never encourage capturing `gen_ai.input.messages`/`output.messages` by default (sensitive data). If the user wants it: explicit opt-in plus the precautions in `instrumentation_guide.md`.
 - **Missing renderer**: a 404 on `/render/...` means the grafana-image-renderer plugin is absent (one-line install in `visual_verification.md` §5); fall back to `--engine playwright`. Behind an SSO proxy where Bearer is rejected: `GRAFANA_COOKIE`.

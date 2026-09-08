@@ -84,7 +84,11 @@ Plus **provisioned SLO alerts** built the way SREs expect them: **multi-window b
 
 ### Cost that scales
 
-By default the forge composes cost from token counters × a bundled price registry. That's fine to bootstrap and slow past ~15 models. When discovery finds OTel GenAI signals, token counters, a model label, and usable prices, the forge also writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. Load it into Prometheus and your FinOps panels go from a 2N-term sum to `sum(llm:cost_usd_per_second)`: unlimited models, O(1) queries, and price updates without regenerating a single dashboard. The forge detects the recorded metric on the next discovery run and switches automatically.
+Financial selection is independent of the operational dashboards: `--cost-mode auto` prefers the exact total metric `llm:cost_usd_per_second`, then native LiteLLM spend, then OTel tokens × registry prices. Candidates are resolved across all Prometheus datasources. If several sources have the same priority, financial generation/deployment stops before remote writes; pass `--datasource <UID|unique name>` to forge or repeat discovery with that selector. `--cost-mode inline` ignores recorded totals but retains native-spend priority. `--cost-mode recorded` requires the discovered total; `:input`/`:output` components alone are insufficient.
+
+FinOps and its budget alert use the selected datasource. A cost/request ratio is omitted when that datasource lacks a request signal. Native spend is not an audited invoice, and recorded costs retain their upstream provenance; neither is attributed to the local price registry or Artificial Analysis. Missing monetary series stay absent, and the budget alert uses Grafana's `NoData` state to report unknown cost. The dashboard description and deployment manifest expose the selected UID, mode and status; discovery does not establish current data availability.
+
+OTel pricing and generated rules remain independent of that financial choice. When discovery finds OTel GenAI signals, token counters, a model label, and usable prices, the forge writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. An explicitly requested Artificial Analysis fallback can still price those OTel artifacts while FinOps displays native spend. The manifest's `recording_rules.datasource_uid` identifies their target separately from `financial_source.datasource_uid`. Load the rules into that Prometheus and repeat discovery to make the recorded total a candidate. Without rules or native spend, on-the-fly composition is useful to bootstrap and becomes expensive past ~15 models.
 
 <div align="center"><img src="docs/assets/pricing-flow.png" alt="Cost flow from native LiteLLM spend directly to FinOps, or from OTel GenAI token counters through the official registry and opt-in Artificial Analysis fallback to Prometheus rules and FinOps dashboards; models with ambiguous matches or no price remain unpriced" width="100%"/>
 <sub><i>Conceptual cost flow for native gateway spend and OTel GenAI token pricing. Not a Grafana screenshot.</i></sub></div>
@@ -259,7 +263,7 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 
 **Can I publish the generated dashboards?** Yes: `--export-portable` emits JSON with `__inputs`/`${DS_PROMETHEUS}` placeholders, the format grafana.com/dashboards requires.
 
-**Multiple Prometheus (prod + staging)?** Discovery flags it and the forge tells you which one it picked; pin it with `--datasource <uid|name>`.
+**Multiple Prometheus (prod + staging)?** Financial sources at the same priority are ambiguous: the forge refuses a silent choice. Pin discovery or forge with `--datasource <UID|unique name>`; costs from separate datasources are never added together.
 
 **Multiple orgs or folders?** Pin the Grafana organization with `--org-id` and
 give each independently managed folder a stable `--uid-scope`. The forge

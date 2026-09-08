@@ -360,7 +360,10 @@ gw = bs.get("gateway", {})
 ex = [t for p in gw.get("panels", []) for t in p.get("targets", []) if t.get("exemplar")]
 check("exemplars posés quand la datasource les route", bool(ex))
 # mode recorded : requêtes O(1)
-r2, d2 = run_forge(json.load(open(os.path.join(TMP, "audit_v12.json"))), "audit_rec",
+_recorded_cap = json.load(open(os.path.join(TMP, "audit_v12.json")))
+_recorded_cap["signals"]["prom-selftest"]["recorded"] = {
+    "metric_names": [forge_dashboards.COST_RECORDED]}
+r2, d2 = run_forge(_recorded_cap, "audit_rec",
                    extra=("--cost-mode", "recorded"))
 fin = load_boards(d2).get("finops", {})
 ex2 = [t["expr"] for p in fin.get("panels", []) for t in p.get("targets", [])
@@ -379,7 +382,7 @@ check("total recorded explique estimation, cadence et absence de couverture",
       all(word in _range_panel.get("description", "")
           for word in ("Estimated", "--rules-interval", "No data", "every model")))
 r_interval, d_interval = run_forge(
-    forge_dashboards.selftest_capability(), "audit_recorded_interval",
+    _recorded_cap, "audit_recorded_interval",
     extra=("--cost-mode", "recorded", "--rules-interval", "2m"))
 _interval_panel = next(p for p in load_boards(d_interval)["finops"]["panels"]
                        if p["title"] == "Spend (selected range)")
@@ -1601,6 +1604,7 @@ with tempfile.TemporaryDirectory(prefix="aa-pricing-") as _aa_tmp:
           and not _updated["cache_used"])
 
     _cap_off = json.loads(json.dumps(forge_dashboards.selftest_capability()))
+    _cap_off["signals"]["prom-selftest"].pop("litellm")  # exercise inline pricing, not native spend
     _cap_off["signals"]["prom-selftest"]["otel_genai"]["models_seen"] = ["acme-model"]
     _cap_off_path = os.path.join(_aa_tmp, "capability.json")
     _base_path = os.path.join(_aa_tmp, "official-base.json")
@@ -2082,6 +2086,7 @@ with tempfile.TemporaryDirectory(prefix="aa-pricing-") as _aa_tmp:
                    if n.startswith(".artificial-analysis-pricing.")])
 
     _cap_aa = json.loads(json.dumps(forge_dashboards.selftest_capability()))
+    _cap_aa["signals"]["prom-selftest"].pop("litellm")  # AA is provenance for inline costs only
     _cap_aa["signals"]["prom-selftest"]["otel_genai"]["models_seen"] = ["acme-model"]
     _ctx_aa = forge_dashboards.Ctx(_cap_aa, _aa_result["registry"])
     _board_aa = forge_dashboards.bp_finops(_ctx_aa).d

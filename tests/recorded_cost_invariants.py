@@ -114,21 +114,22 @@ def check_generator_contract():
     assert "[1h:1m]" in expression(cadence="30s")
     assert "[1h:2m]" in expression(cadence="2m")
     assert forge.cost_rate_expr(None, [], recorded=True) == (
-        "sum(llm:cost_usd_per_second) or vector(0)")
+        "sum(llm:cost_usd_per_second)")
     cap = forge.selftest_capability()
     ctx = forge.Ctx(cap, {"models": []})
     lite = ctx.q["litellm"]
     assert forge.cost_rate_expr(lite, [], window="1h", agg="increase") == (
-        f"sum(increase({lite.spend}[1h])) or vector(0)")
+        f"sum(increase({lite.spend}[1h]))")
     matched = [{"seen": "test", "reg": {"input_per_mtok": 1, "output_per_mtok": 2}}]
     inline = forge.cost_rate_expr(ctx.primary, matched, window="1h", agg="increase")
     assert "increase(" in inline and "_sum{" in inline and "avg_over_time" not in inline
-    ctx.recorded = True
+    cap["signals"]["prom-selftest"]["recorded"] = {"metric_names": [COST]}
+    ctx = forge.Ctx(cap, {"models": []})
     ctx.rules_interval = "2m"
     budget = next(rule for rule in forge.build_alerts(ctx, "folder", 100)
                   if rule["title"] == "LLM · Daily budget exceeded")
     assert budget["data"][0]["model"]["expr"] == (
-        "(sum(llm:cost_usd_per_second) or vector(0)) * 86400")
+        "(sum(llm:cost_usd_per_second)) * 86400")
 
 
 def run(promtool, out_dir):
