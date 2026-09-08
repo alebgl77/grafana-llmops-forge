@@ -20,7 +20,7 @@
       "amazon": "https://aws.amazon.com/bedrock/pricing/",
       "artificial_analysis": "https://artificialanalysis.ai/data-api/docs"
     },
-    "notes": "Prix standard non-batch, hors remises volume. tiered_pricing: le prix input monte au-delà du seuil de contexte indiqué. cached_input_per_mtok: lecture de cache (écriture non incluse). Les prix LLM bougent trimestriellement ; la date fait partie de la donnée. Artificial Analysis est un fallback tiers opt-in uniquement ; toute utilisation exige de respecter ses conditions d'attribution et de redistribution. Aucune de ses valeurs n'est incluse dans ce seed."
+    "notes": "Le champ region décrit l'origine du fournisseur, jamais le lieu de traitement ou de stockage. Prix standard non-batch, hors remises volume. tiered_pricing: le prix input monte au-delà du seuil de contexte indiqué. cached_input_per_mtok: lecture de cache (écriture non incluse). Les prix LLM bougent trimestriellement ; la date fait partie de la donnée. Artificial Analysis est un fallback tiers opt-in uniquement ; toute utilisation exige de respecter ses conditions d'attribution et de redistribution. Aucune de ses valeurs n'est incluse dans ce seed."
   },
   "models": [
     {"id": "gpt-5.5", "aliases": ["gpt5.5"], "vendor": "OpenAI", "region": "us", "input_per_mtok": 5.0, "output_per_mtok": 30.0, "cached_input_per_mtok": 0.5, "context_window": 1050000, "open_weights": false, "gpai_in_scope": true, "pricing_source_kind": "official", "pricing_source_url": "https://platform.openai.com/docs/pricing", "pricing_verified_at": "2026-09-01", "tiered_pricing": {"threshold_tokens": 272000, "input_per_mtok": 10.0, "output_per_mtok": 45.0}, "notes": "Flagship raisonnement ; tokens de thinking facturés en output."},

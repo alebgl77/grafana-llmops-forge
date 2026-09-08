@@ -15,11 +15,14 @@ from __future__ import annotations
 
 import argparse
 import copy
+import html
 import json
 import os
 import re
+import stat
 import sys
-from datetime import datetime, timezone
+import unicodedata
+from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from grafana_client import (GrafanaClient, GrafanaError, alert_logical_identity,
@@ -113,6 +116,112 @@ def _rx(s: str) -> str:
 def _md(s: str) -> str:
     """Neutralise ce qui casserait un tableau markdown de panneau texte."""
     return s.replace("|", "\\|").replace("`", "'").replace("\n", " ")
+
+
+INVENTORY_MAX_BYTES = 1024 * 1024
+INVENTORY_MAX_DEPLOYMENTS = 500
+INVENTORY_FIELDS = {
+    "deployment_id": 128, "datasource_uid": 128, "model": 256,
+    "serving_provider": 128, "endpoint_host": 253, "processing_region": 128,
+    "storage_region": 128, "evidence_ref": 512, "evidence_date": 10,
+}
+INVENTORY_REQUIRED = {"deployment_id", "datasource_uid", "model"}
+PROVIDER_ORIGIN_NOTE = ("Registry provider region describes provider origin; it does not "
+                        "establish processing or storage locations.")
+
+
+def _capability_datasource_uids(cap: dict, prometheus_only: bool = False) -> set:
+    kinds = cap.get("datasources", {})
+    lists = [kinds.get("prometheus", [])] if prometheus_only else kinds.values()
+    return set(cap.get("signals", {})) | {
+        item["uid"] for items in lists for item in items
+        if isinstance(item, dict) and isinstance(item.get("uid"), str)}
+
+
+def _inventory_object(pairs: list) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON field")
+        result[key] = value
+    return result
+
+
+def validate_deployment_inventory(inventory: object, cap: dict) -> dict:
+    """Strict, bounded declarations only; neither network nor location inference."""
+    if (not isinstance(inventory, dict) or set(inventory) != {"schema_version", "deployments"}
+            or type(inventory.get("schema_version")) is not int or inventory["schema_version"] != 1):
+        raise ValueError("expected only schema_version=1 and deployments")
+    records = inventory["deployments"]
+    if not isinstance(records, list) or len(records) > INVENTORY_MAX_DEPLOYMENTS:
+        raise ValueError(f"deployments must be a list of at most {INVENTORY_MAX_DEPLOYMENTS} records")
+    known_ds, identifiers = _capability_datasource_uids(cap), set()
+    for index, record in enumerate(records):
+        where = f"deployments[{index}]"
+        if (not isinstance(record, dict) or not INVENTORY_REQUIRED <= set(record)
+                or set(record) - set(INVENTORY_FIELDS)):
+            raise ValueError(f"{where}: missing required fields or unknown fields")
+        for key, value in record.items():
+            if (not isinstance(value, str) or not value.strip() or len(value) > INVENTORY_FIELDS[key]
+                    or any(unicodedata.category(char) in ("Cc", "Cf", "Cs") for char in value)):
+                raise ValueError(f"{where}.{key}: expected non-empty single-line text, "
+                                 f"max {INVENTORY_FIELDS[key]} characters, without control characters")
+        if record["deployment_id"] in identifiers:
+            raise ValueError(f"{where}.deployment_id: duplicate identifier")
+        identifiers.add(record["deployment_id"])
+        if record["datasource_uid"] not in known_ds:
+            raise ValueError(f"{where}.datasource_uid: absent from the complete capability map")
+        if "endpoint_host" in record:
+            host = record["endpoint_host"]
+            labels = host.removesuffix(".").split(".")
+            if (any(not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                    for label in labels) or all(label.isdigit() for label in labels)):
+                raise ValueError(f"{where}.endpoint_host: expected a DNS hostname (local names allowed), "
+                                 "without URL, IP address, credentials, port, path or query")
+        if "evidence_date" in record:
+            value = record["evidence_date"]
+            try:
+                if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+                    raise ValueError
+                date.fromisoformat(value)
+            except ValueError:
+                raise ValueError(f"{where}.evidence_date: expected a valid ISO YYYY-MM-DD date") from None
+    return copy.deepcopy(inventory)
+
+
+def load_deployment_inventory(path: str | None, cap: dict) -> dict | None:
+    if path is None:
+        return None
+    # Reject network/device syntax lexically, before stat/open can initiate I/O.
+    normalized = path.replace("\\", "/")
+    if (not normalized or normalized.startswith(("//", "/??/"))
+            or ":" in re.sub(r"^[A-Za-z]:/", "", normalized)
+            or any(unicodedata.category(char) in ("Cc", "Cf", "Cs") for char in normalized)
+            or any(re.fullmatch(r"(?i:CON|PRN|AUX|NUL|CLOCK\$|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])",
+                                part.rstrip(" .").split(".")[0]) for part in normalized.split("/"))):
+        raise ValueError("expected a local file path; UNC, device, URI and alternate-stream paths are forbidden")
+    try:
+        before = os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or
+                getattr(before, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+            raise ValueError("expected a local regular JSON file, without symbolic links or reparse points")
+        if before.st_size > INVENTORY_MAX_BYTES:
+            raise ValueError(f"inventory exceeds {INVENTORY_MAX_BYTES} bytes")
+        with open(path, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError("expected a local regular JSON file")
+            raw = stream.read(INVENTORY_MAX_BYTES + 1)
+        if len(raw) > INVENTORY_MAX_BYTES:
+            raise ValueError(f"inventory exceeds {INVENTORY_MAX_BYTES} bytes")
+        inventory = json.loads(raw.decode("utf-8"), object_pairs_hook=_inventory_object)
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+        raise ValueError("cannot read a valid UTF-8 JSON inventory file") from None
+    return validate_deployment_inventory(inventory, cap)
+
+
+def _inventory_text(value: str) -> str:
+    """HTML text inside code cells; Markdown/link syntax is never interpreted."""
+    return html.escape(value, quote=True).replace("|", "&#124;").replace("\r", "&#13;").replace("\n", "&#10;")
 
 
 def _norm(s: str) -> str:
@@ -716,9 +825,17 @@ class FinancialSource:
 
 
 class Ctx:
-    def __init__(self, cap: dict, registry: dict, cost_mode: str = "auto"):
+    def __init__(self, cap: dict, registry: dict, cost_mode: str = "auto",
+                 deployment_inventory: dict | None = None, deployment_datasource_filter: bool = False):
         self.cap = cap
         self.registry = registry
+        self.locale_table = {}
+        self.deployment_inventory = deployment_inventory
+        self.deployment_datasource_filter = deployment_datasource_filter
+        inventory_uids = _capability_datasource_uids(cap, deployment_datasource_filter)
+        self.deployments = [copy.deepcopy(record) for record in
+                            (deployment_inventory or {}).get("deployments", [])
+                            if record["datasource_uid"] in inventory_uids]
         self.q: dict[str, Q] = {}
         self.by_datasource: dict[str, dict[str, Q]] = {}
         for ds_uid, sigs in cap.get("signals", {}).items():
@@ -755,6 +872,27 @@ class Ctx:
         self.financial_candidates = []
         self._resolve_financial_source()
         self.recorded = bool(self.cost_source and self.cost_source.mode == "recorded")
+
+    def deployment_model_status(self, record: dict) -> str:
+        observed = any(record["model"] in entry.get("models_seen", []) for entry in
+                       self.cap.get("signals", {}).get(record["datasource_uid"], {}).values())
+        return "observed_in_capability_map" if observed else "not_observed_in_capability_map"
+
+    def deployment_manifest(self) -> dict:
+        total = len((self.deployment_inventory or {}).get("deployments", []))
+        declared = {field: sum(field in record for record in self.deployments)
+                    for field in ("processing_region", "storage_region", "evidence_ref", "evidence_date")}
+        return {"schema_version": 1, "provided": self.deployment_inventory is not None,
+                "scope": "selected_datasource" if self.deployment_datasource_filter else "complete_capability_map",
+                "records_loaded": total, "records_in_scope": len(self.deployments),
+                "records_excluded_by_scope": total - len(self.deployments),
+                "declared_datasource_uids_in_scope": sorted({r["datasource_uid"] for r in self.deployments}),
+                "location_status": "declarations_present" if declared["processing_region"] or declared["storage_region"] else "unknown",
+                "fields": {field: {"declared": count, "unknown": len(self.deployments) - count}
+                           for field, count in declared.items()},
+                "records_with_observed_model": sum(self.deployment_model_status(r) == "observed_in_capability_map"
+                                                   for r in self.deployments),
+                "independent_checks": "not_performed"}
 
     def _resolve_financial_source(self):
         levels = {"recorded": [], "native": [], "inline": []}
@@ -882,12 +1020,12 @@ def bp_finops(ctx: Ctx) -> Board | None:
     region_exprs = [(source.expr(region=r), lbl)
                     for r, lbl in regions]
     if any(e for e, _ in region_exprs):
-        region_title = ("Priced subtotal by provider sovereignty (USD/s)" if source.is_subtotal else
-                        "Estimated spend by provider sovereignty (USD/s)" if inline else
-                        "Spend by provider sovereignty (USD/s)")
+        region_title = ("Priced subtotal by provider origin (USD/s)" if source.is_subtotal else
+                        "Estimated spend by provider origin (USD/s)" if inline else
+                        "Spend by provider origin (USD/s)")
         b.ts(region_title, ds, region_exprs, 12, 8,
              "currencyUSD", stacked=True,
-             desc="Split by provider region: sovereignty and AI Act steering."
+             desc=PROVIDER_ORIGIN_NOTE
              + (" " + money_note if inline else ""))
     if source.mode == "native" and q.s.group_label:
         b.ts("Spend by team (USD/s)", ds,
@@ -1136,7 +1274,8 @@ def bp_inference(ctx: Ctx) -> Board | None:
         b.text("Reference: API cost per 1M tokens (self-hosted benchmark)",
                "Compare your GPU cost per 1M generated tokens against these API prices "
                f"(registry dated {ctx.verified}) :\n\n"
-               "| Model | Region | Input | Output |\n|---|---|---|---|\n" + rows,
+               "| Model | Provider region (registry) | Input | Output |\n|---|---|---|---|\n" + rows
+               + "\n\n" + PROVIDER_ORIGIN_NOTE,
                24, 7)
     return b
 
@@ -1154,7 +1293,7 @@ and that is what this dashboard produces.
 | A.6.2.6: AI system operation and monitoring | Evidence that production systems are monitored continuously, not just documented | The whole board, plus the gateway and quality dashboards |
 | A.6.2.8: AI system recording of event logs | Logs enabled at the declared lifecycle phases, retained, retrievable | Logging evidence panel; retention is a Loki config check |
 | A.9: Use of AI systems | Responsible and intended use, human oversight | Adoption dashboard (who uses what) + override counters if instrumented |
-| A.10: Third parties and suppliers | Which providers you depend on, and how that dependency is governed | Model inventory and the sovereignty split |
+| A.10: Third parties and suppliers | Which providers you depend on, and how that dependency is governed | Model inventory and the provider-origin split |
 | Clause 9.1: Monitoring, measurement, analysis, evaluation | Defined metrics, measured, reviewed | Every panel; the review record is yours to keep |
 
 Two cautions. Annex A numbering differs between secondary sources; confirm each
@@ -1178,7 +1317,7 @@ telemetry speaks mostly to MEASURE and MANAGE.
 | MANAGE 4.1: post-deployment monitoring | Monitoring, appeal and override, decommissioning, change management | This board plus the provisioned SLO alerts |
 | MANAGE 2.x: maximise benefit, minimise negative impact | Documented treatment of residual risk | Cost and adoption boards inform the trade-offs |
 | GOVERN 1.1: legal and regulatory requirements understood | Applicable obligations known and tracked | Regulatory timeline panel |
-| GOVERN 6.1/6.2: third-party risk | Supply-chain and vendor dependency governed | Model inventory and sovereignty split |
+| GOVERN 6.1/6.2: third-party risk | Supply-chain and vendor dependency governed | Model inventory and provider-origin split |
 
 For generative AI specifically, NIST AI 600-1 (the Generative AI Profile, July
 2024) adds twelve risk categories mapped back to these four functions; the cost,
@@ -1197,7 +1336,7 @@ CROSSWALK_ROWS = [
     ("Inventory of models actually consumed",
      {"eu-ai-act": "Art. 26 · GPAI chain", "iso-42001": "A.10",
       "nist-rmf": "GOVERN 6.1 · MAP 4.1"}),
-    ("Provider dependency and jurisdiction",
+    ("Provider dependency and registry origin",
      {"eu-ai-act": "GPAI contractual terms", "iso-42001": "A.10",
       "nist-rmf": "GOVERN 6.2"}),
     ("Quality and drift measured",
@@ -1258,6 +1397,46 @@ FRAMEWORKS = {
 }
 
 
+def add_deployment_inventory_panel(board: Board, ctx: Ctx):
+    """Render declarations as escaped HTML text; no Markdown parsing or data links."""
+    translate = lambda text: ctx.locale_table.get(text, text)
+    introduction = ("Processing and storage locations are unknown without deployment declarations. "
+                    "Use --deployment-inventory with a local JSON file to supply declarations.")
+    if ctx.deployment_inventory is not None:
+        introduction = ("Deployment inventory supplied; only records in the selected scope are shown. "
+                        "Missing processing or storage regions remain unknown.")
+    disclaimer = ("Model presence only matches an exact model label in the capability map. "
+                  "Endpoints, locations, evidence references and dates are declarations; "
+                  "none are independently checked. Evidence is plain text and is never fetched.")
+    content = "".join(f"<p>{_inventory_text(translate(text))}</p>"
+                      for text in (introduction, PROVIDER_ORIGIN_NOTE, disclaimer))
+    if ctx.deployments:
+        headings = ("Deployment", "Datasource UID", "Model", "Model presence",
+                    "Provider origin (registry)", "Serving provider (declared)",
+                    "Endpoint host (declared)", "Processing region", "Storage region", "Evidence (declared)")
+        content += "<table><thead><tr>" + "".join(
+            f"<th>{_inventory_text(translate(heading))}</th>" for heading in headings) + "</tr></thead><tbody>"
+        for record in ctx.deployments:
+            _, model, status = pricing_sources.resolve_registry_model(record["model"], ctx.registry.get("models", []))
+            origin = (str(model.get("region", "unknown")).upper() + " / " + str(model.get("vendor", "unknown"))
+                      if model and status == "matched" else translate("unknown"))
+            def location(field):
+                return (record[field] + " (" + translate("declared") + ")"
+                        if field in record else translate("unknown"))
+            evidence = " / ".join(record[key] for key in ("evidence_ref", "evidence_date") if key in record)
+            values = (record["deployment_id"], record["datasource_uid"], record["model"],
+                      translate(ctx.deployment_model_status(record)), origin,
+                      record.get("serving_provider", translate("unknown")),
+                      record.get("endpoint_host", translate("unknown")),
+                      location("processing_region"), location("storage_region"), evidence or translate("unknown"))
+            content += "<tr>" + "".join(f"<td><code>{_inventory_text(value)}</code></td>" for value in values) + "</tr>"
+        content += "</tbody></table>"
+    else:
+        content += "<p>" + _inventory_text(translate("No deployment declarations in this scope; locations remain unknown.")) + "</p>"
+    board.panel("text", "Deployment locations (declarations)", 24, 12, None,
+                description=PROVIDER_ORIGIN_NOTE, options={"mode": "html", "content": content})
+
+
 def bp_governance(ctx: Ctx) -> Board:
     """Le même socle de preuves, lu selon un ou plusieurs référentiels.
 
@@ -1272,7 +1451,7 @@ def bp_governance(ctx: Ctx) -> Board:
              else "AI · Governance & Compliance Evidence")
     b = Board(det_uid("ai-governance-eu-ai-act", scope=ctx.uid_scope), title,
               f"Observability evidence for {names}: logging, inventory, "
-              "sovereignty, incidents. Generated by grafana-llmops-forge, "
+              "provider origin, declared deployment locations, incidents. Generated by grafana-llmops-forge, "
               "not legal advice.", ["governance"] + picked)
     if len(picked) > 1:
         b.text("One signal, several frameworks", crosswalk_md(picked),
@@ -1292,10 +1471,9 @@ def bp_governance(ctx: Ctx) -> Board:
                 exprs.append((q.req_rate(
                     sel=f'{{{qlbl(q.s.model_label)}=~"{rx}"}}'), lbl))
         if exprs:
-            b.ts("Traffic by provider sovereignty", ds, exprs, 12, 8,
+            b.ts("Traffic by provider origin", ds, exprs, 12, 8,
                  "reqps", stacked=True,
-                 desc="Actual dependency on providers by region: sovereignty "
-                      "steering and GPAI contractual clauses.")
+                 desc=PROVIDER_ORIGIN_NOTE)
     if ctx.loki:
         lbl = (ctx.loki.get("labels") or ["service_name"])[0]
         lbl_q = qlbl(lbl)
@@ -1318,10 +1496,12 @@ def bp_governance(ctx: Ctx) -> Board:
             rows.append(f"| `{_md(s)}` | ? | ? | ? | to qualify |")
         b.text("Observed model inventory (feeds your AI system register)",
                "Models actually in use (auto-detected):\n\n"
-               "| Observed model | Vendor | Region | Licence | GPAI |\n"
+               "| Observed model | Vendor | Provider region (registry) | Licence | GPAI |\n"
                "|---|---|---|---|---|\n" + "\n".join(rows) +
                "\n\nÀ rapprocher de votre registre interne des systèmes d'IA "
-               "(cartographie fournisseur/déployeur).", 12, 10)
+               "(cartographie fournisseur/déployeur).\n\n" + PROVIDER_ORIGIN_NOTE, 12, 10)
+    b.row_break()
+    add_deployment_inventory_panel(b, ctx)
     b.alertlist("Incident watch (AI Act Art. 73 · ISO A.8 · NIST MANAGE 4.x)", 12, 10)
     return b
 
@@ -1669,6 +1849,9 @@ def main() -> int:
     ap.add_argument("--capability", default="capability_map.json")
     ap.add_argument("--datasource", help="Restreindre les signaux Prometheus à un UID "
                     "ou nom unique, avant sélection financière et tarification")
+    ap.add_argument("--deployment-inventory", metavar="FILE",
+                    help="Inventaire JSON local version 1 : lieux déclarés, jamais déduits "
+                         "du fournisseur. Maximum 1 Mio / 500 déploiements.")
     ap.add_argument("--blueprints", default="auto",
                     help="auto | liste: finops,gateway,agents,adoption,inference,quality,governance")
     ap.add_argument("--deploy", action="store_true")
@@ -1738,9 +1921,10 @@ def main() -> int:
         with open(args.capability, encoding="utf-8") as f:
             cap = json.load(f)
     try:
+        inventory = load_deployment_inventory(args.deployment_inventory, cap)
         cap = filter_capability_datasource(cap, args.datasource)
     except ValueError as e:
-        print(f"[fail] {e}", file=sys.stderr)
+        print(f"[fail] inventory/datasource validation: {e}", file=sys.stderr)
         return 2
     wanted = (list(BLUEPRINTS) if args.blueprints == "auto"
               else [b.strip() for b in args.blueprints.split(",")])
@@ -1752,7 +1936,7 @@ def main() -> int:
     pricing_cache = os.path.join(capability_dir, pricing_sources.CACHE_FILENAME)
     registry = pricing_sources.official_registry_base(
         load_registry(args.registry, local_registry))
-    initial_ctx = Ctx(cap, registry, args.cost_mode)
+    initial_ctx = Ctx(cap, registry, args.cost_mode, inventory, args.datasource is not None)
     if financial_requested:
         try:
             initial_ctx.require_financial_source()
@@ -1776,7 +1960,7 @@ def main() -> int:
                   f"Artificial Analysis median multi-provider estimates via {via}. "
                   "For OTel recording rules and inline estimates only; native/recorded "
                   "financial sources retain their own provenance. Attribution: Artificial Analysis.")
-    ctx = Ctx(cap, registry, args.cost_mode)
+    ctx = Ctx(cap, registry, args.cost_mode, inventory, args.datasource is not None)
     ctx.rules_interval = args.rules_interval
     if financial_requested and ctx.cost_source:
         print(f"[coverage] datasource={ctx.cost_source.ds_uid}: "
@@ -1801,6 +1985,7 @@ def main() -> int:
     if _unknown:
         print(f"[warn] unknown framework(s): {_unknown}; known: "
               f"{sorted(FRAMEWORKS)}", file=sys.stderr)
+    ctx.locale_table = load_locale(args.locale)
     boards, skipped, errors = [], [], []
     for name in wanted:
         fn = BLUEPRINTS.get(name)
@@ -1820,7 +2005,7 @@ def main() -> int:
             print("  -", e, file=sys.stderr)
         return 2
 
-    _loc = load_locale(args.locale)
+    _loc = ctx.locale_table
     if _loc:
         for _, board in boards:
             board.d = localize(board.d, _loc)
@@ -1843,6 +2028,7 @@ def main() -> int:
         "folder_title": args.folder,
         "uid_scope": args.uid_scope,
         "financial_source": ctx.financial_manifest(),
+        "deployment_inventory": ctx.deployment_manifest(),
         "resources": {
             "folder": {"requested": 1 if operation == "deploy" else 0,
                        "succeeded": 0, "failed": 0, "skipped": 0},

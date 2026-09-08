@@ -58,6 +58,9 @@ jobs:
         if: matrix.python == '3.13'
         run: python tests/quality_stat_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
 
+      - name: Deployment declarations preserve scope and remain plain text
+        run: python tests/deployment_inventory_invariants.py
+
       - name: Workflows are code, lint them too
         if: matrix.python == '3.13'
         run: |
