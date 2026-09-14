@@ -2015,6 +2015,13 @@ def main() -> int:
     folder_uid = det_uid(args.folder, "fold", args.uid_scope)
     alert_rules = (build_alerts(ctx, folder_uid, args.daily_budget, args.slo_target)
                    if args.with_alerts else [])
+    budget_uid = det_uid("llm-daily-budget", "alr", args.uid_scope)
+    budget_generated = any(rule["uid"] == budget_uid for rule in alert_rules)
+    budget_reason = (None if budget_generated else
+                     (ctx.cost_source.coverage["budget_omission_reason"] if ctx.cost_source else None)
+                     or "No usable financial source or budget cost expression.")
+    pause_budget = operation == "deploy" and args.with_alerts and not budget_generated
+    budget_action = ("upsert" if budget_generated else "pause") if args.with_alerts else "not_requested"
     manifest = {
         "schema": "grafana-llmops-forge/deployment-manifest",
         "version": 2,
@@ -2029,12 +2036,20 @@ def main() -> int:
         "uid_scope": args.uid_scope,
         "financial_source": ctx.financial_manifest(),
         "deployment_inventory": ctx.deployment_manifest(),
+        "budget_alert": {
+            "uid": budget_uid, "org_id": ctx.org_id, "folder_uid": folder_uid,
+            "action": budget_action,
+            "result": ("pending" if operation == "deploy" else "not_executed")
+                      if args.with_alerts else "not_requested",
+            "reason": budget_reason if args.with_alerts else None,
+            "is_paused": None, "pause_policy": "preserve_existing_pause",
+        },
         "resources": {
             "folder": {"requested": 1 if operation == "deploy" else 0,
                        "succeeded": 0, "failed": 0, "skipped": 0},
             "dashboards": {"requested": len(boards), "succeeded": 0,
                            "failed": 0, "skipped": 0},
-            "alerts": {"requested": len(alert_rules), "succeeded": 0,
+            "alerts": {"requested": len(alert_rules) + int(pause_budget), "succeeded": 0,
                        "failed": 0, "skipped": 0},
         },
         "errors": [],
@@ -2059,6 +2074,11 @@ def main() -> int:
         {"uid": rule["uid"], "title": rule["title"],
          "status": "pending" if operation == "deploy" else "succeeded"}
         for rule in alert_rules]
+    if pause_budget:
+        # This is a scoped maintenance operation, not a generated replacement rule.
+        manifest["alerts"].append(
+            {"uid": budget_uid, "title": "LLM financial budget", "action": "pause",
+             "status": "pending", "reason": budget_reason})
     if operation == "generate":
         manifest["resources"]["dashboards"]["succeeded"] = len(boards)
         manifest["resources"]["alerts"]["succeeded"] = len(alert_rules)
@@ -2083,7 +2103,9 @@ def main() -> int:
         except (GrafanaError, SystemExit) as e:
             manifest["resources"]["folder"]["failed"] = 1
             manifest["resources"]["dashboards"]["skipped"] = len(boards)
-            manifest["resources"]["alerts"]["skipped"] = len(alert_rules)
+            manifest["resources"]["alerts"]["skipped"] = len(manifest["alerts"])
+            if args.with_alerts:
+                manifest["budget_alert"]["result"] = "not_executed"
             for entry in manifest["dashboards"] + manifest["alerts"]:
                 entry["status"] = "skipped"
             manifest["errors"].append(
@@ -2098,6 +2120,7 @@ def main() -> int:
         else:
             actual_folder_uid = folder.get("uid") or folder_uid
             manifest["folder_uid"] = actual_folder_uid
+            manifest["budget_alert"]["folder_uid"] = actual_folder_uid
             manifest["resources"]["folder"]["succeeded"] = 1
             manifest["deployed"] = True
             print(f"\nFolder '{folder.get('title')}' (uid {actual_folder_uid})")
@@ -2128,18 +2151,62 @@ def main() -> int:
                 print(f"\n[partial] {ds_stats['succeeded']}/{ds_stats['requested']} "
                       "dashboards deployed. Re-running after fixing the role is safe: "
                       "deterministic UIDs make it an update.", file=sys.stderr)
-            if alert_rules and not client.contact_points():
-                print("  [warn] no contact point configured: alerts will fire with no "
-                      "recipient (Alerting -> Contact points).")
+            if pause_budget:
+                expected_budget = {
+                    "uid": budget_uid, "orgID": ctx.org_id, "folderUID": actual_folder_uid,
+                    "ruleGroup": "llmops-slo",
+                    "labels": {"origin": "llmops-forge",
+                               "llmops_rule_identity": alert_logical_identity("llm-daily-budget")},
+                }
+                entry = manifest["alerts"][-1]
+                try:
+                    result = client.pause_budget_alert_rule(expected_budget)
+                except (Exception, SystemExit) as e:
+                    manifest["budget_alert"]["result"] = "failed"
+                    entry.update(status="failed", result="failed", error=str(e))
+                    manifest["resources"]["alerts"]["failed"] += 1
+                    manifest["errors"].append(
+                        {"resource_type": "alert", "identifier": "LLM financial budget",
+                         "uid": budget_uid, "operation": "pause",
+                         "status": getattr(e, "status", 0), "message": _perm_hint("alert", e)})
+                    print(f"  [fail] budget pause was not confirmed: {_perm_hint('alert', e)}",
+                          file=sys.stderr)
+                else:
+                    manifest["budget_alert"].update(
+                        result=result, is_paused=True if result != "absent" else None)
+                    entry.update(status="succeeded", result=result)
+                    manifest["resources"]["alerts"]["succeeded"] += 1
+                    print(f"  [ok] budget: {result}; {budget_reason}")
+            if alert_rules:
+                try:
+                    contacts = client.contact_points()
+                except (GrafanaError, SystemExit) as e:
+                    # This informational lookup must not discard a deployment failure manifest.
+                    print(f"  [warn] contact point availability could not be checked: {e}",
+                          file=sys.stderr)
+                else:
+                    if not contacts:
+                        print("  [warn] no contact point configured: alerts will fire with no "
+                              "recipient (Alerting -> Contact points).")
             for i, rule in enumerate(alert_rules):
                 # Folder UID is part of the alert body and must match the resolved folder.
                 rule["folderUID"] = actual_folder_uid
                 try:
-                    client.upsert_alert_rule(rule)
+                    result = client.upsert_alert_rule(rule)
+                    if rule["uid"] == budget_uid:
+                        paused = result.get("isPaused") if isinstance(result, dict) else None
+                        manifest["budget_alert"].update(
+                            result="upserted_paused" if paused is True else "upserted",
+                            is_paused=paused)
+                        if paused is True:
+                            print("  [info] budget remains paused; review coverage and resume "
+                                  "it explicitly in Grafana when appropriate.")
                     manifest["resources"]["alerts"]["succeeded"] += 1
                     manifest["alerts"][i]["status"] = "succeeded"
                     print(f"  [ok] alert: {rule['title']}")
-                except Exception as e:  # droits alerting et transports hétérogènes
+                except (Exception, SystemExit) as e:  # droits alerting et transports hétérogènes
+                    if rule["uid"] == budget_uid:
+                        manifest["budget_alert"]["result"] = "failed"
                     manifest["resources"]["alerts"]["failed"] += 1
                     manifest["alerts"][i]["status"] = "failed"
                     manifest["alerts"][i]["error"] = str(e)
