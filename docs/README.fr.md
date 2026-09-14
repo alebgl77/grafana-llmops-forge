@@ -42,3 +42,18 @@ python3 scripts/forge_dashboards.py --capability capability_map.json \
 ```
 
 Utilisable aussi comme **Agent Skill** (Claude Code, Claude.ai, Cowork) : *« Audite mon Grafana, déploie ce qui est pertinent, puis prouve-le visuellement. »*
+
+## Feuille de route
+
+**Chaque changement IA, une décision que vous pouvez justifier.** L'orientation proposée vise des décisions opérationnelles reproductibles pour les entreprises européennes sur Grafana auto-hébergé, à partir de leurs outils de télémétrie et d'évaluation existants.
+
+Ces horizons sont prévus avec des critères de passage, sans dates de livraison :
+
+- **H0 · Des fondations fiables :** mesures interprétables, lacunes explicites et diffs de configuration en lecture seule.
+- **H1 · Comparer un changement :** coût par tâche réussie à qualité et latence explicites, avec refus motivé lorsque les éléments sont insuffisants.
+- **H2 · Livrer avec des preuves :** dossiers portables de promotion et contrôles consommés par la CI et les outils de provisioning du client.
+- **H3 · Répéter la prochaine migration :** tests de migration exécutés ou scénarios de sensibilité clairement identifiés, après validation de l'utilité du parcours précédent.
+
+Au 2026-09-14, **v2.0.2 reste la version publiée de référence** ; les cinq corrections de fondation et le correctif du cycle des alertes budgétaires de la [PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) sont intégrés dans main, mais pas encore inclus dans une version publiée. Les parcours de comparaison et dossiers proposés restent des travaux futurs.
+
+Consulter la [feuille de route française](ROADMAP.fr.md) ou la [version anglaise canonique](../ROADMAP.md) pour la démonstration future, le périmètre et les critères de passage.
