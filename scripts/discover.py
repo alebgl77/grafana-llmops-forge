@@ -67,25 +67,33 @@ TEAM_LABEL_CANDIDATES = ["team", "team_alias", "service_name", "service.name",
 LOKI_AI_HINT_LABELS = ["service_name", "gen_ai_system", "ai_system", "app", "job"]
 
 
+def returned_values_coverage(entry: dict) -> dict:
+    """Describe local preservation, not backend exhaustiveness or a time window."""
+    return {"scope": "backend_returned_values", "local_truncation": False,
+            "backend_completeness": "unknown",
+            "counts": {key: len(entry.get(key, [])) for key in
+                       ("metric_names", "models_seen", "providers_seen")}}
+
+
 def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
     """Sonde une datasource prometheus-like : dialectes + noms réels + labels utiles."""
     found = {}
     for dialect, pattern in DIALECT_SIGNATURES.items():
         names = client.prom_metric_names(ds, pattern)
         if names:
-            entry = {"metric_names": names[:400]}
+            entry = {"metric_names": sorted(names)}
             sample = promql_matcher("__name__", "=~", pattern)
             for cand in MODEL_LABEL_CANDIDATES.get(dialect, []):
                 vals = client.prom_label_values(ds, cand, match=sample)
                 if vals:
                     entry["model_label"] = cand
-                    entry["models_seen"] = vals[:60]
+                    entry["models_seen"] = sorted(vals)
                     break
             for cand in PROVIDER_LABEL_CANDIDATES.get(dialect, []):
                 vals = client.prom_label_values(ds, cand, match=sample)
                 if vals:
                     entry["provider_label"] = cand
-                    entry["providers_seen"] = vals[:40]
+                    entry["providers_seen"] = sorted(vals)
                     break
             if dialect == "otel_genai":
                 for cand in ("gen_ai_token_type", "gen_ai.token.type", "token_type",
@@ -99,6 +107,7 @@ def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
                 if vals and len(vals) <= 500:
                     entry.setdefault("group_labels", []).append(
                         {"label": cand, "cardinality": len(vals)})
+            entry["discovery_coverage"] = returned_values_coverage(entry)
             found[dialect] = entry
     return found
 
@@ -239,6 +248,14 @@ def summarize(cap: dict) -> str:
                 extra = f" : {len(info['models_seen'])} modèle(s) vus"
             lines.append(f"  [{uid}] dialecte {dial}: "
                          f"{len(info['metric_names'])} métriques{extra}")
+            coverage = info.get("discovery_coverage")
+            if coverage:
+                counts = coverage["counts"]
+                lines.append("    Valeurs retournées par le backend, sans troncature locale : "
+                             f"{counts['metric_names']} métriques, {counts['models_seen']} modèles, "
+                             f"{counts['providers_seen']} fournisseurs; exhaustivité backend inconnue.")
+            else:
+                lines.append("    Couverture de découverte inconnue (ancienne carte); relancer discover.")
     for g in cap["gaps"]:
         lines.append(f"  GAP: {g}")
     for e in cap.get("datasource_errors", []):

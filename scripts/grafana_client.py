@@ -11,6 +11,7 @@ Le token n'est jamais loggé.
 from __future__ import annotations
 
 import base64
+import copy
 import hashlib
 import json
 import os
@@ -139,6 +140,56 @@ def det_uid(name: str, prefix: str = "llmops", scope: str | None = None) -> str:
 def alert_logical_identity(uid_name: str) -> str:
     """Identité complète d'une règle, indépendante de l'UID Grafana tronqué."""
     return hashlib.sha256(uid_name.encode("utf-8")).hexdigest()
+
+
+def _is_forge_budget(rule: dict) -> bool:
+    labels = rule.get("labels")
+    return (isinstance(labels, dict) and labels.get("origin") == "llmops-forge"
+            and labels.get("llmops_rule_identity") == alert_logical_identity("llm-daily-budget")
+            and rule.get("ruleGroup") == "llmops-slo")
+
+
+def _assert_alert_ownership(existing, rule: dict):
+    """Shared upsert/pause collision guard; never infer ownership from an UID alone."""
+    uid = rule["uid"]
+    labels = rule.get("labels") or {}
+    expected_identity = labels.get("llmops_rule_identity")
+    if not isinstance(expected_identity, str) or not expected_identity:
+        raise GrafanaError(400, f"alert rule {uid} has no logical identity; refusing write")
+    if not isinstance(existing, dict):
+        raise GrafanaError(409, f"alert rule UID {uid}: identity response is not an object; "
+                           "refusing overwrite (use --uid-scope)")
+    existing_labels = existing.get("labels")
+    if not isinstance(existing_labels, dict):
+        existing_labels = {}
+    def org(value):
+        if _is_forge_budget(rule) and (isinstance(value, bool) or not isinstance(value, (int, str))):
+            return None
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            return None
+    conflicts = [field for field in ("uid", "folderUID", "ruleGroup") if existing.get(field) != rule.get(field)]
+    if org(existing.get("orgID")) != org(rule.get("orgID")) or org(rule.get("orgID")) is None:
+        conflicts.append("orgID")
+    if not labels.get("origin") or existing_labels.get("origin") != labels["origin"]:
+        conflicts.append("origin")
+    if existing_labels.get("llmops_rule_identity") != expected_identity:
+        conflicts.append("logical identity")
+    if conflicts:
+        raise GrafanaError(409, f"alert rule UID {uid} already belongs to an incompatible rule "
+                           f"({', '.join(conflicts)}); refusing overwrite (use --uid-scope)")
+
+
+def _assert_budget_response(existing, rule: dict):
+    _assert_alert_ownership(existing, rule)
+    if (type(existing.get("isPaused")) is not bool
+            or any(not isinstance(existing.get(key), str) or not existing[key]
+                   for key in ("title", "condition", "for", "noDataState", "execErrState"))
+            or not isinstance(existing.get("data"), list) or not existing["data"]
+            or any(not isinstance(query, dict) for query in existing["data"])
+            or not isinstance(existing.get("annotations"), dict)):
+        raise GrafanaError(502, f"budget alert {rule['uid']} returned an incomplete rule or ambiguous pause state")
 
 
 class GrafanaClient:
@@ -505,49 +556,40 @@ class GrafanaClient:
                 return self.post("/api/v1/provisioning/alert-rules", rule)
             raise
 
-        conflicts = []
-        if not isinstance(existing, dict) or existing.get("uid") != uid:
-            conflicts.append(
-                f"identity uid={existing.get('uid')!r}"
-                if isinstance(existing, dict) else "identity response is not an object")
-        if not isinstance(existing, dict) or existing.get("folderUID") != rule.get("folderUID"):
-            conflicts.append(
-                f"folderUID={existing.get('folderUID')!r}"
-                if isinstance(existing, dict) else "folderUID is unavailable")
-
-        def _org(value):
-            try:
-                return int(value)
-            except (TypeError, ValueError):
-                return None
-
-        if (not isinstance(existing, dict)
-                or _org(existing.get("orgID")) != _org(rule.get("orgID"))
-                or _org(rule.get("orgID")) is None):
-            conflicts.append(
-                f"orgID={existing.get('orgID')!r}"
-                if isinstance(existing, dict) else "orgID is unavailable")
-        expected_origin = (rule.get("labels") or {}).get("origin")
-        existing_origin = ((existing.get("labels") or {}).get("origin")
-                           if isinstance(existing, dict) else None)
-        existing_identity = ((existing.get("labels") or {}).get("llmops_rule_identity")
-                             if isinstance(existing, dict) else None)
-        if (not expected_origin or existing_origin != expected_origin
-                or existing.get("ruleGroup") != rule.get("ruleGroup")):
-            conflicts.append(
-                f"identity origin={existing_origin!r}, "
-                f"ruleGroup={existing.get('ruleGroup')!r}"
-                if isinstance(existing, dict) else "identity metadata is unavailable")
-        if existing_identity != expected_identity:
-            conflicts.append(
-                f"logical identity={existing_identity!r} (expected {expected_identity!r})")
-        if conflicts:
-            raise GrafanaError(
-                409,
-                f"alert rule UID {uid} already belongs to an incompatible rule "
-                f"({'; '.join(conflicts)}); refusing overwrite (use --uid-scope)",
-                repr(existing)[:2000])
+        _assert_alert_ownership(existing, rule)
+        if _is_forge_budget(rule):
+            _assert_budget_response(existing, rule)
+            # Coverage recovery updates the calculation but never silently resumes a budget.
+            payload = dict(rule, isPaused=existing["isPaused"])
+            result = self.put(f"/api/v1/provisioning/alert-rules/{uid}", payload)
+            _assert_budget_response(result, rule)
+            if result["isPaused"] != payload["isPaused"]:
+                raise GrafanaError(502, f"budget alert {uid}: pause preservation was not confirmed")
+            return result
         return self.put(f"/api/v1/provisioning/alert-rules/{uid}", rule)
+
+    def pause_budget_alert_rule(self, rule: dict) -> str:
+        """Pause one owned budget in its resolved scope; never create or list rules."""
+        if not _is_forge_budget(rule):
+            raise GrafanaError(400, "refusing to pause anything other than the Forge financial budget")
+        uid = rule["uid"]
+        path = f"/api/v1/provisioning/alert-rules/{uid}"
+        try:
+            existing = self.get(path)
+        except GrafanaError as error:
+            if error.status == 404:
+                return "absent"
+            raise
+        _assert_budget_response(existing, rule)
+        if existing["isPaused"]:
+            return "already_paused"
+        payload = copy.deepcopy(existing)
+        payload["isPaused"] = True
+        result = self.put(path, payload)
+        _assert_budget_response(result, rule)
+        if result["isPaused"] is not True:
+            raise GrafanaError(502, f"budget alert {uid}: pause was not confirmed")
+        return "paused"
 
 
 if __name__ == "__main__":

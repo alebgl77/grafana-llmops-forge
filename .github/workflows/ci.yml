@@ -47,6 +47,23 @@ jobs:
           EOF
           ../prometheus-${PROM_VER}.linux-amd64/promtool check rules /tmp/crd.yml
 
+      - name: Financial sources and recorded costs preserve scope and values
+        if: matrix.python == '3.13'
+        run: |
+          python tests/recorded_cost_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
+          python tests/financial_source_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
+          python tests/financial_coverage_invariants.py
+
+      - name: Quality statistics retain their meaning in English and French
+        if: matrix.python == '3.13'
+        run: python tests/quality_stat_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
+
+      - name: Deployment declarations preserve scope and remain plain text
+        run: python tests/deployment_inventory_invariants.py
+
+      - name: Budget alerts preserve safe lifecycle state
+        run: python tests/budget_alert_lifecycle_invariants.py
+
       - name: Workflows are code, lint them too
         if: matrix.python == '3.13'
         run: |
@@ -211,6 +228,113 @@ jobs:
               full = get("/api/dashboards/uid/"+d["uid"])
               assert full["dashboard"]["panels"], d["title"]
           print(f"{len(ds)} dashboards live:", [d["title"] for d in ds])
+          PY
+      - name: Budget coverage changes pause the scoped live rule and preserve that pause
+        env: {GRAFANA_URL: "http://localhost:3000", GRAFANA_USER: admin, GRAFANA_PASSWORD: admin}
+        run: |
+          python - <<'PY'
+          import base64, copy, json, pathlib, subprocess, sys, urllib.request
+
+          auth = base64.b64encode(b"admin:admin").decode()
+          def get(path):
+              request = urllib.request.Request(
+                  "http://localhost:3000" + path,
+                  headers={"Authorization": "Basic " + auth})
+              with urllib.request.urlopen(request, timeout=15) as response:
+                  return json.load(response)
+
+          endpoint = "/api/v1/provisioning/alert-rules"
+          initial_rules = {r["uid"]: r for r in get(endpoint)}
+          assert initial_rules, "the initial deployment must provide unrelated rules"
+          initial_folders = {r["folderUID"] for r in initial_rules.values()}
+          folders_before = {uid: get("/api/folders/" + uid) for uid in initial_folders}
+          org_id = get("/api/org")["id"]
+          root = pathlib.Path("budget-lifecycle-e2e")
+          root.mkdir()
+          cap = json.load(open("cap.json"))
+          ds_uid = next(uid for uid, signals in cap["signals"].items() if "otel_genai" in signals)
+          entry = copy.deepcopy(cap["signals"][ds_uid]["otel_genai"])
+          # Keep the token histogram and sum; omit request/latency signals so this
+          # dedicated fixture generates only the budget rule, with real datasource UIDs.
+          entry["metric_names"] = [name for name in entry["metric_names"]
+                                   if "token_usage" in name and name.endswith(("_bucket", "_sum"))]
+          assert len(entry["metric_names"]) == 2, entry["metric_names"]
+          entry["providers_seen"] = ["openai"]
+          cap["signals"] = {ds_uid: {"otel_genai": entry}}
+          cap["datasources"]["prometheus"] = [d for d in cap["datasources"]["prometheus"]
+                                               if d["uid"] == ds_uid]
+
+          def deploy(stage, models):
+              entry["models_seen"] = models
+              entry["discovery_coverage"] = {
+                  "scope": "backend_returned_values", "local_truncation": False,
+                  "backend_completeness": "unknown",
+                  "counts": {key: len(entry[key])
+                             for key in ("metric_names", "models_seen", "providers_seen")}}
+              capability = root / (stage + ".json")
+              capability.write_text(json.dumps(cap), encoding="utf-8")
+              out = root / stage
+              subprocess.run([
+                  sys.executable, "scripts/forge_dashboards.py", "--capability", str(capability),
+                  "--blueprints", "finops", "--cost-mode", "inline", "--deploy", "--with-alerts",
+                  "--folder", "Forge CI budget lifecycle", "--uid-scope", "ci-budget-lifecycle",
+                  "--out-dir", str(out)], check=True)
+              manifest = json.loads((out / "deploy_manifest.json").read_text(encoding="utf-8"))
+              assert manifest["deployment_status"] == "success" and not manifest["errors"], stage
+              assert manifest["deployed"] and manifest["uid_scope"] == "ci-budget-lifecycle", stage
+              return manifest
+
+          def assert_unrelated_unchanged(budget_uid):
+              current = {r["uid"]: r for r in get(endpoint)}
+              assert set(current) == set(initial_rules) | {budget_uid}, "unexpected rule set change"
+              assert {uid: current[uid] for uid in initial_rules} == initial_rules, "unrelated rules changed"
+              assert {uid: get("/api/folders/" + uid) for uid in initial_folders} == folders_before
+
+          complete = ["gpt-5.4"]
+          partial = complete + ["forge-ci-unpriced-budget-model"]
+          first = deploy("eligible", complete)
+          assert first["financial_source"]["coverage"]["budget_eligible"] is True
+          assert len(first["alerts"]) == 1, "fixture must isolate the budget rule"
+          budget_uid = first["alerts"][0]["uid"]
+          assert "llm-daily-budget" in budget_uid and budget_uid not in initial_rules
+          folder_uid = first["folder_uid"]
+          assert folder_uid not in initial_folders
+          live = get(endpoint + "/" + budget_uid)
+          assert live["uid"] == budget_uid and live["ruleGroup"] == "llmops-slo"
+          assert live["orgID"] == org_id and live["folderUID"] == folder_uid
+          assert live["labels"]["origin"] == "llmops-forge" and live["labels"]["severity"] == "warning"
+          assert next(query for query in live["data"] if query["refId"] == "A")["datasourceUid"] == ds_uid
+          assert live["isPaused"] is False, "eligible budget must initially be active"
+          assert_unrelated_unchanged(budget_uid)
+
+          for stage, result in (("partial", "paused"), ("partial-again", "already_paused")):
+              manifest = deploy(stage, partial)
+              assert get(endpoint + "/" + budget_uid)["isPaused"] is True, stage
+              coverage = manifest["financial_source"]["coverage"]
+              assert coverage["status"] == "partial_prices" and coverage["budget_eligible"] is False
+              assert len(manifest["alerts"]) == 1, "only the budget maintenance operation is expected"
+              maintenance = manifest["alerts"][0]
+              assert maintenance["uid"] == budget_uid and maintenance["action"] == "pause"
+              assert maintenance["status"] == "succeeded" and maintenance["result"] == result
+              assert manifest["resources"]["alerts"] == {
+                  "requested": 1, "succeeded": 1, "failed": 0, "skipped": 0}
+              state = manifest["budget_alert"]
+              assert state["uid"] == budget_uid and state["folder_uid"] == folder_uid
+              assert state["org_id"] == org_id and state["action"] == "pause"
+              assert state["result"] == result and state["is_paused"] is True, state
+              assert state["reason"] and state["pause_policy"] == "preserve_existing_pause"
+              assert_unrelated_unchanged(budget_uid)
+
+          restored = deploy("eligible-again", complete)
+          assert restored["financial_source"]["coverage"]["budget_eligible"] is True
+          assert [a["uid"] for a in restored["alerts"]] == [budget_uid]
+          assert get(endpoint + "/" + budget_uid)["isPaused"] is True, "restoring coverage must not unpause"
+          state = restored["budget_alert"]
+          assert state["uid"] == budget_uid and state["action"] == "upsert"
+          assert state["result"] == "upserted_paused" and state["is_paused"] is True, state
+          assert state["pause_policy"] == "preserve_existing_pause"
+          assert_unrelated_unchanged(budget_uid)
+          print("Budget lifecycle PASS: active -> paused -> already_paused -> still paused; unrelated rules intact")
           PY
       - name: Diagnose on failure (compose ps + container logs)
         if: failure()

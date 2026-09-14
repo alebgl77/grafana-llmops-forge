@@ -26,7 +26,7 @@ Your teams ship LLM features. Your CFO asks what they cost. Your board asks abou
 
 **Runs anywhere your platform already is.** Prometheus, Thanos, Mimir, VictoriaMetrics, AWS AMP, Grafana Cloud or Kubernetes under the Prometheus Operator: the generated rules ship in both the portable format and a `PrometheusRule` manifest. Dashboards render in English by default, French with `--locale fr`. Governance evidence reads against the **EU AI Act, ISO/IEC 42001 and NIST AI RMF**; `--framework` picks which.
 
-> **Not the same thing as Grafana Cloud AI Observability.** Grafana shipped its own AI/agent observability (public preview, April 2026). It is excellent, but Cloud-only, and it asks you to adopt *their* SDK. This one works on **self-hosted OSS**, on whatever telemetry you already emit, and adds **cost by provider sovereignty** and **EU AI Act evidence**. See the [FAQ](#faq).
+> **Not the same thing as Grafana Cloud AI Observability.** Grafana shipped its own AI/agent observability (public preview, April 2026). It is excellent, but Cloud-only, and it asks you to adopt *their* SDK. This one works on **self-hosted OSS**, on whatever telemetry you already emit, and adds **cost by provider origin** and **EU AI Act evidence**. Provider origin does not establish processing or storage locations. See the [FAQ](#faq).
 
 ```bash
 export GRAFANA_URL=https://grafana.your-company.com GRAFANA_TOKEN=glsa_...
@@ -48,7 +48,7 @@ changes only the exit code. Visual audit likewise remains `failed` when an
 expected capture is absent, even when `--allow-empty` explicitly permits exit 0.
 
 <div align="center"><img src="docs/assets/dashboard-finops.svg" alt="FinOps dashboard illustration" width="100%"/>
-<sub><i><b>Illustration</b> (hand-drawn SVG, not a screenshot) of the FinOps blueprint: cost composed from a 33-model price registry, split by provider sovereignty. For the real thing on real data, run <code>make demo</code>: it boots Grafana + Prometheus + a synthetic LLM workload and deploys these dashboards for real in about a minute.</i></sub></div>
+<sub><i><b>Illustration</b> (hand-drawn SVG, not a screenshot) of the FinOps blueprint: cost composed from a 33-model price registry. Current panels label the regional split as provider origin, which does not establish processing or storage locations. For the real thing on real data, run <code>make demo</code>: it boots Grafana + Prometheus + a synthetic LLM workload and deploys these dashboards for real in about a minute.</i></sub></div>
 
 ## Why this is different
 
@@ -57,7 +57,7 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 1. **Discovery-first, never assume.** `discover.py` probes your datasources and captures the *actual* metric names present (OTel exporters disagree on suffixes: `_seconds`, `_token`, `_total`). Panels are only generated for queries that will return data. Missing signals become an **instrumentation gap report** with exact configs, not empty panels.
 2. **Four telemetry dialects, one mental model.** OpenTelemetry GenAI (`gen_ai_*`), LiteLLM gateway (`litellm_*`, native USD spend), inference engines (`vllm:*`, `tgi_*`), GPU (`DCGM_*`). Each blueprint is translated into whatever you actually emit.
 3. **Cost is computed, not hoped for.** Native gateway spend when available; otherwise PromQL composed by joining your token counters with a bundled **33-model price registry** (US/EU/Asia, input/output/cached, tiered pricing), refreshable from official pricing pages when stale.
-4. **Governance is observable.** The EU AI Act dashboard maps articles (12, 26§6, 50, 73) to live signals: logging evidence, retention posture, incident watch, an auto-built model inventory with sovereignty and GPAI flags, and the post-Digital-Omnibus timeline.
+4. **Governance is observable.** The EU AI Act dashboard maps articles (12, 26§6, 50, 73) to live signals: logging evidence, retention posture, incident watch, an auto-built model inventory with provider-origin and GPAI flags, and the post-Digital-Omnibus timeline. A separate optional deployment inventory shows declared processing/storage locations; absent declarations remain unknown.
 5. **Verified by eye, not just by API.** HTTP 200 proves the JSON was accepted, not that the render is right. After deploy, `visual_audit.py` captures every panel (native Grafana renderer, Playwright fallback) and an AI vision pass checks scale plausibility, "No data" panels, p50>p95 impossibilities, cross-panel coherence, then loops remediation (max 2 iterations, then a report of what remains).
 
 <div align="center"><img src="docs/assets/architecture.svg" alt="Pipeline" width="100%"/>
@@ -67,13 +67,13 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 
 | Dashboard | Answers | Key panels |
 |---|---|---|
-| 💰 **Executive FinOps** | *What does AI cost, where, is it drifting?* | spend/day, cost/request, **sovereignty split 🇪🇺🇺🇸🌏**, per-team spend, top models, unpriced-models watchlist |
+| 💰 **Executive FinOps** | *What does AI cost, where, is it drifting?* | spend/day, cost/request, **provider-origin split 🇪🇺🇺🇸🌏**, per-team spend, top models, unpriced-models watchlist |
 | 🛡 **Gateway Operations** | *Are we meeting SLOs right now?* | availability, p50/p95/p99, **TTFT**, errors by type, provider rate-limit headroom, `$model` variable |
 | 🤖 **Agents & RAG** | *What do our agents do, where do they fail?* | invoke/tool rates, per-tool errors, tokens per agent, embeddings latency, **TraceQL panel** (Tempo) |
 | 📈 **Adoption** | *Who actually adopted what?* | active teams, **new adopters (7d)**, model mix over time, top token consumers (shadow AI shows up here) |
 | ⚡ **Inference (self-hosted)** | *Do our GPUs hold, at what cost vs API?* | vLLM TTFT/TPOT, queue, **KV-cache saturation**, preemptions, GPU util/VRAM, API-price benchmark table |
 | ✅ **Quality & Evals** | *Is the output any good, and is it drifting?* | eval score p50/p10, score per model, guardrail blocks, eval volume (a system can be green on latency and wrong on content) |
-| ⚖ **Governance Evidence** | *What do we show an auditor?* | the same telemetry read against **EU AI Act, ISO/IEC 42001 and NIST AI RMF** (`--framework`): regulatory timeline, logging evidence, **auto model inventory**, provider-jurisdiction split, incident watch |
+| ⚖ **Governance Evidence** | *What do we show an auditor?* | the same telemetry read against **EU AI Act, ISO/IEC 42001 and NIST AI RMF** (`--framework`): regulatory timeline, logging evidence, **auto model inventory**, provider-origin split, declared deployment locations, incident watch |
 
 Blueprints only materialize when the underlying signals exist. No empty panels.
 
@@ -84,7 +84,25 @@ Plus **provisioned SLO alerts** built the way SREs expect them: **multi-window b
 
 ### Cost that scales
 
-By default the forge composes cost from token counters × a bundled price registry. That's fine to bootstrap and slow past ~15 models. When discovery finds OTel GenAI signals, token counters, a model label, and usable prices, the forge also writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. Load it into Prometheus and your FinOps panels go from a 2N-term sum to `sum(llm:cost_usd_per_second)`: unlimited models, O(1) queries, and price updates without regenerating a single dashboard. The forge detects the recorded metric on the next discovery run and switches automatically.
+Financial selection is independent of the operational dashboards: `--cost-mode auto` prefers the exact total metric `llm:cost_usd_per_second`, then native LiteLLM spend, then OTel tokens × registry prices. Candidates are resolved across all Prometheus datasources. If several sources have the same priority, financial generation/deployment stops before remote writes; pass `--datasource <UID|unique name>` to forge or repeat discovery with that selector. `--cost-mode inline` ignores recorded totals but retains native-spend priority. `--cost-mode recorded` requires the discovered total; `:input`/`:output` components alone are insufficient.
+
+FinOps and its budget alert use the selected datasource. A cost/request ratio is omitted when that datasource lacks a request signal. Native spend is not an audited invoice, and recorded costs retain their upstream provenance; neither is attributed to the local price registry or Artificial Analysis. Missing native/recorded monetary series stay absent, and the budget alert uses Grafana's `NoData` state to report unknown cost. The dashboard description and deployment manifest expose the selected UID, mode and status; discovery does not establish current data availability.
+
+Discovery preserves every metric name, model and provider value returned by the backend, with deterministic ordering and counts in `discovery_coverage`. This establishes **no local truncation**, not backend exhaustiveness: backend warnings, time scope and pagination are not certified. Inline estimates expose fully priced, partially priced and unpriced model counts in FinOps, CLI diagnostics and `financial_source.coverage`. Missing prices make the amount an explicit **subtotal** and omit the budget alert. Older maps without consistent coverage metadata still produce estimates limited to listed models; re-run `discover.py` before enabling their budget. Even an eligible inline budget only covers returned models. A valid zero price counts as priced.
+
+Inline composition is capped at **40 models with usable prices**. Above that limit, no monetary subtotal or budget is generated: select the financial datasource with `--datasource`, generate and load its recording rules, then repeat discovery and forge. All priced models supplied to the rule generator are retained, including beyond 60 models. Recorded queries are shorter, but execution cost still depends on series count and time window. Native and recorded sources retain unverified upstream coverage and do not depend on registry coverage.
+
+With `--deploy --with-alerts`, an ineligible budget also pauses an existing Forge budget in the resolved organization and folder. Forge checks its deterministic UID, rule group and ownership labels before updating only `isPaused`; an absent budget is not created. The manifest records `budget_alert.action`, `result` (`paused`, `already_paused`, `absent` or `failed`) and the coverage reason. Alert resource counts include this maintenance operation, including confirmed absence or an already paused rule. A collision or unconfirmed HTTP response makes the deployment partial/failed. Generation, dry-run and deployments without `--with-alerts` do not perform this check. When coverage becomes eligible again, Forge updates the budget while preserving its existing pause (`upserted_paused`): review the coverage and resume it explicitly in Grafana. Other SLO pause behavior is unchanged.
+
+### Provider origin and declared deployment locations
+
+The registry field and Prometheus label `region` remain compatible and describe **provider origin**. They establish neither processing nor storage location. Governance always includes a separate deployment panel: locations default to **unknown**. Optionally pass `--deployment-inventory ../instance/deployment_inventory.json`, keeping real inventory outside the packaged skill. A US-origin model can have declared processing in France; both facts are shown separately.
+
+The local JSON format is strict version 1, limited to **1 MiB / 500 records**. Each deployment has its own unique ID; several deployments may use the same model. Exact model matches only mean `observed_in_capability_map`. Locations, endpoints, evidence references and dates remain declarations without independent checks. References are plain text, never links or fetched documents. Validation occurs before price fallback, cache writes or Grafana access, including dry runs. An inventory can cover several datasources: validate against the full capability map, then render only the `--datasource` selection.
+
+See the [field contract and local-path restrictions](docs/deployment_inventory.md) and [synthetic example](docs/deployment_inventory.example.json). The deployment manifest records scope and bounded declaration counts, including `records_with_observed_model`; it does not copy endpoint hosts or evidence references.
+
+OTel pricing and generated rules remain independent of that financial choice. When discovery finds OTel GenAI signals, token counters, a model label, and usable prices, the forge writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. An explicitly requested Artificial Analysis fallback can still price those OTel artifacts while FinOps displays native spend. The manifest's `recording_rules.datasource_uid` identifies their target separately from `financial_source.datasource_uid`. Load the rules into that Prometheus and repeat discovery to make the recorded total a candidate. Without rules or native spend, on-the-fly composition is useful to bootstrap and becomes expensive past ~15 models.
 
 <div align="center"><img src="docs/assets/pricing-flow.png" alt="Cost flow from native LiteLLM spend directly to FinOps, or from OTel GenAI token counters through the official registry and opt-in Artificial Analysis fallback to Prometheus rules and FinOps dashboards; models with ambiguous matches or no price remain unpriced" width="100%"/>
 <sub><i>Conceptual cost flow for native gateway spend and OTel GenAI token pricing. Not a Grafana screenshot.</i></sub></div>
@@ -231,7 +249,7 @@ scripts/
   forge_dashboards.py         # 7 blueprints × detected dialect, cost engine, alerts
   visual_audit.py             # render/Playwright capture + DOM pre-scan for vision review
 references/
-  model_registry.json         # 30+ models: $/1M in·out·cached, context, sovereignty, GPAI
+  model_registry.json         # 30+ models: $/1M in·out·cached, context, provider origin, GPAI
   locale.fr.json              # label translations (--locale fr)
   ai_governance_frameworks.md # crosswalk: EU AI Act × ISO/IEC 42001 × NIST AI RMF
   query_library.md            # PromQL/LogQL/TraceQL per dialect, anti-patterns
@@ -249,7 +267,7 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 
 ## FAQ
 
-**Why not Grafana Cloud's own AI Observability?** Use it if you're on Cloud and happy to instrument with Grafana's SDK, which does evaluations and conversation replay well. This project targets the other case: self-hosted OSS/Enterprise, telemetry you already emit (OTel, LiteLLM, vLLM, no SDK migration), plus cost attribution by provider sovereignty and an EU AI Act evidence layer, which no vendor ships. They compose fine: nothing here conflicts with the Grafana plugins.
+**Why not Grafana Cloud's own AI Observability?** Use it if you're on Cloud and happy to instrument with Grafana's SDK, which does evaluations and conversation replay well. This project targets the other case: self-hosted OSS/Enterprise, telemetry you already emit (OTel, LiteLLM, vLLM, no SDK migration), plus cost attribution by provider origin and an EU AI Act evidence layer, which no vendor ships. Declared deployment locations are shown independently of provider origin. They compose fine: nothing here conflicts with the Grafana plugins.
 
 **Does it overwrite my existing dashboards?** No. Everything lives in its own folder with `llmops-forge`-tagged, deterministically-UID'd dashboards. Re-running updates in place.
 
@@ -259,7 +277,7 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 
 **Can I publish the generated dashboards?** Yes: `--export-portable` emits JSON with `__inputs`/`${DS_PROMETHEUS}` placeholders, the format grafana.com/dashboards requires.
 
-**Multiple Prometheus (prod + staging)?** Discovery flags it and the forge tells you which one it picked; pin it with `--datasource <uid|name>`.
+**Multiple Prometheus (prod + staging)?** Financial sources at the same priority are ambiguous: the forge refuses a silent choice. Pin discovery or forge with `--datasource <UID|unique name>`; costs from separate datasources are never added together.
 
 **Multiple orgs or folders?** Pin the Grafana organization with `--org-id` and
 give each independently managed folder a stable `--uid-scope`. The forge

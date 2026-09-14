@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "deployments": [
+    {
+      "deployment_id": "synthetic-us-model-fr-processing",
+      "datasource_uid": "prom-production",
+      "model": "gpt-5.4",
+      "serving_provider": "Example Hosting",
+      "endpoint_host": "inference.fr.example.invalid",
+      "processing_region": "FR",
+      "storage_region": "DE",
+      "evidence_ref": "SYNTHETIC contract example, section 4",
+      "evidence_date": "2026-09-08"
+    },
+    {
+      "deployment_id": "synthetic-us-model-unknown-locations",
+      "datasource_uid": "prom-production",
+      "model": "gpt-5.4",
+      "endpoint_host": "gateway"
+    },
+    {
+      "deployment_id": "synthetic-staging",
+      "datasource_uid": "prom-staging",
+      "model": "custom-model"
+    }
+  ]
+}

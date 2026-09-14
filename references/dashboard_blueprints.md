@@ -16,7 +16,7 @@ tableaux/texte 12–24 de large. Chaque dashboard porte le tag `llmops-forge`.
 que ça dérive ? » Public : DSI / FinOps / CFO.
 
 Générés : dépense période, rythme/jour, coût moyen/requête, tokens/s,
-dépense par souveraineté (🇪🇺/🇺🇸/🌏, stacked), dépense par équipe (litellm) ou
+dépense par origine du fournisseur (🇪🇺/🇺🇸/🌏, stacked), dépense par équipe (litellm) ou
 tokens input par modèle (otel), tokens output par modèle, top modèles,
 liste des modèles hors registre.
 
@@ -66,7 +66,7 @@ req/s total, mix de modèles stacked, trafic par équipe/service, top
 consommateurs de tokens.
 
 Extensions : rétention d'usage (entités actives semaine N ET N-1) ; part des
-modèles « souverains » (regex région EU du registre) ; heures de pointe
+modèles dont le fournisseur est marqué EU dans le registre (origine, pas lieu de traitement) ; heures de pointe
 (heatmap jour×heure via `hour()`/`day_of_week()`).
 
 ## 5. `inference` : AI · Inference self-hosted
@@ -86,8 +86,8 @@ réplique (`by(instance)`) ; corrélation TTFT ↔ GPU_UTIL (panel 2 axes).
 **Question** : « Que montre-t-on à un auditeur / au comité risques ? »
 
 Générés : calendrier réglementaire (état juillet 2026, post-Digital Omnibus),
-trafic par souveraineté fournisseur, preuve de journalisation (Loki),
-inventaire des modèles observés (région/licence/GPAI), liste d'alertes actives
+trafic par origine du fournisseur, preuve de journalisation (Loki),
+inventaire des modèles observés (origine fournisseur/licence/GPAI), inventaire séparé des lieux de déploiement déclarés, liste d'alertes actives
 (veille incidents Art. 73).
 
 Extensions : compteur de décisions sous supervision humaine (si loggé, Art. 14) ;
@@ -96,6 +96,8 @@ annotation Grafana à chaque échéance réglementaire ; export PDF programmé
 (Enterprise/Cloud : reporting) vers le comité conformité.
 
 Toujours rappeler : support d'aide, **pas un avis juridique**.
+
+La région du registre décrit l'origine du fournisseur, jamais le lieu effectif de traitement ou de stockage. Le panneau de déploiement reste distinct de l'inventaire modèles : sans `--deployment-inventory FILE`, lieux inconnus ; avec l'inventaire JSON local version 1, lieux déclarés et références de pièces en texte seulement. Un modèle présent dans la capability map ne vérifie ni endpoint ni localisation. Même datasource/modèle peut avoir plusieurs déploiements. Validation avant tout effet externe, puis affichage limité à la datasource sélectionnée. Maximum 1 Mio / 500 déclarations ; aucune donnée réelle d'inventaire dans le paquet.
 
 ---
 

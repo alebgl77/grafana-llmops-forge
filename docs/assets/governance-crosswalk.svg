@@ -37,8 +37,8 @@
     <text x="56" y="312">auto-detected from live label values</text>
 
     <rect x="40" y="332" width="330" height="52" class="box"/>
-    <text x="56" y="354" class="h" font-size="13">Provider dependency and jurisdiction</text>
-    <text x="56" y="372">spend split by provider region: EU · US · Asia</text>
+    <text x="56" y="354" class="h" font-size="13">Provider dependency and registry origin</text>
+    <text x="56" y="372">spend split by registry provider origin: EU · US · Asia</text>
 
     <rect x="40" y="392" width="330" height="52" class="box"/>
     <text x="56" y="414" class="h" font-size="13">Quality and drift measured</text>

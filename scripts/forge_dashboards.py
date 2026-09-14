@@ -14,11 +14,15 @@ Usage :
 from __future__ import annotations
 
 import argparse
+import copy
+import html
 import json
 import os
 import re
+import stat
 import sys
-from datetime import datetime, timezone
+import unicodedata
+from datetime import date, datetime, timezone
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from grafana_client import (GrafanaClient, GrafanaError, alert_logical_identity,
@@ -48,6 +52,7 @@ class Signals:
         self.token_type_label = entry.get("token_type_label") or "gen_ai_token_type"
         self.models_seen = entry.get("models_seen", [])
         self.providers_seen = entry.get("providers_seen", [])
+        self.discovery_coverage = entry.get("discovery_coverage")
         groups = sorted(entry.get("group_labels", []), key=lambda g: g["cardinality"])
         self.group_label = groups[0]["label"] if groups else None
         self.group_card = groups[0]["cardinality"] if groups else 0
@@ -111,6 +116,112 @@ def _rx(s: str) -> str:
 def _md(s: str) -> str:
     """Neutralise ce qui casserait un tableau markdown de panneau texte."""
     return s.replace("|", "\\|").replace("`", "'").replace("\n", " ")
+
+
+INVENTORY_MAX_BYTES = 1024 * 1024
+INVENTORY_MAX_DEPLOYMENTS = 500
+INVENTORY_FIELDS = {
+    "deployment_id": 128, "datasource_uid": 128, "model": 256,
+    "serving_provider": 128, "endpoint_host": 253, "processing_region": 128,
+    "storage_region": 128, "evidence_ref": 512, "evidence_date": 10,
+}
+INVENTORY_REQUIRED = {"deployment_id", "datasource_uid", "model"}
+PROVIDER_ORIGIN_NOTE = ("Registry provider region describes provider origin; it does not "
+                        "establish processing or storage locations.")
+
+
+def _capability_datasource_uids(cap: dict, prometheus_only: bool = False) -> set:
+    kinds = cap.get("datasources", {})
+    lists = [kinds.get("prometheus", [])] if prometheus_only else kinds.values()
+    return set(cap.get("signals", {})) | {
+        item["uid"] for items in lists for item in items
+        if isinstance(item, dict) and isinstance(item.get("uid"), str)}
+
+
+def _inventory_object(pairs: list) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError("duplicate JSON field")
+        result[key] = value
+    return result
+
+
+def validate_deployment_inventory(inventory: object, cap: dict) -> dict:
+    """Strict, bounded declarations only; neither network nor location inference."""
+    if (not isinstance(inventory, dict) or set(inventory) != {"schema_version", "deployments"}
+            or type(inventory.get("schema_version")) is not int or inventory["schema_version"] != 1):
+        raise ValueError("expected only schema_version=1 and deployments")
+    records = inventory["deployments"]
+    if not isinstance(records, list) or len(records) > INVENTORY_MAX_DEPLOYMENTS:
+        raise ValueError(f"deployments must be a list of at most {INVENTORY_MAX_DEPLOYMENTS} records")
+    known_ds, identifiers = _capability_datasource_uids(cap), set()
+    for index, record in enumerate(records):
+        where = f"deployments[{index}]"
+        if (not isinstance(record, dict) or not INVENTORY_REQUIRED <= set(record)
+                or set(record) - set(INVENTORY_FIELDS)):
+            raise ValueError(f"{where}: missing required fields or unknown fields")
+        for key, value in record.items():
+            if (not isinstance(value, str) or not value.strip() or len(value) > INVENTORY_FIELDS[key]
+                    or any(unicodedata.category(char) in ("Cc", "Cf", "Cs") for char in value)):
+                raise ValueError(f"{where}.{key}: expected non-empty single-line text, "
+                                 f"max {INVENTORY_FIELDS[key]} characters, without control characters")
+        if record["deployment_id"] in identifiers:
+            raise ValueError(f"{where}.deployment_id: duplicate identifier")
+        identifiers.add(record["deployment_id"])
+        if record["datasource_uid"] not in known_ds:
+            raise ValueError(f"{where}.datasource_uid: absent from the complete capability map")
+        if "endpoint_host" in record:
+            host = record["endpoint_host"]
+            labels = host.removesuffix(".").split(".")
+            if (any(not re.fullmatch(r"[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?", label)
+                    for label in labels) or all(label.isdigit() for label in labels)):
+                raise ValueError(f"{where}.endpoint_host: expected a DNS hostname (local names allowed), "
+                                 "without URL, IP address, credentials, port, path or query")
+        if "evidence_date" in record:
+            value = record["evidence_date"]
+            try:
+                if not re.fullmatch(r"[0-9]{4}-[0-9]{2}-[0-9]{2}", value):
+                    raise ValueError
+                date.fromisoformat(value)
+            except ValueError:
+                raise ValueError(f"{where}.evidence_date: expected a valid ISO YYYY-MM-DD date") from None
+    return copy.deepcopy(inventory)
+
+
+def load_deployment_inventory(path: str | None, cap: dict) -> dict | None:
+    if path is None:
+        return None
+    # Reject network/device syntax lexically, before stat/open can initiate I/O.
+    normalized = path.replace("\\", "/")
+    if (not normalized or normalized.startswith(("//", "/??/"))
+            or ":" in re.sub(r"^[A-Za-z]:/", "", normalized)
+            or any(unicodedata.category(char) in ("Cc", "Cf", "Cs") for char in normalized)
+            or any(re.fullmatch(r"(?i:CON|PRN|AUX|NUL|CLOCK\$|CONIN\$|CONOUT\$|COM[1-9¹²³]|LPT[1-9¹²³])",
+                                part.rstrip(" .").split(".")[0]) for part in normalized.split("/"))):
+        raise ValueError("expected a local file path; UNC, device, URI and alternate-stream paths are forbidden")
+    try:
+        before = os.lstat(path)
+        if (not stat.S_ISREG(before.st_mode) or
+                getattr(before, "st_file_attributes", 0) & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0)):
+            raise ValueError("expected a local regular JSON file, without symbolic links or reparse points")
+        if before.st_size > INVENTORY_MAX_BYTES:
+            raise ValueError(f"inventory exceeds {INVENTORY_MAX_BYTES} bytes")
+        with open(path, "rb") as stream:
+            if not stat.S_ISREG(os.fstat(stream.fileno()).st_mode):
+                raise ValueError("expected a local regular JSON file")
+            raw = stream.read(INVENTORY_MAX_BYTES + 1)
+        if len(raw) > INVENTORY_MAX_BYTES:
+            raise ValueError(f"inventory exceeds {INVENTORY_MAX_BYTES} bytes")
+        inventory = json.loads(raw.decode("utf-8"), object_pairs_hook=_inventory_object)
+    except (OSError, UnicodeError, json.JSONDecodeError, RecursionError):
+        raise ValueError("cannot read a valid UTF-8 JSON inventory file") from None
+    return validate_deployment_inventory(inventory, cap)
+
+
+def _inventory_text(value: str) -> str:
+    """HTML text inside code cells; Markdown/link syntax is never interpreted."""
+    return html.escape(value, quote=True).replace("|", "&#124;").replace("\r", "&#13;").replace("\n", "&#10;")
 
 
 def _norm(s: str) -> str:
@@ -252,13 +363,59 @@ PRICE_IN, PRICE_OUT = "llm:price_input_usd_per_token", "llm:price_output_usd_per
 INLINE_MODEL_CAP = 40
 
 
+def _duration_milliseconds(value: str) -> int:
+    """Parse only positive, ordered Prometheus duration literals (no macros)."""
+    pattern = (r"(?:([0-9]+)y)?(?:([0-9]+)w)?(?:([0-9]+)d)?(?:([0-9]+)h)?"
+               r"(?:([0-9]+)m)?(?:([0-9]+)s)?(?:([0-9]+)ms)?")
+    match = re.fullmatch(pattern, value) if isinstance(value, str) and len(value) <= 64 else None
+    if not match:
+        raise ValueError("expected a positive Prometheus duration, e.g. 1m or 1h30m")
+    units = (31536000000, 604800000, 86400000, 3600000, 60000, 1000, 1)
+    milliseconds = sum(int(n or 0) * unit for n, unit in zip(match.groups(), units))
+    if not 0 < milliseconds <= 9223372036854:
+        raise ValueError("Prometheus duration must be positive and within its int64 limit")
+    return milliseconds
+
+
+def _seconds_literal(milliseconds: int) -> str:
+    seconds, remainder = divmod(milliseconds, 1000)
+    return (f"{seconds}.{remainder:03d}".rstrip("0") if remainder else str(seconds))
+
+
+def _recorded_cost_total_expr(selector: str, window: str, interval: str) -> str:
+    """Estimate USD from a USD/s gauge, requiring every aggregate grid point.
+
+    Sum models BEFORE temporal averaging: a model born halfway through the
+    range must not have its own average extrapolated over the whole range.
+    The grid is at least 1m, or the installed recording cadence if slower.
+    last_over_time bounds freshness to one grid cell, avoiding Prometheus's
+    implicit 5m lookback across gaps. Counts use the SAME aligned subquery
+    grid, including its boundary points; averaging then multiplying seconds
+    avoids a one-sample overcharge on a constant rate.
+
+    This is a sampled estimate, not a billing ledger. Complete aggregate
+    coverage does not establish per-model completeness. A shorter window or
+    any missing aggregate cell yields no result, never a synthetic zero.
+    """
+    cadence_ms = _duration_milliseconds(interval)
+    step = interval if cadence_ms >= 60000 else "1m"
+    step_seconds = _seconds_literal(max(cadence_ms, 60000))
+    seconds = ("$__range_s" if window == "$__range"
+               else _seconds_literal(_duration_milliseconds(window)))
+    samples = f"(sum(last_over_time({selector}[{step}])))[{window}:{step}]"
+    expected = f"count_over_time((vector(1))[{window}:{step}])"
+    return (f"(avg_over_time({samples}) * {seconds}) "
+            f"and (count_over_time({samples}) == {expected}) "
+            f"and (vector({seconds}) >= {step_seconds})")
+
+
 def cost_rate_expr(q: Q, matched: list, region: str | None = None,
                    window: str = RATE, agg: str = "rate",
-                   recorded: bool = False) -> str | None:
+                   recorded: bool = False, recorded_interval: str = "1m") -> str | None:
     """Coût USD/s. Trois voies, par ordre de préférence :
 
-    1. recording rules `llm:cost_usd_per_second` (O(1) séries, prix modifiables
-       sans regénérer les dashboards, aucune limite de modèles) ;
+    1. recording rules `llm:cost_usd_per_second` (requête plus courte, travail
+       dépendant des séries et de la fenêtre interrogées) ;
     2. spend natif de la passerelle LiteLLM (USD déjà agrégé) ;
     3. on-the-fly composition depuis le registre (bootstrap ; coûteux au-delà
        de ~15 modèles, d'où la voie 1).
@@ -266,16 +423,18 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
     if recorded:
         sel = f'{{region={promql_string(region)}}}' if region else ""
         if agg == "increase":  # intégrer un taux enregistré sur la période
-            return f"sum(increase(({COST_RECORDED}{sel})[{window}:])) or vector(0)"
-        return f"sum({COST_RECORDED}{sel}) or vector(0)"
+            return _recorded_cost_total_expr(COST_RECORDED + sel, window, recorded_interval)
+        return f"sum({COST_RECORDED}{sel})"
     if q.s.dialect == "litellm" and getattr(q, "spend", None):
         if region:
             return None  # la ventilation régionale passe par la voie otel/registre
-        return f"sum({agg}({msel(q.spend)}[{window}])) or vector(0)"
+        return f"sum({agg}({msel(q.spend)}[{window}]))"
     if q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
         return None
+    if len(matched) > INLINE_MODEL_CAP:
+        return None  # la couche FinancialSource explique le refus; jamais les 40 premiers
     terms = []
-    for it in matched[:INLINE_MODEL_CAP]:
+    for it in matched:
         if region and it["reg"].get("region") != region:
             continue
         m, lbl = it["reg"], promql_string(it["seen"])
@@ -564,30 +723,141 @@ def tempo_link(tempo_uid: str | None, traceql: str, title: str = "Voir les trace
 CARDINALITY_LIMIT = 300   # au-delà, un group-by fabrique plus de séries que de sens
 
 
+def filter_capability_datasource(cap: dict, selector: str | None = None) -> dict:
+    """Return an independent map, resolving a UID first or a unique Prometheus name."""
+    filtered = copy.deepcopy(cap)
+    if selector is None:
+        return filtered
+    proms = cap.get("datasources", {}).get("prometheus", [])
+    uids = {d["uid"] for d in proms if d.get("uid")} | set(cap.get("signals", {}))
+    matches = ({selector} if selector in uids else
+               {d["uid"] for d in proms if d.get("uid") and d.get("name") == selector})
+    if len(matches) != 1:
+        reason = "is ambiguous" if matches else "does not match a Prometheus datasource"
+        raise ValueError(f"--datasource {selector!r} {reason}; select a UID "
+                         f"from {sorted(uids)} or re-run discovery with --datasource.")
+    uid = next(iter(matches))
+    filtered["signals"] = {key: value for key, value in filtered.get("signals", {}).items()
+                           if key == uid}
+    filtered.setdefault("datasources", {})["prometheus"] = [
+        d for d in filtered.get("datasources", {}).get("prometheus", []) if d.get("uid") == uid]
+    return filtered
+
+
+class FinancialSource:
+    """A single financial scope; registry pricing is only provenance for inline costs."""
+    def __init__(self, mode: str, q: Q, operational: Q | None, registry: dict):
+        self.mode, self.q, self.operational = mode, q, operational
+        self.ds_uid = q.s.ds_uid
+        self.provenance = "estimate" if mode == "inline" else mode
+        self.matched, self.unmatched = (match_models(q.s.models_seen, registry)
+                                        if mode == "inline" else ([], []))
+        self.third_party_prices = [item for item in self.matched
+                                   if item["reg"].get("pricing_source_kind") == "artificial_analysis"]
+        self.partially_priced = [item["seen"] for item in self.matched
+                                 if item["reg"].get("output_per_mtok") is None]
+        self.is_subtotal = mode == "inline" and bool(self.unmatched or self.partially_priced)
+        self.coverage = self._coverage()
+
+    def _coverage(self) -> dict:
+        if self.mode != "inline":
+            return {"status": f"{self.mode}_upstream_unverified", "registry_applicable": False,
+                    "models_seen": None, "priced_models": None, "partially_priced_models": None,
+                    "unpriced_models": None, "backend_completeness": "unknown",
+                    "budget_eligible": True, "budget_omission_reason": None}
+        info = self.q.s.discovery_coverage
+        counts = {"metric_names": len(self.q.s.names), "models_seen": len(self.q.s.models_seen),
+                  "providers_seen": len(self.q.s.providers_seen)}
+        preserved = (isinstance(info, dict) and info.get("scope") == "backend_returned_values"
+                     and info.get("local_truncation") is False and info.get("counts") == counts
+                     and all(type(n) is int for n in info["counts"].values())
+                     and info.get("backend_completeness") == "unknown")
+        reason = None
+        if len(self.matched) > INLINE_MODEL_CAP:
+            status = "inline_limit_exceeded"
+            reason = (f"{len(self.matched)} models have usable prices; the inline limit is "
+                      f"{INLINE_MODEL_CAP}. No monetary subtotal is calculated. Re-run forge "
+                      f"with --datasource {self.ds_uid!r}, load the generated "
+                      "prometheus_rules_llmops.yml into that backend, then re-run discover and forge.")
+        elif not self.matched:
+            status = "unpriced"
+            reason = "No usable model prices; add prices to model_registry.local.json and re-run forge."
+        elif self.is_subtotal:
+            status = "partial_prices"
+            reason = ("Known prices cover only part of the listed usage; a subtotal cannot "
+                      "monitor the full budget. Add missing input/output prices and re-run forge.")
+        elif not preserved:
+            status = "discovery_unknown"
+            reason = ("Discovery coverage metadata is missing or inconsistent; the estimate "
+                      "is limited to listed models. Re-run discover, then forge, before enabling the budget.")
+        else:
+            status = "all_returned_models_priced"
+        if reason and not preserved and status != "discovery_unknown":
+            reason += " Discovery metadata is also unknown; re-run discover before enabling the budget."
+        return {"status": status, "registry_applicable": True,
+                "models_seen": len(self.q.s.models_seen),
+                "priced_models": len(self.matched) - len(self.partially_priced),
+                "partially_priced_models": len(self.partially_priced),
+                "unpriced_models": len(self.unmatched), "inline_limit": INLINE_MODEL_CAP,
+                "discovery_scope": "backend_returned_values" if preserved else "listed_models",
+                "local_preservation": "not_truncated" if preserved else "unknown",
+                "backend_completeness": "unknown", "budget_eligible": reason is None,
+                "budget_omission_reason": reason}
+
+    def coverage_note(self) -> str:
+        coverage = self.coverage
+        if self.mode != "inline":
+            return (f"Coverage: {coverage['status']}; registry coverage is not applicable. "
+                    "Upstream completeness is unverified.")
+        note = (f"Coverage: {coverage['status']}. Listed models: {coverage['models_seen']}; "
+                f"fully priced: {coverage['priced_models']}; partially priced: "
+                f"{coverage['partially_priced_models']}; unpriced: {coverage['unpriced_models']}. "
+                f"Local discovery preservation: {coverage['local_preservation']}. "
+                "The scope is limited to listed/backend-returned values; backend completeness is unknown.")
+        if coverage["budget_omission_reason"]:
+            note += " Budget omitted: " + coverage["budget_omission_reason"]
+        return note
+
+    def expr(self, *, region=None, window=RATE, agg="rate", interval="1m"):
+        return cost_rate_expr(self.q, self.matched, region=region, window=window,
+                              agg=agg, recorded=self.mode == "recorded",
+                              recorded_interval=interval)
+
+
 class Ctx:
-    def __init__(self, cap: dict, registry: dict):
+    def __init__(self, cap: dict, registry: dict, cost_mode: str = "auto",
+                 deployment_inventory: dict | None = None, deployment_datasource_filter: bool = False):
         self.cap = cap
         self.registry = registry
+        self.locale_table = {}
+        self.deployment_inventory = deployment_inventory
+        self.deployment_datasource_filter = deployment_datasource_filter
+        inventory_uids = _capability_datasource_uids(cap, deployment_datasource_filter)
+        self.deployments = [copy.deepcopy(record) for record in
+                            (deployment_inventory or {}).get("deployments", [])
+                            if record["datasource_uid"] in inventory_uids]
         self.q: dict[str, Q] = {}
+        self.by_datasource: dict[str, dict[str, Q]] = {}
         for ds_uid, sigs in cap.get("signals", {}).items():
+            self.by_datasource[ds_uid] = {}
             for dialect, entry in sigs.items():
+                query = Q(Signals(dialect, entry, ds_uid))
+                if query.s.group_card > CARDINALITY_LIMIT:
+                    query.s.group_label = None
+                self.by_datasource[ds_uid][dialect] = query
                 key = dialect
                 if key not in self.q:  # première datasource porteuse du dialecte
-                    self.q[key] = Q(Signals(dialect, entry, ds_uid))
+                    self.q[key] = query
         dss = cap.get("datasources", {})
         self.loki = (dss.get("loki") or [None])[0]
         self.tempo = ((dss.get("tempo") or [{}])[0] or {}).get("uid")
         self.major = int(cap.get("instance", {}).get("major") or 12)
         self.frameworks = ["eu-ai-act", "iso-42001", "nist-rmf"]
-        self.recorded = "recorded" in self.q and any(
-            n.startswith("llm:cost") for n in self.q["recorded"].s.names)
+        self.rules_interval = "1m"
         self.exemplars = any(m.get("exemplars") for m in dss.get("prometheus", []))
         raw_org = cap.get("org_id", cap.get("instance", {}).get("org_id"))
         self.org_id = int(raw_org) if raw_org is not None else None
         self.uid_scope = None
-        for qq in self.q.values():
-            if qq.s.group_card > CARDINALITY_LIMIT:
-                qq.s.group_label = None   # cardinalité subie : pas de group-by
         self.primary = self.q.get("otel_genai") or self.q.get("litellm")
         seen = self.primary.s.models_seen if self.primary else []
         self.matched, self.unmatched = match_models(seen, registry)
@@ -595,6 +865,92 @@ class Ctx:
         self.third_party_prices = [item for item in self.matched
                                    if item["reg"].get("pricing_source_kind")
                                    == "artificial_analysis"]
+        self.cost_mode = cost_mode
+        self.cost_source: FinancialSource | None = None
+        self.financial_status = "unavailable"
+        self.financial_error = None
+        self.financial_candidates = []
+        self._resolve_financial_source()
+        self.recorded = bool(self.cost_source and self.cost_source.mode == "recorded")
+
+    def deployment_model_status(self, record: dict) -> str:
+        observed = any(record["model"] in entry.get("models_seen", []) for entry in
+                       self.cap.get("signals", {}).get(record["datasource_uid"], {}).values())
+        return "observed_in_capability_map" if observed else "not_observed_in_capability_map"
+
+    def deployment_manifest(self) -> dict:
+        total = len((self.deployment_inventory or {}).get("deployments", []))
+        declared = {field: sum(field in record for record in self.deployments)
+                    for field in ("processing_region", "storage_region", "evidence_ref", "evidence_date")}
+        return {"schema_version": 1, "provided": self.deployment_inventory is not None,
+                "scope": "selected_datasource" if self.deployment_datasource_filter else "complete_capability_map",
+                "records_loaded": total, "records_in_scope": len(self.deployments),
+                "records_excluded_by_scope": total - len(self.deployments),
+                "declared_datasource_uids_in_scope": sorted({r["datasource_uid"] for r in self.deployments}),
+                "location_status": "declarations_present" if declared["processing_region"] or declared["storage_region"] else "unknown",
+                "fields": {field: {"declared": count, "unknown": len(self.deployments) - count}
+                           for field, count in declared.items()},
+                "records_with_observed_model": sum(self.deployment_model_status(r) == "observed_in_capability_map"
+                                                   for r in self.deployments),
+                "independent_checks": "not_performed"}
+
+    def _resolve_financial_source(self):
+        levels = {"recorded": [], "native": [], "inline": []}
+        for ds_uid, queries in self.by_datasource.items():
+            otel, lite = queries.get("otel_genai"), queries.get("litellm")
+            if any(COST_RECORDED in query.s.names for query in queries.values()):
+                recorded = Q(Signals("recorded", {"metric_names": [COST_RECORDED]}, ds_uid))
+                levels["recorded"].append((recorded, otel or lite))
+            if lite and lite.spend:
+                levels["native"].append((lite, lite))
+            if otel and otel.tok and otel.s.model_label:
+                levels["inline"].append((otel, otel))
+        modes = (["recorded"] if self.cost_mode == "recorded" else
+                 ["native", "inline"] if self.cost_mode == "inline" else
+                 ["recorded", "native", "inline"])
+        for mode in modes:
+            candidates = levels[mode]
+            if not candidates:
+                continue
+            self.financial_candidates = sorted(q.s.ds_uid for q, _ in candidates)
+            if len(candidates) > 1:
+                self.financial_status = "ambiguous"
+                self.financial_error = (
+                    f"Ambiguous {mode} financial sources: {self.financial_candidates}. "
+                    "Pass --datasource <UID|unique name> to forge or re-run discovery "
+                    "with --datasource; costs from different datasources are not combined.")
+                return
+            self.cost_source = FinancialSource(mode, *candidates[0], self.registry)
+            self.financial_status = "selected"
+            return
+        if self.cost_mode == "recorded":
+            self.financial_error = (
+                f"--cost-mode recorded requires the exact total metric {COST_RECORDED}. "
+                "Only component metrics (:input/:output) are insufficient. Re-run "
+                "discovery after installing the rules, optionally with --datasource.")
+
+    def require_financial_source(self) -> FinancialSource | None:
+        if self.financial_error:
+            raise ValueError(self.financial_error)
+        return self.cost_source
+
+    def financial_manifest(self) -> dict:
+        source = self.cost_source
+        return {"status": self.financial_status, "requested_mode": self.cost_mode,
+                "mode": source.mode if source else None,
+                "datasource_uid": source.ds_uid if source else None,
+                "provenance": source.provenance if source else None,
+                "coverage": source.coverage if source else None,
+                "availability": "not_checked", "candidates": self.financial_candidates,
+                "message": self.financial_error}
+
+    def pricing_models(self) -> list:
+        """Prices remain useful for OTel rules even when FinOps selects native spend."""
+        models = (list(self.primary.s.models_seen)
+                  if self.primary and self.primary.s.dialect == "otel_genai" else [])
+        if self.cost_source and self.cost_source.mode == "inline":
+            models.extend(self.cost_source.q.s.models_seen)
+        return list(dict.fromkeys(models))
 
     def gpu(self) -> Q | None:
         return self.q.get("gpu_dcgm") or self.q.get("gpu_smi")
@@ -605,43 +961,73 @@ class Ctx:
 # --------------------------------------------------------------------------- #
 
 def bp_finops(ctx: Ctx) -> Board | None:
-    q = ctx.primary
-    if not q:
+    source = ctx.require_financial_source()
+    if not source:
         return None
+    q = source.operational or source.q
     third_party_note = (" Third-party estimates: Artificial Analysis median "
                         "multi-provider pricing; attribution: Artificial Analysis."
-                        if ctx.third_party_prices else "")
+                        if source.third_party_prices else "")
+    provenance_note = {
+        "inline": f"Registry estimate, prices verified {ctx.verified} (USD per 1M tokens).",
+        "native": "Native gateway spend; this is not an audited invoice.",
+        "recorded": "Recorded total; upstream pricing provenance is not verified here.",
+    }[source.mode]
     b = Board(det_uid("ai-executive-finops", scope=ctx.uid_scope), "AI · Executive FinOps & Cost",
-              f"Multi-provider LLM cost. Price registry verified {ctx.verified} "
-              f"(USD per 1M tokens). Cost source: "
-              f"{'recording rules (llm:cost_usd_per_second)' if ctx.recorded else 'on-the-fly composition'}. "
+              f"Multi-provider LLM cost. Financial source selected: mode={source.mode}, "
+              f"datasource UID={source.ds_uid}; live availability not checked. {provenance_note} "
+              f"{source.coverage_note()} "
               f"Generated by grafana-llmops-forge.{third_party_note}", ["finops"])
-    ds = q.s.ds_uid
-    R = ctx.recorded
-    spend_range = cost_rate_expr(q, ctx.matched, window="$__range", agg="increase",
-                                 recorded=R)
-    spend_rate = cost_rate_expr(q, ctx.matched, recorded=R)
-    b.stat("Spend (selected range)", ds, spend_range, 6, 5, "currencyUSD",
-           "Total over the dashboard's time range.")
-    b.stat("Spend rate per day", ds,
+    ds = source.ds_uid
+    R = source.mode == "recorded"
+    spend_range = source.expr(window="$__range", agg="increase", interval=ctx.rules_interval)
+    spend_rate = source.expr()
+    inline = source.mode == "inline"
+    range_title = ("Subtotal (priced usage, selected range)" if source.is_subtotal else
+                   "Estimated spend (listed models, selected range)" if inline else
+                   "Spend (selected range)")
+    rate_title = ("Subtotal rate per day (priced usage)" if source.is_subtotal else
+                  "Estimated spend rate per day (listed models)" if inline else "Spend rate per day")
+    ratio_title = ("Priced subtotal per observed request" if source.is_subtotal else
+                   "Estimated cost per request (listed models)" if inline else "Average cost per request")
+    money_note = ("Only usage with known input/output prices is included; missing prices "
+                  "make this a subtotal, not overall spend." if source.is_subtotal else
+                  "Estimate for listed models only; backend completeness is unknown.")
+    b.stat(range_title, ds, spend_range, 6, 5, "currencyUSD",
+           ("Estimated total: aggregate USD/s sampled on a grid of at least 1m "
+            f"(configured recording cadence {ctx.rules_interval}) × range seconds. "
+            "--rules-interval must match the installed rules. Changes within a grid "
+            "cell and time-range boundaries are approximate. Missing aggregate "
+            "cells or a range shorter than the grid return No data; coverage does "
+            "not prove that every model reported."
+            if R else money_note if inline else "Total over the dashboard's time range."))
+    b.stat(rate_title, ds,
            f"({spend_rate}) * 86400" if spend_rate else None, 6, 5, "currencyUSD",
-           "Projection: instantaneous rate × 86400.")
+           "Projection: instantaneous rate × 86400." + (" " + money_note if inline else ""))
     rr = q.req_rate()
-    b.stat("Average cost per request", ds,
+    b.stat(ratio_title, ds,
            f"({spend_rate}) / clamp_min({rr}, 1e-9)" if spend_rate and rr else None,
-           6, 5, "currencyUSD")
+           6, 5, "currencyUSD", money_note if inline else "")
+    if not rr:
+        b.text("Cost per request unavailable",
+               "No request-rate signal is available in the selected financial datasource "
+               f"`{_md(ds)}`. A cost/request ratio from a different datasource is omitted.", 12, 5)
     tok_out = q.tokens_rate("output")
     b.stat("Generated tokens/s", ds, tok_out, 6, 5, "short")
     b.row_break()
     regions = [("eu", "🇪🇺 EU providers"), ("us", "🇺🇸 US providers"),
                ("asia", "🌏 Asia providers")]
-    region_exprs = [(cost_rate_expr(q, ctx.matched, region=r, recorded=R), lbl)
+    region_exprs = [(source.expr(region=r), lbl)
                     for r, lbl in regions]
     if any(e for e, _ in region_exprs):
-        b.ts("Spend by provider sovereignty (USD/s)", ds, region_exprs, 12, 8,
+        region_title = ("Priced subtotal by provider origin (USD/s)" if source.is_subtotal else
+                        "Estimated spend by provider origin (USD/s)" if inline else
+                        "Spend by provider origin (USD/s)")
+        b.ts(region_title, ds, region_exprs, 12, 8,
              "currencyUSD", stacked=True,
-             desc="Split by provider region: sovereignty and AI Act steering.")
-    if q.s.dialect == "litellm" and getattr(q, "spend", None) and q.s.group_label:
+             desc=PROVIDER_ORIGIN_NOTE
+             + (" " + money_note if inline else ""))
+    if source.mode == "native" and q.s.group_label:
         b.ts("Spend by team (USD/s)", ds,
              [(f"sum by({qlbl(q.s.group_label)})(rate({msel(q.spend)}[{RATE}]))",
                "{{" + q.s.group_label + "}}")], 12, 8, "currencyUSD", stacked=True,
@@ -659,14 +1045,18 @@ def bp_finops(ctx: Ctx) -> Board | None:
                f"(increase({msel(q.tok + chr(95) + 'sum')}[$__range])))" if q.s.dialect == "otel_genai" and q.tok
                else None)
         b.table("Top models (tokens, range)", ds, top, 12, 8)
-    if ctx.unmatched:
+    if inline:
+        b.text("Financial coverage", source.coverage_note(), 24, 6)
+    missing_prices = source.unmatched + source.partially_priced
+    if missing_prices:
         b.text("Models missing from the price registry",
-               "Ces modèles sont observés mais **exclus du calcul de coût** "
-               "(prix inconnu) :\n\n"
-               + "\n".join(f"- `{_md(m)}`" for m in ctx.unmatched[:20])
-               + "\n\nAjouter leur prix dans `references/model_registry.json` "
-                 "puis relancer la forge.", 24, 6)
-    if ctx.third_party_prices:
+               "Prices are missing or incomplete for these listed models. Usage without "
+               "known input/output prices is excluded from any estimate.\n\n"
+               + "\n".join(f"- `{_md(m)}`" for m in missing_prices[:20])
+               + f"\n\nShowing {min(20, len(missing_prices))} of {len(missing_prices)} models; "
+               f"{max(0, len(missing_prices) - 20)} not displayed. "
+               "Add missing prices to `model_registry.local.json` and re-run forge.", 24, 6)
+    if source.third_party_prices:
         b.text("Third-party pricing estimates",
                "Some cost estimates use **median multi-provider pricing** from "
                "[Artificial Analysis](https://artificialanalysis.ai/). They are "
@@ -884,7 +1274,8 @@ def bp_inference(ctx: Ctx) -> Board | None:
         b.text("Reference: API cost per 1M tokens (self-hosted benchmark)",
                "Compare your GPU cost per 1M generated tokens against these API prices "
                f"(registry dated {ctx.verified}) :\n\n"
-               "| Model | Region | Input | Output |\n|---|---|---|---|\n" + rows,
+               "| Model | Provider region (registry) | Input | Output |\n|---|---|---|---|\n" + rows
+               + "\n\n" + PROVIDER_ORIGIN_NOTE,
                24, 7)
     return b
 
@@ -902,7 +1293,7 @@ and that is what this dashboard produces.
 | A.6.2.6: AI system operation and monitoring | Evidence that production systems are monitored continuously, not just documented | The whole board, plus the gateway and quality dashboards |
 | A.6.2.8: AI system recording of event logs | Logs enabled at the declared lifecycle phases, retained, retrievable | Logging evidence panel; retention is a Loki config check |
 | A.9: Use of AI systems | Responsible and intended use, human oversight | Adoption dashboard (who uses what) + override counters if instrumented |
-| A.10: Third parties and suppliers | Which providers you depend on, and how that dependency is governed | Model inventory and the sovereignty split |
+| A.10: Third parties and suppliers | Which providers you depend on, and how that dependency is governed | Model inventory and the provider-origin split |
 | Clause 9.1: Monitoring, measurement, analysis, evaluation | Defined metrics, measured, reviewed | Every panel; the review record is yours to keep |
 
 Two cautions. Annex A numbering differs between secondary sources; confirm each
@@ -926,7 +1317,7 @@ telemetry speaks mostly to MEASURE and MANAGE.
 | MANAGE 4.1: post-deployment monitoring | Monitoring, appeal and override, decommissioning, change management | This board plus the provisioned SLO alerts |
 | MANAGE 2.x: maximise benefit, minimise negative impact | Documented treatment of residual risk | Cost and adoption boards inform the trade-offs |
 | GOVERN 1.1: legal and regulatory requirements understood | Applicable obligations known and tracked | Regulatory timeline panel |
-| GOVERN 6.1/6.2: third-party risk | Supply-chain and vendor dependency governed | Model inventory and sovereignty split |
+| GOVERN 6.1/6.2: third-party risk | Supply-chain and vendor dependency governed | Model inventory and provider-origin split |
 
 For generative AI specifically, NIST AI 600-1 (the Generative AI Profile, July
 2024) adds twelve risk categories mapped back to these four functions; the cost,
@@ -945,7 +1336,7 @@ CROSSWALK_ROWS = [
     ("Inventory of models actually consumed",
      {"eu-ai-act": "Art. 26 · GPAI chain", "iso-42001": "A.10",
       "nist-rmf": "GOVERN 6.1 · MAP 4.1"}),
-    ("Provider dependency and jurisdiction",
+    ("Provider dependency and registry origin",
      {"eu-ai-act": "GPAI contractual terms", "iso-42001": "A.10",
       "nist-rmf": "GOVERN 6.2"}),
     ("Quality and drift measured",
@@ -1006,6 +1397,46 @@ FRAMEWORKS = {
 }
 
 
+def add_deployment_inventory_panel(board: Board, ctx: Ctx):
+    """Render declarations as escaped HTML text; no Markdown parsing or data links."""
+    translate = lambda text: ctx.locale_table.get(text, text)
+    introduction = ("Processing and storage locations are unknown without deployment declarations. "
+                    "Use --deployment-inventory with a local JSON file to supply declarations.")
+    if ctx.deployment_inventory is not None:
+        introduction = ("Deployment inventory supplied; only records in the selected scope are shown. "
+                        "Missing processing or storage regions remain unknown.")
+    disclaimer = ("Model presence only matches an exact model label in the capability map. "
+                  "Endpoints, locations, evidence references and dates are declarations; "
+                  "none are independently checked. Evidence is plain text and is never fetched.")
+    content = "".join(f"<p>{_inventory_text(translate(text))}</p>"
+                      for text in (introduction, PROVIDER_ORIGIN_NOTE, disclaimer))
+    if ctx.deployments:
+        headings = ("Deployment", "Datasource UID", "Model", "Model presence",
+                    "Provider origin (registry)", "Serving provider (declared)",
+                    "Endpoint host (declared)", "Processing region", "Storage region", "Evidence (declared)")
+        content += "<table><thead><tr>" + "".join(
+            f"<th>{_inventory_text(translate(heading))}</th>" for heading in headings) + "</tr></thead><tbody>"
+        for record in ctx.deployments:
+            _, model, status = pricing_sources.resolve_registry_model(record["model"], ctx.registry.get("models", []))
+            origin = (str(model.get("region", "unknown")).upper() + " / " + str(model.get("vendor", "unknown"))
+                      if model and status == "matched" else translate("unknown"))
+            def location(field):
+                return (record[field] + " (" + translate("declared") + ")"
+                        if field in record else translate("unknown"))
+            evidence = " / ".join(record[key] for key in ("evidence_ref", "evidence_date") if key in record)
+            values = (record["deployment_id"], record["datasource_uid"], record["model"],
+                      translate(ctx.deployment_model_status(record)), origin,
+                      record.get("serving_provider", translate("unknown")),
+                      record.get("endpoint_host", translate("unknown")),
+                      location("processing_region"), location("storage_region"), evidence or translate("unknown"))
+            content += "<tr>" + "".join(f"<td><code>{_inventory_text(value)}</code></td>" for value in values) + "</tr>"
+        content += "</tbody></table>"
+    else:
+        content += "<p>" + _inventory_text(translate("No deployment declarations in this scope; locations remain unknown.")) + "</p>"
+    board.panel("text", "Deployment locations (declarations)", 24, 12, None,
+                description=PROVIDER_ORIGIN_NOTE, options={"mode": "html", "content": content})
+
+
 def bp_governance(ctx: Ctx) -> Board:
     """Le même socle de preuves, lu selon un ou plusieurs référentiels.
 
@@ -1020,7 +1451,7 @@ def bp_governance(ctx: Ctx) -> Board:
              else "AI · Governance & Compliance Evidence")
     b = Board(det_uid("ai-governance-eu-ai-act", scope=ctx.uid_scope), title,
               f"Observability evidence for {names}: logging, inventory, "
-              "sovereignty, incidents. Generated by grafana-llmops-forge, "
+              "provider origin, declared deployment locations, incidents. Generated by grafana-llmops-forge, "
               "not legal advice.", ["governance"] + picked)
     if len(picked) > 1:
         b.text("One signal, several frameworks", crosswalk_md(picked),
@@ -1040,10 +1471,9 @@ def bp_governance(ctx: Ctx) -> Board:
                 exprs.append((q.req_rate(
                     sel=f'{{{qlbl(q.s.model_label)}=~"{rx}"}}'), lbl))
         if exprs:
-            b.ts("Traffic by provider sovereignty", ds, exprs, 12, 8,
+            b.ts("Traffic by provider origin", ds, exprs, 12, 8,
                  "reqps", stacked=True,
-                 desc="Actual dependency on providers by region: sovereignty "
-                      "steering and GPAI contractual clauses.")
+                 desc=PROVIDER_ORIGIN_NOTE)
     if ctx.loki:
         lbl = (ctx.loki.get("labels") or ["service_name"])[0]
         lbl_q = qlbl(lbl)
@@ -1066,10 +1496,12 @@ def bp_governance(ctx: Ctx) -> Board:
             rows.append(f"| `{_md(s)}` | ? | ? | ? | to qualify |")
         b.text("Observed model inventory (feeds your AI system register)",
                "Models actually in use (auto-detected):\n\n"
-               "| Observed model | Vendor | Region | Licence | GPAI |\n"
+               "| Observed model | Vendor | Provider region (registry) | Licence | GPAI |\n"
                "|---|---|---|---|---|\n" + "\n".join(rows) +
                "\n\nÀ rapprocher de votre registre interne des systèmes d'IA "
-               "(cartographie fournisseur/déployeur).", 12, 10)
+               "(cartographie fournisseur/déployeur).\n\n" + PROVIDER_ORIGIN_NOTE, 12, 10)
+    b.row_break()
+    add_deployment_inventory_panel(b, ctx)
     b.alertlist("Incident watch (AI Act Art. 73 · ISO A.8 · NIST MANAGE 4.x)", 12, 10)
     return b
 
@@ -1093,11 +1525,14 @@ def bp_quality(ctx: Ctx) -> Board | None:
         is_hist = f"{base}_bucket" in names
         avg = (f"histogram_quantile(0.5, sum by(le)(rate({base}_bucket[{RATE}])))"
                if is_hist else f"avg({score})")
-        b.stat("Median score", ds, avg, 6, 5, "percentunit")
+        b.stat("Median score" if is_hist else "Mean score", ds, avg, 6, 5, "percentunit",
+               "" if is_hist else "Unweighted mean across current score series; not an "
+               "observation-weighted mean or a population quantile.")
         low = (f"histogram_quantile(0.1, sum by(le)(rate({base}_bucket[{RATE}])))"
                if is_hist else f"min({score})")
-        b.stat("Low decile (p10)", ds, low, 6, 5, "percentunit",
-               "The low tail is the real signal; the mean hides the failures.")
+        b.stat("Low decile (p10)" if is_hist else "Minimum score", ds, low, 6, 5, "percentunit",
+               "The low tail is the real signal; the mean hides the failures." if is_hist else
+               "Minimum across current score series; not a population quantile.")
     if guard:
         b.stat("Guardrail blocks/s", ds,
                f"sum(rate({guard}[{RATE}]))" if guard.endswith("_total")
@@ -1173,6 +1608,7 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
     pour le taux d'erreur ; un seuil unique sur la dernière valeur alerte trop
     tard sur les pannes lentes et trop souvent sur les pics inoffensifs."""
     alert_rules, org = [], ctx.org_id
+    source = ctx.require_financial_source()
     q = ctx.primary
     budget = max(1 - slo_target, 1e-4)
     if q:
@@ -1202,13 +1638,6 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
                 "No LLM traffic measured at all, or the datasource is unreachable: "
                 "instrumentation or collector is most likely down.",
                 "warning", "15m", "Alerting", org, uid_scope=ctx.uid_scope))
-        spend = cost_rate_expr(q, ctx.matched, window="10m", recorded=ctx.recorded)
-        if spend:
-            alert_rules.append(_rule(
-                "llm-daily-budget", "LLM · Daily budget exceeded", q.s.ds_uid,
-                f"({spend}) * 86400", daily_budget, "gt", folder_uid,
-                f"Spend rate above {daily_budget} USD per day.",
-                "warning", "30m", "OK", org, uid_scope=ctx.uid_scope))
         ttft = getattr(q, "ttft", None)
         if ttft:
             alert_rules.append(_rule(
@@ -1216,6 +1645,22 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
                 q.pXX(ttft, 0.95, w="10m"), 3, "gt", folder_uid,
                 "First token takes over 3s at p95: saturation is likely.",
                 "warning", "10m", "OK", org, uid_scope=ctx.uid_scope))
+    spend = source.expr(window="10m") if source and source.coverage["budget_eligible"] else None
+    if spend:
+        financial_rule = _rule(
+            "llm-daily-budget", ("LLM · Budget exceeded for returned models" if source.mode == "inline"
+                                 else "LLM · Daily budget exceeded"), source.ds_uid,
+            f"({spend}) * 86400", daily_budget, "gt", folder_uid,
+            f"Spend rate above {daily_budget} USD per day. "
+            + ("This estimate covers models returned by the backend only; backend completeness "
+               "and signal freshness are unverified. Missing inline counters may return zero."
+               if source.mode == "inline" else
+               "Missing financial data means cost is unknown, not zero."),
+            "warning", "30m", "NoData", org, uid_scope=ctx.uid_scope)
+        # A range query reduced with last() could keep a cost point from hours
+        # ago after the source disappears. Evaluate the current cost expression.
+        financial_rule["data"][0]["model"].update({"instant": True, "range": False})
+        alert_rules.append(financial_rule)
     qv = ctx.q.get("vllm")
     if qv and qv.kv:
         alert_rules.append(_rule(
@@ -1402,6 +1847,11 @@ def main() -> int:
             stream.reconfigure(errors="backslashreplace")
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--capability", default="capability_map.json")
+    ap.add_argument("--datasource", help="Restreindre les signaux Prometheus à un UID "
+                    "ou nom unique, avant sélection financière et tarification")
+    ap.add_argument("--deployment-inventory", metavar="FILE",
+                    help="Inventaire JSON local version 1 : lieux déclarés, jamais déduits "
+                         "du fournisseur. Maximum 1 Mio / 500 déploiements.")
     ap.add_argument("--blueprints", default="auto",
                     help="auto | liste: finops,gateway,agents,adoption,inference,quality,governance")
     ap.add_argument("--deploy", action="store_true")
@@ -1413,7 +1863,8 @@ def main() -> int:
                     help="Cible SLO pour le burn-rate (défaut 0.99)")
     ap.add_argument("--cost-mode", choices=["auto", "recorded", "inline"],
                     default="auto",
-                    help="auto: recording rules si détectées, sinon composition")
+                    help="auto: total recorded exact, sinon spend natif LiteLLM, sinon OTel; "
+                         "inline ignore recorded; recorded exige le total découvert")
     ap.add_argument("--framework", default="eu-ai-act,iso-42001,nist-rmf",
                     help="Référentiels de gouvernance à cartographier : "
                          "eu-ai-act, iso-42001, nist-rmf (liste séparée par des "
@@ -1424,6 +1875,8 @@ def main() -> int:
                          "l'intervalle de scrape (défaut 5m).")
     ap.add_argument("--rules-interval", default="1m",
                     help="Intervalle d'évaluation du groupe de règles (défaut 1m). "
+                         "Doit correspondre aux règles installées : le total de coût "
+                         "enregistré utilise cette cadence, avec une grille d'au moins 1m. "
                          "Les backends managés refusent souvent le sous-minute.")
     ap.add_argument("--locale", default="en",
                     help="Langue des libellés générés : en (défaut) ou fr. "
@@ -1453,6 +1906,10 @@ def main() -> int:
 
     if args.org_id is not None and args.org_id <= 0:
         ap.error("--org-id must be a positive integer")
+    try:
+        _duration_milliseconds(args.rules_interval)
+    except ValueError as e:
+        ap.error(f"--rules-interval: {e}")
     if (not 0 <= args.pricing_cache_max_age_hours <= 720):
         ap.error("--pricing-cache-max-age-hours must be between 0 and 720")
 
@@ -1463,6 +1920,15 @@ def main() -> int:
     else:
         with open(args.capability, encoding="utf-8") as f:
             cap = json.load(f)
+    try:
+        inventory = load_deployment_inventory(args.deployment_inventory, cap)
+        cap = filter_capability_datasource(cap, args.datasource)
+    except ValueError as e:
+        print(f"[fail] inventory/datasource validation: {e}", file=sys.stderr)
+        return 2
+    wanted = (list(BLUEPRINTS) if args.blueprints == "auto"
+              else [b.strip() for b in args.blueprints.split(",")])
+    financial_requested = "finops" in wanted or args.with_alerts
 
     capability_dir = (os.path.dirname(os.path.abspath(args.capability))
                       if not args.selftest else os.getcwd())
@@ -1470,10 +1936,16 @@ def main() -> int:
     pricing_cache = os.path.join(capability_dir, pricing_sources.CACHE_FILENAME)
     registry = pricing_sources.official_registry_base(
         load_registry(args.registry, local_registry))
+    initial_ctx = Ctx(cap, registry, args.cost_mode, inventory, args.datasource is not None)
+    if financial_requested:
+        try:
+            initial_ctx.require_financial_source()
+        except ValueError as e:
+            print(f"[fail] {e}", file=sys.stderr)
+            return 2
     pricing_result = None
     if args.pricing_fallback == "artificial-analysis":
-        initial_ctx = Ctx(cap, registry)
-        models_seen = initial_ctx.primary.s.models_seen if initial_ctx.primary else []
+        models_seen = initial_ctx.pricing_models()
         pricing_result = pricing_sources.apply_artificial_analysis_fallback(
             registry, models_seen, pricing_cache,
             os.environ.get(pricing_sources.AA_KEY_ENV),
@@ -1486,8 +1958,13 @@ def main() -> int:
             via = "local cache" if pricing_result["cache_used"] and not pricing_result["fetched"] else "API"
             print(f"[pricing] {len(pricing_result['priced'])} model(s) use "
                   f"Artificial Analysis median multi-provider estimates via {via}. "
-                  "Attribution: Artificial Analysis.")
-    ctx = Ctx(cap, registry)
+                  "For OTel recording rules and inline estimates only; native/recorded "
+                  "financial sources retain their own provenance. Attribution: Artificial Analysis.")
+    ctx = Ctx(cap, registry, args.cost_mode, inventory, args.datasource is not None)
+    ctx.rules_interval = args.rules_interval
+    if financial_requested and ctx.cost_source:
+        print(f"[coverage] datasource={ctx.cost_source.ds_uid}: "
+              + ctx.cost_source.coverage_note())
     client = None
     try:
         if args.deploy and not args.dry_run:
@@ -1508,12 +1985,7 @@ def main() -> int:
     if _unknown:
         print(f"[warn] unknown framework(s): {_unknown}; known: "
               f"{sorted(FRAMEWORKS)}", file=sys.stderr)
-    if args.cost_mode == "recorded":
-        ctx.recorded = True
-    elif args.cost_mode == "inline":
-        ctx.recorded = False
-    wanted = (list(BLUEPRINTS) if args.blueprints == "auto"
-              else [b.strip() for b in args.blueprints.split(",")])
+    ctx.locale_table = load_locale(args.locale)
     boards, skipped, errors = [], [], []
     for name in wanted:
         fn = BLUEPRINTS.get(name)
@@ -1533,7 +2005,7 @@ def main() -> int:
             print("  -", e, file=sys.stderr)
         return 2
 
-    _loc = load_locale(args.locale)
+    _loc = ctx.locale_table
     if _loc:
         for _, board in boards:
             board.d = localize(board.d, _loc)
@@ -1543,6 +2015,13 @@ def main() -> int:
     folder_uid = det_uid(args.folder, "fold", args.uid_scope)
     alert_rules = (build_alerts(ctx, folder_uid, args.daily_budget, args.slo_target)
                    if args.with_alerts else [])
+    budget_uid = det_uid("llm-daily-budget", "alr", args.uid_scope)
+    budget_generated = any(rule["uid"] == budget_uid for rule in alert_rules)
+    budget_reason = (None if budget_generated else
+                     (ctx.cost_source.coverage["budget_omission_reason"] if ctx.cost_source else None)
+                     or "No usable financial source or budget cost expression.")
+    pause_budget = operation == "deploy" and args.with_alerts and not budget_generated
+    budget_action = ("upsert" if budget_generated else "pause") if args.with_alerts else "not_requested"
     manifest = {
         "schema": "grafana-llmops-forge/deployment-manifest",
         "version": 2,
@@ -1555,12 +2034,22 @@ def main() -> int:
         "folder_uid": folder_uid,
         "folder_title": args.folder,
         "uid_scope": args.uid_scope,
+        "financial_source": ctx.financial_manifest(),
+        "deployment_inventory": ctx.deployment_manifest(),
+        "budget_alert": {
+            "uid": budget_uid, "org_id": ctx.org_id, "folder_uid": folder_uid,
+            "action": budget_action,
+            "result": ("pending" if operation == "deploy" else "not_executed")
+                      if args.with_alerts else "not_requested",
+            "reason": budget_reason if args.with_alerts else None,
+            "is_paused": None, "pause_policy": "preserve_existing_pause",
+        },
         "resources": {
             "folder": {"requested": 1 if operation == "deploy" else 0,
                        "succeeded": 0, "failed": 0, "skipped": 0},
             "dashboards": {"requested": len(boards), "succeeded": 0,
                            "failed": 0, "skipped": 0},
-            "alerts": {"requested": len(alert_rules), "succeeded": 0,
+            "alerts": {"requested": len(alert_rules) + int(pause_budget), "succeeded": 0,
                        "failed": 0, "skipped": 0},
         },
         "errors": [],
@@ -1585,6 +2074,11 @@ def main() -> int:
         {"uid": rule["uid"], "title": rule["title"],
          "status": "pending" if operation == "deploy" else "succeeded"}
         for rule in alert_rules]
+    if pause_budget:
+        # This is a scoped maintenance operation, not a generated replacement rule.
+        manifest["alerts"].append(
+            {"uid": budget_uid, "title": "LLM financial budget", "action": "pause",
+             "status": "pending", "reason": budget_reason})
     if operation == "generate":
         manifest["resources"]["dashboards"]["succeeded"] = len(boards)
         manifest["resources"]["alerts"]["succeeded"] = len(alert_rules)
@@ -1609,7 +2103,9 @@ def main() -> int:
         except (GrafanaError, SystemExit) as e:
             manifest["resources"]["folder"]["failed"] = 1
             manifest["resources"]["dashboards"]["skipped"] = len(boards)
-            manifest["resources"]["alerts"]["skipped"] = len(alert_rules)
+            manifest["resources"]["alerts"]["skipped"] = len(manifest["alerts"])
+            if args.with_alerts:
+                manifest["budget_alert"]["result"] = "not_executed"
             for entry in manifest["dashboards"] + manifest["alerts"]:
                 entry["status"] = "skipped"
             manifest["errors"].append(
@@ -1624,6 +2120,7 @@ def main() -> int:
         else:
             actual_folder_uid = folder.get("uid") or folder_uid
             manifest["folder_uid"] = actual_folder_uid
+            manifest["budget_alert"]["folder_uid"] = actual_folder_uid
             manifest["resources"]["folder"]["succeeded"] = 1
             manifest["deployed"] = True
             print(f"\nFolder '{folder.get('title')}' (uid {actual_folder_uid})")
@@ -1654,18 +2151,62 @@ def main() -> int:
                 print(f"\n[partial] {ds_stats['succeeded']}/{ds_stats['requested']} "
                       "dashboards deployed. Re-running after fixing the role is safe: "
                       "deterministic UIDs make it an update.", file=sys.stderr)
-            if alert_rules and not client.contact_points():
-                print("  [warn] no contact point configured: alerts will fire with no "
-                      "recipient (Alerting -> Contact points).")
+            if pause_budget:
+                expected_budget = {
+                    "uid": budget_uid, "orgID": ctx.org_id, "folderUID": actual_folder_uid,
+                    "ruleGroup": "llmops-slo",
+                    "labels": {"origin": "llmops-forge",
+                               "llmops_rule_identity": alert_logical_identity("llm-daily-budget")},
+                }
+                entry = manifest["alerts"][-1]
+                try:
+                    result = client.pause_budget_alert_rule(expected_budget)
+                except (Exception, SystemExit) as e:
+                    manifest["budget_alert"]["result"] = "failed"
+                    entry.update(status="failed", result="failed", error=str(e))
+                    manifest["resources"]["alerts"]["failed"] += 1
+                    manifest["errors"].append(
+                        {"resource_type": "alert", "identifier": "LLM financial budget",
+                         "uid": budget_uid, "operation": "pause",
+                         "status": getattr(e, "status", 0), "message": _perm_hint("alert", e)})
+                    print(f"  [fail] budget pause was not confirmed: {_perm_hint('alert', e)}",
+                          file=sys.stderr)
+                else:
+                    manifest["budget_alert"].update(
+                        result=result, is_paused=True if result != "absent" else None)
+                    entry.update(status="succeeded", result=result)
+                    manifest["resources"]["alerts"]["succeeded"] += 1
+                    print(f"  [ok] budget: {result}; {budget_reason}")
+            if alert_rules:
+                try:
+                    contacts = client.contact_points()
+                except (GrafanaError, SystemExit) as e:
+                    # This informational lookup must not discard a deployment failure manifest.
+                    print(f"  [warn] contact point availability could not be checked: {e}",
+                          file=sys.stderr)
+                else:
+                    if not contacts:
+                        print("  [warn] no contact point configured: alerts will fire with no "
+                              "recipient (Alerting -> Contact points).")
             for i, rule in enumerate(alert_rules):
                 # Folder UID is part of the alert body and must match the resolved folder.
                 rule["folderUID"] = actual_folder_uid
                 try:
-                    client.upsert_alert_rule(rule)
+                    result = client.upsert_alert_rule(rule)
+                    if rule["uid"] == budget_uid:
+                        paused = result.get("isPaused") if isinstance(result, dict) else None
+                        manifest["budget_alert"].update(
+                            result="upserted_paused" if paused is True else "upserted",
+                            is_paused=paused)
+                        if paused is True:
+                            print("  [info] budget remains paused; review coverage and resume "
+                                  "it explicitly in Grafana when appropriate.")
                     manifest["resources"]["alerts"]["succeeded"] += 1
                     manifest["alerts"][i]["status"] = "succeeded"
                     print(f"  [ok] alert: {rule['title']}")
-                except Exception as e:  # droits alerting et transports hétérogènes
+                except (Exception, SystemExit) as e:  # droits alerting et transports hétérogènes
+                    if rule["uid"] == budget_uid:
+                        manifest["budget_alert"]["result"] = "failed"
                     manifest["resources"]["alerts"]["failed"] += 1
                     manifest["alerts"][i]["status"] = "failed"
                     manifest["alerts"][i]["error"] = str(e)
@@ -1689,13 +2230,19 @@ def main() -> int:
     rules_path = os.path.join(args.out_dir, "prometheus_rules_llmops.yml")
     _, nprices = emit_recording_rules(ctx, rules_path, args.rules_window,
                                       args.rules_interval)
+    manifest["recording_rules"] = {
+        "generated": bool(nprices),
+        "datasource_uid": ctx.primary.s.ds_uid if nprices else None,
+        "dialect": ctx.primary.s.dialect if nprices else None,
+    }
     if nprices:
         print(f"[ok] recording rules ({nprices} prices) -> {rules_path}"
               f"\n     + PrometheusRule CRD -> "
               f"{os.path.join(os.path.dirname(rules_path) or '.', 'prometheusrule_llmops.yaml')}"
               + ("" if ctx.recorded else
                  "\n     copy into Prometheus (rule_files), then rerun "
-                 "discover+forge : les panels de coût passeront en O(1)."))
+                 "discover+forge for shorter cost queries; execution still depends "
+                 "on series count and the queried window."))
     elif os.path.exists(rules_path):
         os.remove(rules_path)
 
@@ -1713,7 +2260,8 @@ def main() -> int:
           f"registry verified {ctx.verified}.")
     if ctx.unmatched:
         print(f"Models without a price ({len(ctx.unmatched)}): "
-              + ", ".join(ctx.unmatched[:8]))
+              + ", ".join(ctx.unmatched[:8])
+              + (f" ({len(ctx.unmatched) - 8} not displayed)" if len(ctx.unmatched) > 8 else ""))
     if manifest["deployed"]:
         print("VISUAL CHECK (recommended): "
               f"python3 scripts/visual_audit.py --dashboards {args.out_dir} "
