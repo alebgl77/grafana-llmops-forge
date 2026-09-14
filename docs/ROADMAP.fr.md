@@ -10,12 +10,12 @@ sans Forge Cloud obligatoire.
 
 [Version anglaise canonique](../ROADMAP.md) · [Capacités actuelles](README.fr.md)
 
-## Version publiée, validation sur branche et propositions
+## Version publiée, intégration et propositions
 
 **État au 2026-09-14.** La version publiée de référence est **v2.0.2**, sortie le 2026-09-02.
 Les cinq corrections de fondation et le correctif du cycle des alertes budgétaires de la
-[PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) sont **validés sur sa branche
-et attendent leur intégration dans main**. Ils sont implémentés dans la PR, **pas encore dans main ni dans une version publiée**.
+[PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) sont **intégrés dans main,
+mais pas encore inclus dans une version publiée**.
 Les contrats H0 restants, H1–H3, le parcours et le dossier de décision restent des travaux futurs proposés.
 
 Aujourd'hui, Forge est une CLI locale fondée sur la bibliothèque standard Python et un agent skill.
@@ -109,7 +109,7 @@ libellés v2.1, v2.2 et v3 restent des regroupements de livraison envisagés, à
 
 | Horizon | Question de l'utilisateur | Résultat démontrable | Dépendance |
 | --- | --- | --- | --- |
-| **H0 · Des fondations fiables** | Peut-on interpréter ces chiffres et voir ce qui changerait ? | Contrats des signaux, lacunes explicites et diff des ressources en lecture seule. | Intégrer la PR nº 5 validée ; établir le périmètre de mesure. |
+| **H0 · Des fondations fiables** | Peut-on interpréter ces chiffres et voir ce qui changerait ? | Contrats des signaux, lacunes explicites et diff des ressources en lecture seule. | PR nº 5 intégrée dans main ; établir le périmètre de mesure. |
 | **H1 · Comparer un changement** | Peut-on accepter ce modèle ou prompt au niveau de qualité et de latence requis ? | Comparaison délimitée, coût par tâche réussie et conclusion motivée. | Les contrats H0 tiennent pour la charge du pilote. |
 | **H2 · Livrer avec des preuves** | Un tiers peut-il examiner et reproduire la décision de promotion ? | Dossier portable de promotion et contrôles consommés par la CI existante. | H1 apporte une valeur de décision répétée. |
 | **H3 · Répéter la prochaine migration** | Que tester avant de changer de fournisseur ou d'hébergement ? | Compte rendu d'une répétition exécutée ou scénario de sensibilité clairement identifié. | Les pilotes précédents justifient l'élargissement et les données comptables existent. |
@@ -119,7 +119,7 @@ libellés v2.1, v2.2 et v3 restent des regroupements de livraison envisagés, à
 **Résultat :** des fondations fiables pour les sept domaines et un aperçu/diff des ressources
 Grafana proposées, en lecture seule, distinguant créations, mises à jour et éléments inchangés.
 
-La PR nº 5 est le premier prérequis : intégration échantillonnée du coût enregistré avec couverture ;
+La PR nº 5 a apporté dans main les premières corrections de fondation : intégration échantillonnée du coût enregistré avec couverture ;
 numérateur et dénominateur financiers liés à la même source et budget instantané ; aucune
 troncature silencieuse des modèles et couverture tarifaire explicite ; moyenne/minimum des
 jauges de score distincts des quantiles d'histogramme ; origine fournisseur séparée du lieu

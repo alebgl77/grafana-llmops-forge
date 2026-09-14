@@ -54,6 +54,6 @@ Ces horizons sont prévus avec des critères de passage, sans dates de livraison
 - **H2 · Livrer avec des preuves :** dossiers portables de promotion et contrôles consommés par la CI et les outils de provisioning du client.
 - **H3 · Répéter la prochaine migration :** tests de migration exécutés ou scénarios de sensibilité clairement identifiés, après validation de l'utilité du parcours précédent.
 
-Au 2026-09-14, **v2.0.2 reste la version publiée de référence** ; les cinq corrections de fondation et le correctif du cycle des alertes budgétaires de la [PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) sont validés sur leur branche et attendent leur intégration dans main, pas encore dans main ni dans une version publiée. Les parcours de comparaison et dossiers proposés restent des travaux futurs.
+Au 2026-09-14, **v2.0.2 reste la version publiée de référence** ; les cinq corrections de fondation et le correctif du cycle des alertes budgétaires de la [PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) sont intégrés dans main, mais pas encore inclus dans une version publiée. Les parcours de comparaison et dossiers proposés restent des travaux futurs.
 
 Consulter la [feuille de route française](ROADMAP.fr.md) ou la [version anglaise canonique](../ROADMAP.md) pour la démonstration future, le périmètre et les critères de passage.
