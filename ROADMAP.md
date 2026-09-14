@@ -9,12 +9,13 @@ chooses and controls external integrations; there is no mandatory Forge Cloud.
 
 [Version française](docs/ROADMAP.fr.md) · [Current capabilities](README.md)
 
-## What exists, what is under review, what is proposed
+## Release, branch validation and proposed work
 
-**Status: 2026-09-08.** The released baseline is **v2.0.2**, published on 2026-09-02.
-[PR #5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) is open and under review;
-its five priority corrections are **not yet merged or released**.
-Everything described below as a horizon, journey or decision dossier is proposed future work.
+**Status: 2026-09-14.** The released baseline is **v2.0.2**, published on 2026-09-02.
+The five foundational corrections and budget-alert lifecycle fix in
+[PR #5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) are **validated on its branch
+and awaiting integration into main**. They are implemented in the PR, **not yet in main or a release**.
+The remaining H0 contracts, H1–H3, the journey and the decision dossier remain proposed future work.
 
 Today, Forge is a local Python standard-library CLI and an agent skill. Discovery drives seven
 Grafana dashboards, alerts, pricing and recording rules, portable exports and visual capture.
@@ -104,7 +105,7 @@ and v3 labels are tentative packaging choices to revisit after the gates pass.
 
 | Horizon | User question | Demonstrable output | Dependency |
 | --- | --- | --- | --- |
-| **H0 · Trusted foundations** | Can we interpret these numbers and see what would change? | Signal contracts, explicit gaps and a read-only asset diff. | Validate and merge PR #5; establish measurement scope. |
+| **H0 · Trusted foundations** | Can we interpret these numbers and see what would change? | Signal contracts, explicit gaps and a read-only asset diff. | Integrate validated PR #5; establish measurement scope. |
 | **H1 · Compare a change** | Can we accept this model or prompt change at our required quality and latency? | A bounded comparison with cost per successful task and a reasoned outcome. | H0 contracts hold for the pilot workload. |
 | **H2 · Ship with evidence** | Can someone review and reproduce the promotion decision? | A portable promotion dossier and checks consumed by existing CI. | H1 demonstrates repeat decision value. |
 | **H3 · Rehearse the next migration** | What should we test before changing provider or hosting? | An executed rehearsal record or a clearly labeled sensitivity scenario. | Earlier pilots justify broader scope and accounting inputs exist. |
@@ -119,6 +120,10 @@ numerator and denominator bound to the same source and an instant budget value; 
 model truncation and explicit pricing coverage; mean/minimum labels for score gauges distinct
 from histogram quantiles; provider origin separated from declared deployment location and
 local inventory. These corrections narrow errors; they do not establish backend completeness.
+
+PR #5 also omits new budget rules when financial coverage is insufficient. During deployment
+with `--with-alerts`, an existing Forge budget alert is paused after its ownership and scope
+are verified. Its pause is preserved if coverage recovers.
 
 Remaining contracts must cover units, counter/histogram/gauge semantics, freshness, missing
 and unsupported signals, unpriced models and provenance. In particular, complete absence of

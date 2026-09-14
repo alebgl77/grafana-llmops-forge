@@ -10,12 +10,13 @@ sans Forge Cloud obligatoire.
 
 [Version anglaise canonique](../ROADMAP.md) · [Capacités actuelles](README.fr.md)
 
-## Ce qui existe, ce qui est en revue, ce qui est proposé
+## Version publiée, validation sur branche et propositions
 
-**État au 2026-09-08.** La version publiée de référence est **v2.0.2**, sortie le 2026-09-02.
-La [PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) est ouverte, en cours de revue ;
-ses cinq corrections prioritaires ne sont **ni fusionnées ni publiées**.
-Les horizons, le parcours et le dossier de décision ci-dessous décrivent des travaux futurs proposés.
+**État au 2026-09-14.** La version publiée de référence est **v2.0.2**, sortie le 2026-09-02.
+Les cinq corrections de fondation et le correctif du cycle des alertes budgétaires de la
+[PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) sont **validés sur sa branche
+et attendent leur intégration dans main**. Ils sont implémentés dans la PR, **pas encore dans main ni dans une version publiée**.
+Les contrats H0 restants, H1–H3, le parcours et le dossier de décision restent des travaux futurs proposés.
 
 Aujourd'hui, Forge est une CLI locale fondée sur la bibliothèque standard Python et un agent skill.
 La découverte alimente sept tableaux de bord Grafana, des alertes, des tarifs et règles
@@ -108,7 +109,7 @@ libellés v2.1, v2.2 et v3 restent des regroupements de livraison envisagés, à
 
 | Horizon | Question de l'utilisateur | Résultat démontrable | Dépendance |
 | --- | --- | --- | --- |
-| **H0 · Des fondations fiables** | Peut-on interpréter ces chiffres et voir ce qui changerait ? | Contrats des signaux, lacunes explicites et diff des ressources en lecture seule. | Valider et fusionner la PR nº 5 ; établir le périmètre de mesure. |
+| **H0 · Des fondations fiables** | Peut-on interpréter ces chiffres et voir ce qui changerait ? | Contrats des signaux, lacunes explicites et diff des ressources en lecture seule. | Intégrer la PR nº 5 validée ; établir le périmètre de mesure. |
 | **H1 · Comparer un changement** | Peut-on accepter ce modèle ou prompt au niveau de qualité et de latence requis ? | Comparaison délimitée, coût par tâche réussie et conclusion motivée. | Les contrats H0 tiennent pour la charge du pilote. |
 | **H2 · Livrer avec des preuves** | Un tiers peut-il examiner et reproduire la décision de promotion ? | Dossier portable de promotion et contrôles consommés par la CI existante. | H1 apporte une valeur de décision répétée. |
 | **H3 · Répéter la prochaine migration** | Que tester avant de changer de fournisseur ou d'hébergement ? | Compte rendu d'une répétition exécutée ou scénario de sensibilité clairement identifié. | Les pilotes précédents justifient l'élargissement et les données comptables existent. |
@@ -124,6 +125,11 @@ troncature silencieuse des modèles et couverture tarifaire explicite ; moyenne/
 jauges de score distincts des quantiles d'histogramme ; origine fournisseur séparée du lieu
 de déploiement déclaré et inventaire local. Ces corrections réduisent les erreurs sans établir
 l'exhaustivité des données du backend.
+
+La PR nº 5 omet aussi les nouvelles règles budgétaires lorsque la couverture financière est
+insuffisante. Lors d'un déploiement avec `--with-alerts`, une alerte budgétaire Forge existante
+est mise en pause après vérification de son appartenance et de son périmètre. Cette pause est
+conservée si la couverture redevient suffisante.
 
 Les contrats restants couvrent unités, sens des compteurs/histogrammes/jauges, fraîcheur,
 signaux absents ou non pris en charge, modèles sans tarif et provenance. L'absence complète
