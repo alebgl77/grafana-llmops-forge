@@ -56,6 +56,24 @@ class FinancialP1Tests(unittest.TestCase):
                 self.assertEqual(pricing._registry_destinations(name, registry["models"]),
                                  {("new", pricing.normalize_model_name(name))})
 
+    def test_generic_qwen_ids_do_not_inherit_versioned_model_prices(self):
+        registry = f.load_registry()
+        for generic, versioned in (("qwen-max", "qwen3.7-max"),
+                                   ("qwen-plus", "qwen3.6-plus")):
+            for suffix in ("", "-20261008", "_20261008", "-2026-10-08"):
+                name = generic + suffix
+                with self.subTest(name=name):
+                    self.assertEqual(pricing.resolve_registry_model(name, registry["models"]),
+                                     (None, None, "absent"))
+                    self.assertEqual(pricing.models_needing_fallback([name], registry), [name])
+                    self.assertEqual(pricing._registry_destinations(name, registry["models"]),
+                                     {("new", pricing.normalize_model_name(name))})
+                with self.subTest(name=versioned + suffix):
+                    _, model, status = pricing.resolve_registry_model(versioned + suffix,
+                                                                       registry["models"])
+                    self.assertEqual(status, "matched")
+                    self.assertEqual(model["id"], versioned)
+
     def test_only_delimited_calendar_dates_are_compatible(self):
         models = f.load_registry()["models"]
         for suffix in ("-20260115", "_20260115", "-2026-01-15"):
