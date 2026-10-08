@@ -255,10 +255,10 @@ _tie = {"models": [
     {"id": "foo-model-a", "aliases": [], "input_per_mtok": 1},
     {"id": "foo-model-b", "aliases": [], "input_per_mtok": 2}]}
 _tie_match, _tie_unmatched = match_models(["foo-model"], _tie)
-check("forge et fallback refusent la meme egalite de meilleur score",
+check("forge et fallback refusent tous les rapprochements par sous-chaine",
       not _tie_match and _tie_unmatched == ["foo-model"]
       and pricing_sources.resolve_registry_model(
-          "foo-model", _tie["models"])[2] == "ambiguous")
+           "foo-model", _tie["models"])[2] == "absent")
 
 # ---------------------------------------------------------------- 7. visual_audit
 print("\n[16] Packaging du livrable")
@@ -1330,12 +1330,31 @@ check("Playwright recoit l'org resolue, jamais 1 en dur",
       "orgId=37" in visual_audit.playwright_dashboard_url(
           _url_client, {"uid": "x"}, _url_args))
 
-def _visual_action(extra, mode="ok", engine="renderer", uid="missing"):
+def _visual_action(extra, mode="ok", engine="renderer", uid="missing", playwright_result=None):
     out = os.path.join(tempfile.gettempdir(), f"visual_{mode}_{engine}")
     shutil.rmtree(out, ignore_errors=True)
     def action(env):
+        command = [sys.executable, os.path.join(SC, "visual_audit.py")]
+        if playwright_result is not None:
+            # Exercise the CLI fallback deterministically whether the optional
+            # browser happens to be installed on this machine or not.
+            fixture = '''import os, sys
+sys.path.insert(0, sys.argv.pop(1))
+import visual_audit
+outcome = sys.argv.pop(1)
+def capture(client, dashboard, out, args):
+    if outcome == "unavailable":
+        raise RuntimeError("Playwright is not installed (fixture)")
+    path = os.path.join(out, "full.png")
+    with open(path, "wb") as handle:
+        handle.write(b"controlled capture fixture")
+    return {"engine": "playwright", "files": [path], "warnings": [], "dom_findings": {}}
+visual_audit.capture_playwright = capture
+sys.exit(visual_audit.main())
+'''
+            command = [sys.executable, "-c", fixture, SC, playwright_result]
         return subprocess.run(
-            [sys.executable, os.path.join(SC, "visual_audit.py"), "--uids", uid,
+            [*command, "--uids", uid,
              "--engine", engine, "--out", out, *extra], env=env,
             capture_output=True, text=True, timeout=60)
     result = _fake_session(mode, action)
@@ -1351,10 +1370,16 @@ for _status in (403, 429, 500):
           r.returncode != 0 and _visual_bad["audit_status"] == "failed"
           and _visual_bad["errors"][0].get("status") == _status
           and _visual_bad["engine"] == "auto", r.stderr[-220:])
-r, _visual_404 = _visual_action([], mode="render404", engine="auto")
+r, _visual_404 = _visual_action([], mode="render404", engine="auto", playwright_result="unavailable")
 check("renderer 404 explicite autorise seulement le fallback Playwright",
-      r.returncode != 0 and _visual_404["engine"] == "playwright",
+       r.returncode != 0 and _visual_404["engine"] == "playwright"
+       and _visual_404["audit_status"] == "failed",
       (r.stdout + r.stderr)[-220:])
+r, _visual_404_present = _visual_action([], mode="render404", engine="auto", playwright_result="available")
+check("renderer 404 avec Playwright disponible capture sans dependre du navigateur local",
+      r.returncode == 0 and _visual_404_present["engine"] == "playwright"
+      and _visual_404_present["audit_status"] == "success"
+      and _visual_404_present["dashboards"][0]["files"], (r.stdout + r.stderr)[-220:])
 r, _visual_hard_allowed = _visual_action(["--allow-empty"], mode="render403",
                                           engine="auto")
 check("--allow-empty ne masque pas une erreur renderer",

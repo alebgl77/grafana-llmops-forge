@@ -53,27 +53,94 @@ class Signals:
         self.models_seen = entry.get("models_seen", [])
         self.providers_seen = entry.get("providers_seen", [])
         self.discovery_coverage = entry.get("discovery_coverage")
+        self.label_bindings = entry.get("label_bindings")
+        self.gaps = []
         groups = sorted(entry.get("group_labels", []), key=lambda g: g["cardinality"])
         self.group_label = groups[0]["label"] if groups else None
         self.group_card = groups[0]["cardinality"] if groups else 0
 
-    def find(self, substr: str, suffix: str | None = None) -> str | None:
+    @staticmethod
+    def family(metric: str) -> str:
+        for suffix in ("_bucket", "_count", "_sum", "_total", "_created"):
+            if metric.endswith(suffix):
+                return metric[:-len(suffix)]
+        return metric
+
+    def reject(self, role: str, candidates, reason="ambiguous metric families"):
+        raise ValueError(
+            f"Telemetry {reason}: datasource={self.ds_uid!r}, dialect={self.dialect!r}, "
+            f"role={role!r}, candidates={sorted(set(candidates))!r}. "
+            "Isolate the intended datasource/metric family and rediscover; "
+            "--datasource selects a datasource, not a metric family within it.")
+
+    def find(self, substr: str, suffix: str | None = None, aliases=()) -> str | None:
         """Recherche par sous-chaîne, insensible au séparateur : un nom conservé
         en UTF-8 (`gen_ai.client.operation.duration`) doit répondre aux mêmes
         clés que sa forme classique. On compare une forme normalisée mais on
         retourne toujours le nom RÉEL, seul interrogeable."""
-        key = substr.replace(".", "_")
-        cands = [n for n in self.names if key in n.replace(".", "_")]
+        keys = [key.replace(".", "_") for key in (substr, *aliases)]
+        cands = [n for n in self.names if any(key in n.replace(".", "_") for key in keys)]
         if suffix:
             cands = [n for n in cands if n.endswith(suffix)]
-        return sorted(cands, key=len)[0] if cands else None
+        if len({self.family(n) for n in cands}) > 1:
+            self.reject("/".join(keys), cands)
+        # Pick a member only AFTER proving that there is one logical family.
+        order = ("", "_total", "_sum", "_count", "_bucket", "_created")
+        return min(cands, key=lambda n: (order.index(n[len(self.family(n)):]), n)) if cands else None
 
-    def hist_base(self, substr: str) -> str | None:
-        b = self.find(substr, "_bucket")
+    def hist_base(self, substr: str, *aliases) -> str | None:
+        b = self.find(substr, "_bucket", aliases)
         return b[:-len("_bucket")] if b else None
 
-    def counter(self, substr: str) -> str | None:
-        return self.find(substr, "_total") or self.find(substr)
+    def counter(self, substr: str, *aliases) -> str | None:
+        # Inspect the full family set before preferring the counter member.
+        self.find(substr, aliases=aliases)
+        return self.find(substr, "_total", aliases) or self.find(substr, aliases=aliases)
+
+    def request_counter(self) -> str | None:
+        # Classify whole LiteLLM families, not the shared requests_metric suffix:
+        # remaining/failed/success request metrics describe different signals.
+        role = re.compile(r"(?:^|_)litellm_(?:proxy_total_requests(?:_metric)?|requests_metric)$")
+        names = self.names
+        try:
+            self.names = [n for n in names if role.search(self.family(n.replace(".", "_")))]
+            return self.counter("proxy_total_requests", "requests_metric")
+        finally:
+            self.names = names
+
+    def label(self, role: str, metric: str | None) -> str | None:
+        if not metric:
+            return None
+        if self.label_bindings is not None:
+            candidates = self.label_bindings.get(metric, {}).get(role, [])
+            # Request and response models may legitimately coexist. Keep the
+            # existing request-first contract; translation variants of that
+            # same semantic attribute still require an unambiguous binding.
+            tiers = {"model": (("gen_ai_request_model",), ("gen_ai_response_model",), ("gen_ai_model",)),
+                     "provider": (("gen_ai_provider_name",), ("gen_ai_system",))}.get(role, ())
+            for tier in tiers:
+                preferred = [label for label in candidates if label.replace(".", "_") in tier]
+                if preferred:
+                    candidates = preferred
+                    break
+            if len(candidates) > 1:
+                self.reject(f"{metric}:{role}", candidates, "ambiguous label bindings")
+            if not candidates:
+                gap = f"[{self.ds_uid}/{self.dialect}] {metric}: {role} label unknown; dependent panels/queries omitted."
+                if gap not in self.gaps:
+                    self.gaps.append(gap)
+            return candidates[0] if candidates else None
+        # Backward compatibility for maps predating per-metric discovery.
+        if role in ("model", "provider"):
+            return getattr(self, role + "_label")
+        dotted = "." in metric or any("." in label for label in (
+            self.model_label, self.provider_label, self.token_type_label) if label)
+        if role == "token_type":
+            return "gen_ai.token.type" if dotted and self.token_type_label == "gen_ai_token_type" else self.token_type_label
+        return {"operation": "gen_ai.operation.name" if dotted else "gen_ai_operation_name",
+                "error": "error.type" if dotted else "error_type",
+                "tool": "gen_ai.tool.name" if dotted else "gen_ai_tool_name",
+                "agent": "gen_ai.agent.name" if dotted else "gen_ai_agent_name"}.get(role)
 
 
 def _esc(v: str) -> str:
@@ -235,15 +302,49 @@ class Q:
         self.s = sig
         d = sig.dialect
         if d == "otel_genai":
-            self.dur = sig.hist_base("client_operation_duration") or sig.hist_base("operation_duration")
-            self.tok = sig.hist_base("client_token_usage") or sig.hist_base("token_usage")
-            self.ttft = sig.hist_base("server_time_to_first_token") or sig.hist_base("time_to_first_token")
+            self.dur = sig.hist_base("operation_duration")
+            self.tok = sig.hist_base("token_usage")
+            self.ttft = sig.hist_base("time_to_first_token")
             self.tpot = sig.hist_base("time_per_output_token")
+            if self.dur and self.tok:
+                namespaces = {m.replace(".", "_").split("gen_ai_", 1)[0]
+                              for m in (self.dur, self.tok)}
+                if len(namespaces) > 1:
+                    sig.reject("client duration/token usage", (self.dur, self.tok),
+                               "incompatible namespaces")
+            count = self.dur + "_count" if self.dur else None
+            bucket = self.dur + "_bucket" if self.dur else None
+            tokens = self.tok + "_sum" if self.tok else None
+            self.operation_label = sig.label("operation", count)
+            self.hist_operation_label = sig.label("operation", bucket)
+            self.error_label = sig.label("error", count)
+            self.tool_label = sig.label("tool", count)
+            self.agent_label = sig.label("agent", tokens)
+            if sig.label_bindings is not None:
+                for role in ("model", "provider"):
+                    bindings = {m: sig.label(role, m) for m in (count, bucket, tokens) if m}
+                    if len({label for label in bindings.values() if label is not None}) > 1:
+                        sig.reject(role, [f"{m}: {v!r}" for m, v in bindings.items()],
+                                   "incompatible per-metric labels")
+                    # Unknown is not a conflicting label. Disable the shared
+                    # dimension instead of guessing it for another metric.
+                    setattr(sig, role + "_label", None if None in bindings.values()
+                            else next(iter(bindings.values()), None))
+                groups_by_metric = [sig.label_bindings.get(m, {}).get("group_labels", [])
+                                    for m in (count, tokens) if m]
+                common = set.intersection(*(set(g["label"] for g in groups)
+                                            for groups in groups_by_metric)) if groups_by_metric else set()
+                groups = sorted((g for groups in groups_by_metric for g in groups
+                                 if g["label"] in common), key=lambda g: (g["cardinality"], g["label"]))
+                sig.group_label = groups[0]["label"] if groups else None
+                sig.group_card = max((g["cardinality"] for g in groups
+                                     if g["label"] == sig.group_label), default=0)
+            sig.token_type_label = sig.label("token_type", tokens)
         elif d == "litellm":
-            self.dur = sig.hist_base("request_total_latency") or sig.hist_base("llm_api_latency")
+            self.dur = sig.hist_base("request_total_latency", "llm_api_latency")
             self.spend = sig.counter("spend")
-            self.req = sig.counter("proxy_total_requests") or sig.counter("requests_metric")
-            self.fail = sig.counter("proxy_failed_requests") or sig.counter("api_failed_requests")
+            self.req = sig.request_counter()
+            self.fail = sig.counter("proxy_failed_requests", "api_failed_requests")
             self.tok_in = sig.counter("input_tokens")
             self.tok_out = sig.counter("output_tokens")
             self.remaining_req = sig.find("remaining_requests")
@@ -258,7 +359,7 @@ class Q:
             self.tok_prompt = sig.counter("prompt_tokens")
             self.tok_gen = sig.counter("generation_tokens")
         elif d == "tgi":
-            self.dur = sig.hist_base("request_inference_duration") or sig.hist_base("request_duration")
+            self.dur = sig.hist_base("request_inference_duration", "request_duration")
             self.tpot = sig.hist_base("request_mean_time_per_token_duration")
             self.queue = sig.find("queue_size")
         elif d in ("gpu_dcgm", "gpu_smi"):
@@ -288,8 +389,9 @@ class Q:
 
     def err_rate(self, by: str | None = None, w: str = RATE) -> str | None:
         d = self.s.dialect
-        if d == "otel_genai" and self.dur:
-            return f'sum{self.by(by)}(rate({msel(self.dur + chr(95) + "count", chr(123) + "error_type!=" + chr(34)*2 + chr(125))}[{w}]))'
+        if d == "otel_genai" and self.dur and self.error_label:
+            selector = "{" + qlbl(self.error_label) + '!=""}'
+            return f"sum{self.by(by)}(rate({msel(self.dur + '_count', selector)}[{w}]))"
         if d == "litellm" and getattr(self, "fail", None):
             return f"sum{self.by(by)}(rate({msel(self.fail)}[{w}]))"
         return None
@@ -303,7 +405,7 @@ class Q:
     def tokens_rate(self, direction: str, by: str | None = None, sel_extra: str = "",
                     w: str = RATE) -> str | None:
         d = self.s.dialect
-        if d == "otel_genai" and self.tok:
+        if d == "otel_genai" and self.tok and self.s.token_type_label:
             sel = f'{{{qlbl(self.s.token_type_label)}={promql_string(direction)}{sel_extra}}}'
             return f"sum{self.by(by)}(rate({msel(self.tok + chr(95) + 'sum', sel)}[{w}]))"
         if d == "litellm":
@@ -342,9 +444,8 @@ def load_registry(path_override: str | None = None,
 def match_models(models_seen: list, registry: dict) -> tuple[list, list]:
     """Associe les modèles observés aux entrées du registre. → (matched, unmatched).
 
-    Scoring par spécificité : égalité exacte > clé ⊂ observé (variante datée,
-    ex. claude-opus-4-8-20260115) > observé ⊂ clé. Le match le plus long gagne ;
-    sinon gpt-5.4-mini serait facturé au prix de gpt-5.4 (audit #6).
+    IDs/alias normalisés exacts, puis suffixe daté valide et délimité
+    (ex. claude-opus-4-8-20260115). Aucune correspondance par sous-chaîne.
     """
     matched, unmatched = [], []
     for seen in models_seen:
@@ -429,11 +530,11 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
         if region:
             return None  # la ventilation régionale passe par la voie otel/registre
         return f"sum({agg}({msel(q.spend)}[{window}]))"
-    if q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
+    if q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label or not q.s.token_type_label:
         return None
     if len(matched) > INLINE_MODEL_CAP:
         return None  # la couche FinancialSource explique le refus; jamais les 40 premiers
-    terms = []
+    terms, available = [], []
     for it in matched:
         if region and it["reg"].get("region") != region:
             continue
@@ -444,9 +545,13 @@ def cost_rate_expr(q: Q, matched: list, region: str | None = None,
                 continue
             sel = (f'{{{qlbl(q.s.token_type_label)}={promql_string(direction)},'
                    f'{qlbl(q.s.model_label)}={lbl}}}')
-            terms.append(f'(sum({agg}({msel(q.tok + "_sum", sel)}[{window}])) '
-                         f"or vector(0)) * {price / 1e6:.9g}")
-    return "(" + " + ".join(terms) + ")" if terms else None
+            measured = f'sum({agg}({msel(q.tok + "_sum", sel)}[{window}]))'
+            available.append(measured)
+            terms.append(f'({measured} or vector(0)) * {price / 1e6:.9g}')
+    # Fill missing sides only while at least one priced side is calculable.
+    # A complete collection gap must remain absent, including for budget alerts.
+    return ("((" + " + ".join(terms) + ") and (" + " or ".join(available) + "))"
+            if terms else None)
 
 
 RULES_HEADER = """# Generated by grafana-llmops-forge: LLM cost recording rules.
@@ -477,6 +582,8 @@ RULES_HEADER = """# Generated by grafana-llmops-forge: LLM cost recording rules.
 def _rule_lines(ctx, indent: str, window: str) -> list:
     """Corps des règles, indenté pour un fichier plat ou pour un CRD."""
     q = ctx.primary
+    if not q or not getattr(q, "tok", None) or not q.s.model_label or not q.s.token_type_label:
+        return [], 0
     ml, tt = q.s.model_label, q.s.token_type_label
     ml_q = qlbl(ml)
     L, n = [], 0
@@ -511,7 +618,9 @@ def _rule_lines(ctx, indent: str, window: str) -> list:
     def side(direction):
         sel = B1 + qlbl(tt) + "=" + promql_string(direction) + B2
         price = PRICE_IN if direction == "input" else PRICE_OUT
-        return [f"{indent}    sum by({ml_q}, region, vendor) (",
+        # Source region/vendor may describe deployments. Aggregate them away
+        # before attaching provider-origin labels from the unique model price.
+        return [f"{indent}    sum by({ml_q}) (",
                 f"{indent}      rate({msel(q.tok + '_sum', sel)}[{window}])",
                 f"{indent}    ) * on({ml_q}) "
                 f"group_left(region, vendor, pricing_source_kind, price_estimate, "
@@ -537,7 +646,7 @@ def emit_recording_rules(ctx, path: str, window: str = "5m",
     applique pas tel quel.
     """
     q = ctx.primary
-    if not q or q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label:
+    if not q or q.s.dialect != "otel_genai" or not q.tok or not q.s.model_label or not q.s.token_type_label:
         return "", 0
     body, n = _rule_lines(ctx, "      ", window)
     if not n:
@@ -838,10 +947,16 @@ class Ctx:
                             if record["datasource_uid"] in inventory_uids]
         self.q: dict[str, Q] = {}
         self.by_datasource: dict[str, dict[str, Q]] = {}
+        self.telemetry_gaps = []
         for ds_uid, sigs in cap.get("signals", {}).items():
             self.by_datasource[ds_uid] = {}
             for dialect, entry in sigs.items():
                 query = Q(Signals(dialect, entry, ds_uid))
+                self.telemetry_gaps.extend(query.s.gaps)
+                if dialect == "otel_genai" and query.s.label_bindings is None:
+                    self.telemetry_gaps.append(
+                        f"[{ds_uid}/{dialect}] legacy capability map: semantic labels are inferred; "
+                        "rediscover to verify per-metric bindings.")
                 if query.s.group_card > CARDINALITY_LIMIT:
                     query.s.group_label = None
                 self.by_datasource[ds_uid][dialect] = query
@@ -903,7 +1018,7 @@ class Ctx:
                 levels["recorded"].append((recorded, otel or lite))
             if lite and lite.spend:
                 levels["native"].append((lite, lite))
-            if otel and otel.tok and otel.s.model_label:
+            if otel and otel.tok and otel.s.model_label and otel.s.token_type_label:
                 levels["inline"].append((otel, otel))
         modes = (["recorded"] if self.cost_mode == "recorded" else
                  ["native", "inline"] if self.cost_mode == "inline" else
@@ -994,13 +1109,14 @@ def bp_finops(ctx: Ctx) -> Board | None:
                   "make this a subtotal, not overall spend." if source.is_subtotal else
                   "Estimate for listed models only; backend completeness is unknown.")
     b.stat(range_title, ds, spend_range, 6, 5, "currencyUSD",
-           ("Estimated total: aggregate USD/s sampled on a grid of at least 1m "
+            ("Estimated total: aggregate USD/s sampled on a grid of at least 1m "
             f"(configured recording cadence {ctx.rules_interval}) × range seconds. "
             "--rules-interval must match the installed rules. Changes within a grid "
             "cell and time-range boundaries are approximate. Missing aggregate "
             "cells or a range shorter than the grid return No data; coverage does "
             "not prove that every model reported."
-            if R else money_note if inline else "Total over the dashboard's time range."))
+             if R else money_note + " No calculable priced token series means unknown cost, not zero."
+             if inline else "Total over the dashboard's time range."))
     b.stat(rate_title, ds,
            f"({spend_rate}) * 86400" if spend_rate else None, 6, 5, "currencyUSD",
            "Projection: instantaneous rate × 86400." + (" " + money_note if inline else ""))
@@ -1099,11 +1215,9 @@ def bp_gateway(ctx: Ctx) -> Board | None:
              desc=("Clickable exemplars jump to the matching trace."
                    if ctx.exemplars else ""))
     b.row_break()
-    if q.s.dialect == "otel_genai" and dur:
+    if q.s.dialect == "otel_genai" and dur and q.error_label:
         b.ts("Errors/s by type", ds,
-             [(f'sum by(error_type)(rate('
-               f'{msel(dur + "_count", B1 + "error_type!=" + Q1*2 + B2)}[{RATE}]))',
-               "{{error_type}}")], 12, 8, "short")
+             [(q.err_rate(by=q.error_label), "{{" + q.error_label + "}}")], 12, 8, "short")
     elif q.err_rate():
         b.ts("Errors/s", ds, [(q.err_rate(), "errors")], 12, 8, "short")
     if q.s.dialect == "litellm" and getattr(q, "remaining_req", None):
@@ -1121,45 +1235,49 @@ def bp_gateway(ctx: Ctx) -> Board | None:
 
 def bp_agents(ctx: Ctx) -> Board | None:
     q = ctx.q.get("otel_genai")
-    if not q or not q.dur:
+    if not q or not q.dur or not q.operation_label:
         return None
     b = Board(det_uid("ai-agents-rag", scope=ctx.uid_scope), "AI · Agents & RAG",
               "Agentic workflows: invocations, tools, tokens per agent, traces. "
               "Conventions OTel GenAI (gen_ai.operation.name). Generated by grafana-llmops-forge.",
               ["agents", "rag"])
     ds = q.s.ds_uid
-    op = "gen_ai_operation_name"
+    op = qlbl(q.operation_label)
     b.stat("Agent invocations/s", ds,
            f'sum(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "invoke_agent" + chr(34) + "}")}[{RATE}]))', 6, 5, "reqps")
     b.stat("Tool calls/s", ds,
            f'sum(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "execute_tool" + chr(34) + "}")}[{RATE}]))', 6, 5, "reqps")
-    b.stat("Agent duration p95", ds,
-           q.pXX(q.dur, 0.95, f'{{{op}="invoke_agent"}}'), 6, 5, "s")
-    b.stat("Tool errors/s", ds,
-           f'sum(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "execute_tool" + chr(34) + ",error_type!=" + chr(34)*2 + "}")}[{RATE}]))',
-           6, 5, "short")
+    if q.hist_operation_label:
+        b.stat("Agent duration p95", ds,
+               q.pXX(q.dur, 0.95, f'{{{qlbl(q.hist_operation_label)}="invoke_agent"}}'), 6, 5, "s")
+    if q.error_label:
+        selector = f'{{{op}="execute_tool",{qlbl(q.error_label)}!=""}}'
+        b.stat("Tool errors/s", ds,
+               f'sum(rate({msel(q.dur + "_count", selector)}[{RATE}]))', 6, 5, "short")
     b.row_break()
     b.ts("GenAI operation mix", ds,
-         [(f"sum by({qlbl(op)})(rate({msel(q.dur + chr(95) + chr(99)+chr(111)+chr(117)+chr(110)+chr(116))}[{RATE}]))", "{{" + op + "}}")],
+         [(f"sum by({op})(rate({msel(q.dur + '_count')}[{RATE}]))", "{{" + q.operation_label + "}}")],
          12, 8, "reqps", stacked=True,
          desc="chat / embeddings / invoke_agent / execute_tool…")
-    b.ts("Calls per tool (execute_tool)", ds,
-         [(f'sum by({qlbl("gen_ai_tool_name")})(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "execute_tool" + chr(34) + "}")}[{RATE}]))',
-           "{{gen_ai_tool_name}}")], 12, 8, "reqps", stacked=True, topk=15,
-         exemplar=ctx.exemplars,
-         trace_link=tempo_link(ctx.tempo,
-                               '{span.gen_ai.operation.name="execute_tool"}',
-                               "Tool-call traces", ctx.major))
+    if q.tool_label:
+        b.ts("Calls per tool (execute_tool)", ds,
+             [(f'sum by({qlbl(q.tool_label)})(rate({msel(q.dur + "_count", "{" + op + chr(61) + chr(34) + "execute_tool" + chr(34) + "}")}[{RATE}]))',
+               "{{" + q.tool_label + "}}")], 12, 8, "reqps", stacked=True, topk=15,
+             exemplar=ctx.exemplars,
+             trace_link=tempo_link(ctx.tempo,
+                                   '{span.gen_ai.operation.name="execute_tool"}',
+                                   "Tool-call traces", ctx.major))
     b.row_break()
-    if q.tok:
+    if q.tok and q.agent_label:
         b.ts("Tokens per agent/s", ds,
-             [(f"sum by({qlbl(chr(103)+'en_ai_agent_name')})(rate({msel(q.tok + '_sum')}[{RATE}]))",
-               "{{gen_ai_agent_name}}")], 12, 8, "short", stacked=True, topk=12)
-    b.ts("Embeddings latency p95 (RAG pipeline)", ds,
-         [(q.pXX(q.dur, 0.95, f'{{{op}="embeddings"}}'), "p95 embeddings")],
-         12, 8, "s", exemplar=ctx.exemplars,
-         trace_link=tempo_link(ctx.tempo, '{span.gen_ai.operation.name="embeddings"}',
-                               "Embedding traces", ctx.major))
+             [(f"sum by({qlbl(q.agent_label)})(rate({msel(q.tok + '_sum')}[{RATE}]))",
+               "{{" + q.agent_label + "}}")], 12, 8, "short", stacked=True, topk=12)
+    if q.hist_operation_label:
+        b.ts("Embeddings latency p95 (RAG pipeline)", ds,
+             [(q.pXX(q.dur, 0.95, f'{{{qlbl(q.hist_operation_label)}="embeddings"}}'), "p95 embeddings")],
+             12, 8, "s", exemplar=ctx.exemplars,
+             trace_link=tempo_link(ctx.tempo, '{span.gen_ai.operation.name="embeddings"}',
+                                   "Embedding traces", ctx.major))
     if ctx.tempo:
         b.traces("Latest agent traces (TraceQL)", ctx.tempo,
                  '{span.gen_ai.operation.name="invoke_agent"}',
@@ -1523,27 +1641,27 @@ def bp_quality(ctx: Ctx) -> Board | None:
     if score:
         base = score[:-len("_bucket")] if score.endswith("_bucket") else score
         is_hist = f"{base}_bucket" in names
-        avg = (f"histogram_quantile(0.5, sum by(le)(rate({base}_bucket[{RATE}])))"
-               if is_hist else f"avg({score})")
+        avg = (f"histogram_quantile(0.5, sum by(le)(rate({msel(base + '_bucket')}[{RATE}])))"
+               if is_hist else f"avg({msel(score)})")
         b.stat("Median score" if is_hist else "Mean score", ds, avg, 6, 5, "percentunit",
                "" if is_hist else "Unweighted mean across current score series; not an "
                "observation-weighted mean or a population quantile.")
-        low = (f"histogram_quantile(0.1, sum by(le)(rate({base}_bucket[{RATE}])))"
-               if is_hist else f"min({score})")
+        low = (f"histogram_quantile(0.1, sum by(le)(rate({msel(base + '_bucket')}[{RATE}])))"
+               if is_hist else f"min({msel(score)})")
         b.stat("Low decile (p10)" if is_hist else "Minimum score", ds, low, 6, 5, "percentunit",
                "The low tail is the real signal; the mean hides the failures." if is_hist else
                "Minimum across current score series; not a population quantile.")
     if guard:
         b.stat("Guardrail blocks/s", ds,
-               f"sum(rate({guard}[{RATE}]))" if guard.endswith("_total")
-               else f"sum({guard})", 6, 5, "short")
+               f"sum(rate({msel(guard)}[{RATE}]))" if guard.endswith("_total")
+               else f"sum({msel(guard)})", 6, 5, "short")
     b.row_break()
     if score and ml:
         base = score[:-len("_bucket")] if score.endswith("_bucket") else score
         if f"{base}_bucket" in names:
             b.ts("Score by model (p50)", ds,
-                 [(f"histogram_quantile(0.5, sum by(le,{ml})"
-                   f"(rate({base}_bucket[{RATE}])))", "{{" + ml + "}}")],
+                 [(f"histogram_quantile(0.5, sum by(le,{qlbl(ml)})"
+                   f"(rate({msel(base + '_bucket')}[{RATE}])))", "{{" + ml + "}}")],
                  12, 8, "percentunit",
                  desc="A model switch that lowers this panel is a cost/quality "
                       "trade-off worth documenting.")
@@ -1552,7 +1670,7 @@ def bp_quality(ctx: Ctx) -> Board | None:
         cnt = f"{base}_count" if f"{base}_count" in names else None
         if cnt:
             b.ts("Evaluation volume/s", ds,
-                 [(f"sum(rate({cnt}[{RATE}]))", "evaluations")], 12, 8, "short",
+                 [(f"sum(rate({msel(cnt)}[{RATE}]))", "evaluations")], 12, 8, "short",
                  desc="If this volume falls to zero, the scores shown elsewhere are stale.")
     b.text("What this dashboard does not prove",
            "An evaluation score measures what your evaluator knows how to measure. "
@@ -1620,7 +1738,7 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
             if not (r_fast and r_slow):
                 continue
             thr = factor * budget
-            alert_rules.append(_rule(
+            burn_rule = _rule(
                 name, f"LLM · {'Fast' if factor > 10 else 'Slow'} error-budget burn "
                       f"({fast}/{slow}), SLO {slo_target:.1%}",
                 q.s.ds_uid,
@@ -1628,7 +1746,11 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
                 0, "gt", folder_uid,
                 f"The {slo_target:.1%} SLO error budget is burning {factor}x too "
                 f"fast over both {fast} and {slow}.",
-                sev, dur, "OK", org, uid_scope=ctx.uid_scope))
+                sev, dur, "OK", org, uid_scope=ctx.uid_scope)
+            # The expression already contains both lookback windows. An instant
+            # query lets recovery return no data instead of an old firing point.
+            burn_rule["data"][0]["model"].update({"instant": True, "range": False})
+            alert_rules.append(burn_rule)
         # --- signal perdu : NoData DOIT alerter, c'est le cas qu'on veut attraper
         rr = q.req_rate(w="10m")
         if rr:
@@ -1653,7 +1775,8 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
             f"({spend}) * 86400", daily_budget, "gt", folder_uid,
             f"Spend rate above {daily_budget} USD per day. "
             + ("This estimate covers models returned by the backend only; backend completeness "
-               "and signal freshness are unverified. Missing inline counters may return zero."
+               "and signal freshness are unverified. No calculable priced token series "
+               "means unknown cost, not zero."
                if source.mode == "inline" else
                "Missing financial data means cost is unknown, not zero."),
             "warning", "30m", "NoData", org, uid_scope=ctx.uid_scope)
@@ -1676,7 +1799,7 @@ def build_alerts(ctx: Ctx, folder_uid: str, daily_budget: float,
             alert_rules.append(_rule(
                 "llm-quality-drop", "LLM · Evaluation score p50 below 0.7",
                 qe.s.ds_uid,
-                f"histogram_quantile(0.5, sum by(le)(rate({base}_bucket[30m])))",
+                f"histogram_quantile(0.5, sum by(le)(rate({msel(base + '_bucket')}[30m])))",
                 0.7, "lt", folder_uid,
                 "Median quality of evaluated responses has dropped below threshold.",
                 "warning", "30m", "OK", org, uid_scope=ctx.uid_scope))
@@ -1936,7 +2059,11 @@ def main() -> int:
     pricing_cache = os.path.join(capability_dir, pricing_sources.CACHE_FILENAME)
     registry = pricing_sources.official_registry_base(
         load_registry(args.registry, local_registry))
-    initial_ctx = Ctx(cap, registry, args.cost_mode, inventory, args.datasource is not None)
+    try:
+        initial_ctx = Ctx(cap, registry, args.cost_mode, inventory, args.datasource is not None)
+    except ValueError as e:
+        print(f"[fail] {e}", file=sys.stderr)
+        return 2
     if financial_requested:
         try:
             initial_ctx.require_financial_source()
@@ -1962,6 +2089,8 @@ def main() -> int:
                   "financial sources retain their own provenance. Attribution: Artificial Analysis.")
     ctx = Ctx(cap, registry, args.cost_mode, inventory, args.datasource is not None)
     ctx.rules_interval = args.rules_interval
+    for gap in ctx.telemetry_gaps:
+        print(f"[gap] {gap}")
     if financial_requested and ctx.cost_source:
         print(f"[coverage] datasource={ctx.cost_source.ds_uid}: "
               + ctx.cost_source.coverage_note())
@@ -1992,7 +2121,11 @@ def main() -> int:
         if not fn:
             skipped.append((name, "unknown blueprint"))
             continue
-        board = fn(ctx)
+        try:
+            board = fn(ctx)
+        except ValueError as e:
+            print(f"[fail] {e}", file=sys.stderr)
+            return 2
         if board is None or not board.d["panels"]:
             skipped.append((name, "required signals absent from the capability map"))
             continue

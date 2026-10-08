@@ -12,6 +12,10 @@
 
 **« Est-ce que ça tient en production ? »** SLO de passerelle (latence p99, TTFT, taux d'erreur), inference self-hosted (vLLM, saturation KV-cache, GPU), et des alertes en **burn-rate à deux fenêtres** selon la méthode SRE plutôt qu'un seuil unique qui alerte trop tard sur les pannes lentes et trop souvent sur les pics inoffensifs.
 
+Le tarif exige un ID ou alias normalisé exact, avec suffixe de date valide seulement pour une identité de base exacte. Une simple sous-chaîne reste non tarifée. Un total inline exige au moins une composante tarifée calculable : l'absence complète de télémétrie reste inconnue, tandis qu'un usage nul observé reste zéro. Si une seule direction est disponible, le remplissage existant à zéro des directions manquantes reste appliqué ; il ne prouve pas l'exhaustivité de la dépense. Les jointures de coûts enregistrés retirent les dimensions source `region`/`vendor` avant de poser l'origine fournisseur du registre.
+
+Les alertes de burn évaluent le résultat instantané des deux fenêtres : les anciens points ne prolongent pas une alerte après récupération. Un résultat absent ou sans trafic suit `noDataState: OK` ; l'alerte distincte de perte de télémétrie détecte le trafic manquant. Le contrôle live échoue sur erreur HTTP/transport, réponse mal formée, valeur non finie après une attente de chauffe bornée ou absence de requêtes vérifiées. La CI des Grafana pris en charge teste aussi la récupération avec une datasource contrôlée ; promtool valide séparément les calculs PromQL.
+
 ## Origine fournisseur et lieux déclarés
 
 Le champ `region` du registre et le label Prometheus correspondant restent compatibles : ils décrivent l'origine du fournisseur, **pas le lieu de traitement ou de stockage**. Le panneau de déploiement est indépendant de l'inventaire modèles. Sans déclaration, les lieux sont **inconnus**. Avec `--deployment-inventory ../instance/deployment_inventory.json`, un modèle d'origine américaine peut afficher un traitement déclaré en France ; les deux informations restent distinctes.

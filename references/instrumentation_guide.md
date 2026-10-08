@@ -151,6 +151,34 @@ de l'écosystème. Si votre plateforme impose un préfixe ou le mode UTF-8, la f
 s'y adapte sans configuration, mais vérifiez que `discover.py` liste bien le
 dialecte attendu avant de générer.
 
+La découverte ajoute `label_bindings` aux entrées OTel : pour chaque métrique de
+durée (`_count`, `_bucket`) et de tokens (`_sum`), elle conserve les candidats de
+labels effectivement observés sur cette métrique (modèle, fournisseur,
+opération, erreur, outil, agent, type de token selon le rôle). Une liste vide
+signifie **inconnu**, pas zéro ; plusieurs variantes du même attribut sont
+ambiguës. Le modèle demandé reste prioritaire sur le modèle de réponse, et le
+nom de fournisseur sur l'ancien attribut `gen_ai.system`, lorsqu'ils coexistent.
+Les panneaux
+ou alertes dépendant d'un label inconnu sont omis et un gap est signalé. Ces
+observations ne garantissent ni fraîcheur ni exhaustivité du backend.
+
+Les anciennes capability maps sans `label_bindings` restent utilisables avec
+les conventions historiques : underscores par défaut, points lorsque les noms
+de métriques ou labels découverts indiquent `NoTranslation`. Relancer la
+découverte pour obtenir des bindings vérifiés, particulièrement avant de
+s'appuyer sur les alertes d'erreur.
+
+La forge refuse désormais plusieurs familles candidates pour le même signal,
+même si l'une porte le nom canonique sans préfixe. `_bucket`, `_sum` et `_count`
+d'un même histogramme forment une seule famille. Elle refuse aussi d'associer
+une durée client et des tokens client provenant de namespaces différents ou
+portant des labels de modèle incompatibles. L'erreur indique datasource,
+dialecte, rôle et candidats : isoler la datasource/famille voulue puis relancer
+la découverte. `--datasource` choisit une datasource entière ; il ne sélectionne
+pas une famille parmi plusieurs dans une même datasource. Les familles ne sont
+jamais additionnées automatiquement, car elles peuvent représenter le même
+trafic à deux étapes différentes.
+
 ## 7. Vérification de bout en bout
 
 ```bash

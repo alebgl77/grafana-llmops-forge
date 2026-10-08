@@ -104,7 +104,7 @@ class FinancialSourceTests(unittest.TestCase):
         self.assertIsNotNone(f.bp_finops(ctx))
         self.assertEqual(budget(ctx)["data"][0]["datasourceUid"], "b")
 
-    def test_budget_is_instant_while_operational_slo_queries_are_unchanged(self):
+    def test_budget_and_burn_are_instant_while_other_slo_queries_are_unchanged(self):
         ctx = f.Ctx(capability({"a": signals("otel_genai", "litellm")}), REGISTRY)
         rule = budget(ctx)
         self.assertTrue(rule["data"][0]["model"]["instant"])
@@ -112,7 +112,11 @@ class FinancialSourceTests(unittest.TestCase):
         self.assertIn("[10m]", rule["data"][0]["model"]["expr"])
         self.assertEqual(rule["noDataState"], "NoData")
         for operational in f.build_alerts(ctx, "folder", 100):
-            if operational["uid"] != rule["uid"]:
+            if "llm-burn-" in operational["uid"]:
+                self.assertTrue(operational["data"][0]["model"]["instant"])
+                self.assertFalse(operational["data"][0]["model"]["range"])
+                self.assertEqual(operational["noDataState"], "OK")
+            elif operational["uid"] != rule["uid"]:
                 self.assertTrue(operational["data"][0]["model"]["range"])
                 self.assertNotIn("instant", operational["data"][0]["model"])
 

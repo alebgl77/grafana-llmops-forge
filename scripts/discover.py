@@ -66,6 +66,17 @@ TEAM_LABEL_CANDIDATES = ["team", "team_alias", "service_name", "service.name",
 
 LOKI_AI_HINT_LABELS = ["service_name", "gen_ai_system", "ai_system", "app", "job"]
 
+OTEL_LABEL_CANDIDATES = {
+    "model": MODEL_LABEL_CANDIDATES["otel_genai"],
+    "provider": PROVIDER_LABEL_CANDIDATES["otel_genai"],
+    "operation": ["gen_ai_operation_name", "gen_ai.operation.name"],
+    "error": ["error_type", "error.type"],
+    "tool": ["gen_ai_tool_name", "gen_ai.tool.name"],
+    "agent": ["gen_ai_agent_name", "gen_ai.agent.name"],
+    "token_type": ["gen_ai_token_type", "gen_ai.token.type", "token_type",
+                   "gen_ai_usage_type"],
+}
+
 
 def returned_values_coverage(entry: dict) -> dict:
     """Describe local preservation, not backend exhaustiveness or a time window."""
@@ -73,6 +84,60 @@ def returned_values_coverage(entry: dict) -> dict:
             "backend_completeness": "unknown",
             "counts": {key: len(entry.get(key, [])) for key in
                        ("metric_names", "models_seen", "providers_seen")}}
+
+
+def enrich_signal_entry(entry: dict, dialect: str, label_values, sample: str) -> dict:
+    """Shared discovery for Grafana and direct-Prometheus checks.
+
+    ``label_values(label, selector)`` must raise on a failed request. Per-metric
+    bindings preserve unknown ([]) and ambiguous (>1 candidate) observations.
+    """
+    for key, candidates in (("model", MODEL_LABEL_CANDIDATES.get(dialect, [])),
+                            ("provider", PROVIDER_LABEL_CANDIDATES.get(dialect, []))):
+        for cand in candidates:
+            vals = label_values(cand, sample)
+            if vals:
+                entry[key + "_label"] = cand
+                entry[{"model": "models_seen", "provider": "providers_seen"}[key]] = sorted(vals)
+                break
+    if dialect == "otel_genai":
+        for cand in OTEL_LABEL_CANDIDATES["token_type"]:
+            if set(label_values(cand, sample)) & {"input", "output"}:
+                entry["token_type_label"] = cand
+                break
+        entry["label_bindings"] = {}
+        entry["binding_gaps"] = []
+        for metric in entry.get("metric_names", []):
+            normalized = metric.replace(".", "_")
+            duration = "operation_duration" in normalized and metric.endswith(("_count", "_bucket"))
+            tokens = "token_usage" in normalized and metric.endswith("_sum")
+            if not (duration or tokens):
+                continue
+            selector = promql_matcher("__name__", "=", metric)
+            roles = ("model", "provider", "operation", "error", "tool") if duration else (
+                "model", "provider", "agent", "token_type")
+            bindings = {}
+            for role in roles:
+                bindings[role] = [cand for cand in OTEL_LABEL_CANDIDATES[role]
+                                  if label_values(cand, selector)]
+            bindings["group_labels"] = []
+            for cand in TEAM_LABEL_CANDIDATES:
+                vals = label_values(cand, selector)
+                if vals and len(vals) <= 500:
+                    bindings["group_labels"].append({"label": cand, "cardinality": len(vals)})
+            entry["label_bindings"][metric] = bindings
+            required = ("operation", "error") if metric.endswith("_count") else (
+                ("token_type", "agent") if tokens else ())
+            for role in required:
+                if not bindings.get(role):
+                    entry["binding_gaps"].append(
+                        f"{metric}: no observed {role} label; dependent panels/alerts are omitted.")
+    for cand in TEAM_LABEL_CANDIDATES:
+        vals = label_values(cand, sample)
+        if vals and len(vals) <= 500:
+            entry.setdefault("group_labels", []).append({"label": cand, "cardinality": len(vals)})
+    entry["discovery_coverage"] = returned_values_coverage(entry)
+    return entry
 
 
 def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
@@ -83,32 +148,8 @@ def probe_prometheus(client: GrafanaClient, ds: dict) -> dict:
         if names:
             entry = {"metric_names": sorted(names)}
             sample = promql_matcher("__name__", "=~", pattern)
-            for cand in MODEL_LABEL_CANDIDATES.get(dialect, []):
-                vals = client.prom_label_values(ds, cand, match=sample)
-                if vals:
-                    entry["model_label"] = cand
-                    entry["models_seen"] = sorted(vals)
-                    break
-            for cand in PROVIDER_LABEL_CANDIDATES.get(dialect, []):
-                vals = client.prom_label_values(ds, cand, match=sample)
-                if vals:
-                    entry["provider_label"] = cand
-                    entry["providers_seen"] = sorted(vals)
-                    break
-            if dialect == "otel_genai":
-                for cand in ("gen_ai_token_type", "gen_ai.token.type", "token_type",
-                             "gen_ai_usage_type"):
-                    vals = client.prom_label_values(ds, cand, match=sample)
-                    if any(v in ("input", "output") for v in vals):
-                        entry["token_type_label"] = cand
-                        break
-            for cand in TEAM_LABEL_CANDIDATES:
-                vals = client.prom_label_values(ds, cand, match=sample)
-                if vals and len(vals) <= 500:
-                    entry.setdefault("group_labels", []).append(
-                        {"label": cand, "cardinality": len(vals)})
-            entry["discovery_coverage"] = returned_values_coverage(entry)
-            found[dialect] = entry
+            found[dialect] = enrich_signal_entry(
+                entry, dialect, lambda label, match: client.prom_label_values(ds, label, match=match), sample)
     return found
 
 
@@ -172,6 +213,9 @@ def build_capability_map(client: GrafanaClient, ds_filter: str | None = None,
         healthy_proms += 1
         if signals:
             cap["signals"][ds["uid"]] = signals
+            for dialect, entry in signals.items():
+                cap["gaps"].extend(f"[{ds['uid']}/{dialect}] {gap}"
+                                   for gap in entry.get("binding_gaps", []))
     if proms and not healthy_proms:
         raise GrafanaError(502, "no healthy Prometheus datasource could be probed",
                            repr(cap["datasource_errors"])[:2000])

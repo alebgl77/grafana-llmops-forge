@@ -3,6 +3,17 @@
 Le registre livré reste la source hors ligne et ne contient aucune valeur
 Artificial Analysis. Le fallback tiers est désactivé par défaut.
 
+## Identité des modèles du registre
+
+Les IDs et alias sont comparés exactement après normalisation alphanumérique
+en minuscules. Un suffixe séparé par `-` ou `_`, au format `YYYYMMDD` ou
+`YYYY-MM-DD` et représentant une date valide, peut reprendre le tarif d'un
+ID/alias exact sans suffixe. Un ID daté explicitement présent reste prioritaire.
+Aucun préfixe fournisseur, nom de déploiement ou variante libre ne suffit :
+`my-gpt-5.4-production`, `gpt-4` et `gpt-5.4-turbo` restent inconnus tant qu'un
+alias explicite n'est pas fourni. Toute égalité entre plusieurs entrées est refusée.
+Cette compatibilité de nom daté ne certifie pas l'équivalence du tarif fournisseur.
+
 ## Activation et secret
 
 L'activation exige les deux éléments suivants:

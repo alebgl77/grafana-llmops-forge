@@ -111,17 +111,19 @@ class FinancialCoverageTests(unittest.TestCase):
         ctx = f.Ctx(*fixture(40))
         source = ctx.cost_source
         expr = source.expr()
-        self.assertEqual(expr.count("rate("), 80)
+        # Every priced side occurs in the amount and in its presence guard.
+        self.assertEqual(expr.count("rate("), 160)
         for model in source.q.s.models_seen:
-            self.assertEqual(expr.count(f'gen_ai_request_model="{model}"'), 2)
+            self.assertEqual(expr.count(f'gen_ai_request_model="{model}"'), 4)
         self.assertEqual(source.coverage["status"], "all_returned_models_priced")
         self.assertEqual(source.coverage["backend_completeness"], "unknown")
         self.assertTrue(source.coverage["budget_eligible"])
         rules = budget(ctx)
         self.assertEqual(len(rules), 1)
         self.assertIn("returned models", rules[0]["title"])
-        self.assertIn("Missing inline counters may return zero", rules[0]["annotations"]["summary"])
-        self.assertNotIn("cost is unknown, not zero", rules[0]["annotations"]["summary"])
+        self.assertIn("No calculable priced token series means unknown cost, not zero",
+                      rules[0]["annotations"]["summary"])
+        self.assertNotIn("Missing inline counters may return zero", rules[0]["annotations"]["summary"])
         self.assertTrue(all("listed models" in p["title"] or "Estimated spend by" in p["title"]
                             for p in monetary(f.bp_finops(ctx).d)))
 
