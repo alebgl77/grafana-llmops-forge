@@ -44,8 +44,10 @@ sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="input"}[$__rate_
 / clamp_min(sum(rate(gen_ai_client_token_usage_token_count{gen_ai_token_type="input"}[$__rate_interval])), 1e-9)
 
 # Coût USD/s d'un modèle précis (prix registre : input 2.5$/M, output 15$/M)
-(sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="input",gen_ai_request_model="gpt-5.4"}[$__rate_interval])) or vector(0)) * 2.5e-6
-+ (sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="output",gen_ai_request_model="gpt-5.4"}[$__rate_interval])) or vector(0)) * 15e-6
+((sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="input",gen_ai_request_model="gpt-5.4"}[$__rate_interval])) or vector(0)) * 2.5e-6
++ (sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="output",gen_ai_request_model="gpt-5.4"}[$__rate_interval])) or vector(0)) * 15e-6)
+and (sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="input",gen_ai_request_model="gpt-5.4"}[$__rate_interval]))
+  or sum(rate(gen_ai_client_token_usage_token_sum{gen_ai_token_type="output",gen_ai_request_model="gpt-5.4"}[$__rate_interval])))
 
 # Ratio raisonnement : part du trafic sur modèles "reasoning" (regex à adapter)
 sum(rate(gen_ai_client_operation_duration_seconds_count{gen_ai_request_model=~"o4.*|gpt-5.5.*|.*opus.*"}[$__rate_interval]))
@@ -155,7 +157,13 @@ rappelle dans la description du panel.
   de cardinalité. Compter : `count(count by(label_borné)(...))`.
 - Fenêtres en dur (`[5m]`) dans les panels → utiliser `$__rate_interval`.
 - `sum(A) + sum(B)` où une série peut être vide → chaque terme en
-  `(sum(...) or vector(0))`.
+  `(sum(...) or vector(0))`, mais conserver une garde de présence de type
+  `and (sum(A) or sum(B))` : aucune série calculable doit rester « inconnu »,
+  jamais un zéro synthétique. Une série à zéro réel reste à zéro. Cette garde
+  ne prouve ni la fraîcheur du collecteur ni l'exhaustivité de chaque modèle.
+- Alertes burn-rate : les fenêtres sont dans le PromQL ; évaluer la requête
+  instantanée. Une plage historique réduite par `last()` peut conserver un
+  ancien point de dépassement après le rétablissement.
 - Moyennes de latence (`_sum/_count`) pour des SLO → toujours des quantiles
   d'histogramme ; la moyenne masque la queue.
 - Grouper des modèles hétérogènes dans un même quantile → un p95 mélangé

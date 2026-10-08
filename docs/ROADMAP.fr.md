@@ -132,8 +132,10 @@ est mise en pause après vérification de son appartenance et de son périmètre
 conservée si la couverture redevient suffisante.
 
 Les contrats restants couvrent unités, sens des compteurs/histogrammes/jauges, fraîcheur,
-signaux absents ou non pris en charge, modèles sans tarif et provenance. L'absence complète
-de compteurs inline peut encore sembler être un zéro ; elle ne doit pas prouver l'absence de dépense.
+signaux absents ou non pris en charge, modèles sans tarif et provenance. Les totaux inline
+exigent désormais au moins une composante tarifée calculable : l'absence complète reste inconnue
+et un zéro observé reste zéro. Avec une direction disponible, le remplissage existant à zéro des
+directions manquantes reste appliqué ; les preuves d'exhaustivité et de fraîcheur restent à établir.
 
 **Passage uniquement si :** jeux de contrôle connus et captures du pilote distinguent zéro réel,
 données absentes, périmées ou non prises en charge ; périmètre et couverture financiers sont

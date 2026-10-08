@@ -48,6 +48,12 @@ Produces the capability map: version/edition/namespace, API availability (legacy
 Read `references/model_registry.json`. If `_meta.verified_at` is more than 30 days old AND web search is available: refresh the prices of the models actually present in the capability map (not the whole registry) from the URLs in `_meta.sources`, then write `model_registry.local.json` next to the capability map. The generator loads the local file first. Without web access, use the seed as-is; cost dashboards display the registry date in their description.
 
 Artificial Analysis is a third-party fallback, never an automatic refresh.
+
+Registry model matching accepts exact normalized IDs/aliases and valid separated
+date suffixes (`-YYYYMMDD`, `_YYYYMMDD`, or `-YYYY-MM-DD`). Arbitrary substrings,
+deployment names and unknown variants remain unpriced; add an explicit alias
+only when its pricing identity is known. A dated ID explicitly in the registry
+wins over suffix compatibility, and ambiguous matches are refused.
 Use `--pricing-fallback artificial-analysis` only after the user opts in and
 only with `ARTIFICIAL_ANALYSIS_API_KEY` in the environment. The forge calls the
 fixed Free endpoint, caches results next to the capability map for 24 hours,
@@ -109,6 +115,11 @@ python3 scripts/forge_dashboards.py --capability capability_map.json --blueprint
 The script generates the JSON (classic schema v41, identical behaviour across OSS/Cloud/Enterprise from v9 to v13, deployed through the legacy API with a K8s-style resource-API fallback), creates the folder, upserts the dashboards, provisions SLO alerts (`--with-alerts`: two-window error burn-rate at 5m/1h and 30m/6h per the SRE method, TTFT p95, daily budget, KV-cache saturation, eval-score drop, and signal loss; that last one gets `noDataState: Alerting`, without which it would stay silent precisely when telemetry dies), writes the v2 `deploy_manifest.json` (`success|partial|failed`, org/folder/scope, per-type counts and structured errors), then prints the URLs. Any requested-resource failure is nonzero unless `--best-effort` was explicit; that flag never changes the manifest status. Always relay the final URLs to the user.
 
 Financial ambiguity or an unavailable forced recorded total fails before deployment or pricing fallback when FinOps/alerts are requested. Gateway/governance-only generation can continue. The manifest's `financial_source` records UID/mode/status and unverified live availability; `recording_rules.datasource_uid` separately identifies where OTel rules belong. All FinOps queries and budget costs use the financial datasource; omit cost/request ratios without a request signal there. Missing recorded/native money remains absent, and budget `noDataState: NoData` reports unknown cost rather than zero.
+
+Inline cost also remains absent when none of the priced token sides is
+calculable over the query window. Real zeros remain zero; when a priced side
+exists, other missing sides retain the existing subtotal behavior. This does
+not establish per-model completeness or collector freshness.
 
 **Provider origin is not a deployment location.** Keep `region` in the model registry and Prometheus labels for compatibility, but describe it as registry provider origin. It establishes neither processing nor storage location. Governance includes a separate locations panel, unknown by default. Optionally pass `--deployment-inventory FILE`: local UTF-8 JSON with exactly `schema_version: 1` and `deployments`, at most 1 MiB / 500 records. Each record requires unique `deployment_id` (128 chars), existing `datasource_uid` (128), exact `model` (256). Optional strings: `serving_provider` (128), `endpoint_host` (253, ASCII DNS hostname including local names, no URL/IP/port/credentials/path/query), `processing_region` (128), `storage_region` (128), `evidence_ref` (512, plain text only), `evidence_date` (10, valid YYYY-MM-DD). Supplied strings must be non-empty without control characters; unknown fields, duplicate keys/IDs and invalid versions/types are errors. Store the real file outside the packaged skill. Only ordinary local regular files are accepted; UNC/device/URI paths, alternate streams, symlinks/reparse points and special files are rejected. Keep parent directories on trusted local storage.
 

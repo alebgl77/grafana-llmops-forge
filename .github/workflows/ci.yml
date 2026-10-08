@@ -26,6 +26,10 @@ jobs:
         run: |
           pip install --quiet pyyaml
           python tests/audit_harness.py
+      - name: Live query gate rejects unavailable, malformed and non-finite data
+        run: |
+          python tests/live_query_gate_invariants.py
+          python tests/burn_alert_recovery_e2e.py --selftest
       - name: Infrastructure YAML must lint and load
         if: matrix.python == '3.13'
         run: |
@@ -53,6 +57,8 @@ jobs:
           python tests/recorded_cost_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
           python tests/financial_source_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
           python tests/financial_coverage_invariants.py
+          python tests/p1_financial_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
+          python tests/p1_telemetry_invariants.py --promtool ./prometheus-3.14.0.linux-amd64/promtool
 
       - name: Quality statistics retain their meaning in English and French
         if: matrix.python == '3.13'
@@ -138,6 +144,10 @@ jobs:
         run: python scripts/forge_dashboards.py --selftest --with-alerts
       - name: Audit harness
         run: python tests/audit_harness.py
+      - name: Live gate and controlled datasource are portable
+        run: |
+          python tests/live_query_gate_invariants.py
+          python tests/burn_alert_recovery_e2e.py --selftest
       - name: Package and SBOM are portable and reproducible
         run: |
           python tools/package.py
@@ -336,6 +346,16 @@ jobs:
           assert_unrelated_unchanged(budget_uid)
           print("Budget lifecycle PASS: active -> paused -> already_paused -> still paused; unrelated rules intact")
           PY
+      - name: Generated burn alerts recover in Grafana with a controlled datasource
+        if: matrix.support == 'supported'
+        env: {GRAFANA_URL: "http://localhost:3000", GRAFANA_USER: admin, GRAFANA_PASSWORD: admin}
+        # Only the disposable CI Grafana is writable. The fixture keeps historical
+        # firing points, but the generated instant query must see current recovery.
+        # Real PromQL semantics are tested with promtool in the audit job.
+        run: |
+          GRAFANA_CONTAINER=$(docker compose -f demo/docker-compose.yml ps -q grafana)
+          HOST_GATEWAY=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$GRAFANA_CONTAINER")
+          python tests/burn_alert_recovery_e2e.py --datasource-host "$HOST_GATEWAY" --timeout 90
       - name: Diagnose on failure (compose ps + container logs)
         if: failure()
         run: |

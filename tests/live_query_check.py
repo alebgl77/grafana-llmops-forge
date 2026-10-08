@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import pathlib
 import re
@@ -28,50 +29,97 @@ ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "scripts"))
 import discover  # noqa: E402
 
-# Expressions dont un résultat vide est le comportement CORRECT.
-EXPECTED_EMPTY = (
-    re.compile(r"llm:cost_usd_per_second"),      # tant que les rules ne tournent pas
-    re.compile(r"offset \d+[smhd]"),             # comparaison à une période inexistante
-    re.compile(r"error_type!=\"\""),             # aucun échec sur une fenêtre courte
-)
+class PrometheusCheckError(RuntimeError):
+    """An unavailable or malformed backend is never interpreted as no data."""
+
+
+def _json_response(url: str) -> dict:
+    try:
+        with urllib.request.urlopen(url, timeout=20) as response:
+            body = json.load(response)
+    except urllib.error.HTTPError as error:
+        raise PrometheusCheckError(f"HTTP {error.code}") from None
+    except Exception as error:
+        raise PrometheusCheckError(f"request failed ({type(error).__name__})") from None
+    if not isinstance(body, dict) or body.get("status") != "success" or "data" not in body:
+        raise PrometheusCheckError("invalid or unsuccessful Prometheus response")
+    return body
+
+
+def _finite_sample(sample) -> bool:
+    if not isinstance(sample, list) or len(sample) != 2:
+        return False
+    timestamp, value = sample
+    if isinstance(timestamp, bool) or not isinstance(timestamp, (int, float)) or not isinstance(value, str):
+        return False
+    try:
+        finite = math.isfinite(timestamp) and math.isfinite(float(value))
+    except (ValueError, OverflowError):
+        return False
+    if not finite:
+        raise PrometheusCheckError("non-finite sample")
+    return True
+
+
+def _result_count(data) -> int:
+    if not isinstance(data, dict):
+        raise PrometheusCheckError("query data is not an object")
+    kind, result = data.get("resultType"), data.get("result")
+    if kind == "scalar":
+        if _finite_sample(result):
+            return 1
+        raise PrometheusCheckError("scalar is malformed or non-finite")
+    if kind not in {"vector", "matrix"} or not isinstance(result, list):
+        raise PrometheusCheckError("unsupported or malformed query result")
+    for item in result:
+        if not isinstance(item, dict) or not isinstance(item.get("metric"), dict):
+            raise PrometheusCheckError("sample has invalid labels")
+        if not all(isinstance(k, str) and isinstance(v, str) for k, v in item["metric"].items()):
+            raise PrometheusCheckError("sample has invalid labels")
+        samples = [item.get("value")] if kind == "vector" else item.get("values")
+        if not isinstance(samples, list) or not samples or not all(_finite_sample(s) for s in samples):
+            raise PrometheusCheckError("sample is malformed or non-finite")
+    return len(result)
+
+
+def expected_empty(filename: str, title: str, expression: str) -> bool:
+    """Explicit conditional outputs, never a metric-name-wide exception."""
+    if filename.startswith(("alert_alr-llm-burn-fast-", "alert_alr-llm-burn-slow-")):
+        return title.startswith("LLM · ") and "error-budget burn" in title and " and " in expression
+    # The synthetic emitter creates an error-labelled series only after the
+    # first failed execute_tool call; an empty error-only rate is normal before.
+    if filename == "agents.json" and title == "Tool errors/s":
+        return (expression.startswith("sum(rate(") and expression.endswith("[5m]))")
+                and '="execute_tool"' in expression and '!=""' in expression)
+    return (filename == "adoption.json" and title == "New adopters (7d)"
+            and re.search(r"\boffset\s+7d\b", expression) is not None)
 
 
 def q(base: str, expr: str) -> tuple[str, int]:
     url = base + "/api/v1/query?" + urllib.parse.urlencode({"query": expr})
     try:
-        with urllib.request.urlopen(url, timeout=20) as r:
-            d = json.load(r)
-    except urllib.error.HTTPError as e:
-        try:
-            return "error:" + json.load(e)["error"][:110], 0
-        except Exception:
-            return f"http {e.code}", 0
-    except Exception as e:
-        return f"unreachable: {e}", 0
-    if d.get("status") != "success":
-        return "error:" + str(d.get("error"))[:110], 0
-    res = d["data"]["result"]
-    return ("ok" if res else "empty"), len(res)
+        count = _result_count(_json_response(url)["data"])
+    except PrometheusCheckError as error:
+        return "error:" + str(error), 0
+    return ("ok" if count else "empty"), count
 
 
 def names(base: str, pattern: str) -> list:
     url = (base + "/api/v1/label/__name__/values?"
            + urllib.parse.urlencode({"match[]": '{__name__=~"%s"}' % pattern}))
-    try:
-        with urllib.request.urlopen(url, timeout=20) as r:
-            return sorted(json.load(r)["data"])
-    except Exception:
-        return []
+    values = _json_response(url)["data"]
+    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+        raise PrometheusCheckError("metric names are not a string list")
+    return sorted(set(values))
 
 
 def label_values(base: str, label: str, match: str) -> list:
     url = (base + f"/api/v1/label/{label}/values?"
            + urllib.parse.urlencode({"match[]": match}))
-    try:
-        with urllib.request.urlopen(url, timeout=20) as r:
-            return json.load(r)["data"]
-    except Exception:
-        return []
+    values = _json_response(url)["data"]
+    if not isinstance(values, list) or not all(isinstance(value, str) for value in values):
+        raise PrometheusCheckError("label values are not a string list")
+    return sorted(set(values))
 
 
 def msel_probe(metric: str) -> str:
@@ -90,27 +138,8 @@ def build_map(base: str) -> dict:
             continue
         e = {"metric_names": found}
         sample = '{__name__=~"%s"}' % pattern
-        for cand in discover.MODEL_LABEL_CANDIDATES.get(dialect, []):
-            v = label_values(base, cand, sample)
-            if v:
-                e["model_label"], e["models_seen"] = cand, sorted(v)
-                break
-        for cand in discover.PROVIDER_LABEL_CANDIDATES.get(dialect, []):
-            v = label_values(base, cand, sample)
-            if v:
-                e["provider_label"], e["providers_seen"] = cand, sorted(v)
-                break
-        if dialect == "otel_genai":
-            for cand in ("gen_ai_token_type", "gen_ai.token.type", "token_type"):
-                if set(label_values(base, cand, sample)) & {"input", "output"}:
-                    e["token_type_label"] = cand
-                    break
-        for cand in discover.TEAM_LABEL_CANDIDATES:
-            v = label_values(base, cand, sample)
-            if v and len(v) <= 500:
-                e.setdefault("group_labels", []).append(
-                    {"label": cand, "cardinality": len(v)})
-        e["discovery_coverage"] = discover.returned_values_coverage(e)
+        discover.enrich_signal_entry(
+            e, dialect, lambda label, match: label_values(base, label, match), sample)
         sig[dialect] = e
     return {"org_id": 1,
             "instance": {"version": "0.0.0", "major": 12, "edition": "oss"},
@@ -136,10 +165,14 @@ def main() -> int:
     # Sonder par regex balayait tous les buckets d'histogramme et dépassait le
     # délai de la requête, si bien que l'attente ne se terminait jamais.
     deadline = time.time() + a.wait_for_data
-    cap = build_map(base)
-    while not cap["signals"]["live"] and time.time() < deadline:
-        time.sleep(3)
+    try:
         cap = build_map(base)
+        while not cap["signals"]["live"] and time.time() < deadline:
+            time.sleep(3)
+            cap = build_map(base)
+    except PrometheusCheckError as error:
+        print(f"Discovery failed: {error}", file=sys.stderr)
+        return 1
 
     # Puis attendre que rate() soit calculable : une série existe dès le premier
     # scrape, mais rate() exige deux points dans sa fenêtre.
@@ -148,7 +181,16 @@ def main() -> int:
                 if n.endswith("_count") or n.endswith("_total")]
     if counters:
         probe = f"sum(rate({msel_probe(counters[0])}[2m])) > 0"
-        while not q(base, probe)[1] and time.time() < deadline:
+        while True:
+            status, count = q(base, probe)
+            if status not in {"ok", "empty"}:
+                print(f"Traffic probe failed: {status}", file=sys.stderr)
+                return 1
+            if status == "ok" and count > 0:
+                break
+            if time.time() >= deadline:
+                print("No usable traffic before the deadline", file=sys.stderr)
+                return 1
             time.sleep(3)
     waited = a.wait_for_data - (deadline - time.time())
     print(f"données exploitables après {waited:.0f}s")
@@ -158,7 +200,8 @@ def main() -> int:
     if not dialects:
         print("Aucun signal : l'émetteur tourne-t-il ?", file=sys.stderr)
         return 1
-    json.dump(cap, open(a.capability, "w"), indent=2)
+    with open(a.capability, "w", encoding="utf-8") as handle:
+        json.dump(cap, handle, indent=2)
 
     r = subprocess.run([sys.executable, str(ROOT / "scripts" / "forge_dashboards.py"),
                         "--capability", a.capability, "--blueprints", "auto",
@@ -167,7 +210,8 @@ def main() -> int:
     if r.returncode:
         print(r.stdout, r.stderr, file=sys.stderr)
         return 1
-    print(r.stdout.strip().splitlines()[-1])
+    if r.stdout.strip():
+        print(r.stdout.strip().splitlines()[-1])
 
     checks, empty, errors = 0, [], []
     for f in sorted(os.listdir(a.out_dir)):
@@ -187,10 +231,18 @@ def main() -> int:
                  .replace("$__range_s", "1800").replace("$__range", "30m"))
             e = e.replace("$__interval", "1m").replace('=~"$model"', '=~".+"')
             status, n = q(base, e)
+            # The first global counter becoming ready does not guarantee two
+            # samples for every model histogram. Wait within the same startup
+            # budget; transport/schema failures always fail immediately.
+            intentional_empty = expected_empty(f, title, e)
+            while ((status == "empty" and not intentional_empty)
+                   or status == "error:non-finite sample") and time.time() < deadline:
+                time.sleep(min(1, max(0, deadline - time.time())))
+                status, n = q(base, e)
             checks += 1
-            if status.startswith("error"):
+            if status not in {"ok", "empty"} or (status == "ok" and n <= 0):
                 errors.append((f, title, status, e[:120]))
-            elif status == "empty" and not any(p.search(e) for p in EXPECTED_EMPTY):
+            elif status == "empty" and not intentional_empty:
                 empty.append((f, title, e[:120]))
 
     print(f"\n{checks} expressions exécutées contre {base}")
@@ -198,9 +250,11 @@ def main() -> int:
         print(f"  ❌ ERREUR  [{f}] {t}\n      {s}\n      {e}")
     for f, t, e in empty:
         print(f"  ⚠ VIDE    [{f}] {t}\n      {e}")
-    if not errors and not empty:
+    if not checks:
+        print("  ❌ aucune expression Prometheus vérifiée", file=sys.stderr)
+    elif not errors and not empty:
         print("  ✅ toutes les expressions renvoient des données")
-    return 1 if (errors or empty) else 0
+    return 1 if (not checks or errors or empty) else 0
 
 
 if __name__ == "__main__":

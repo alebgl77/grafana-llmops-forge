@@ -126,8 +126,10 @@ with `--with-alerts`, an existing Forge budget alert is paused after its ownersh
 are verified. Its pause is preserved if coverage recovers.
 
 Remaining contracts must cover units, counter/histogram/gauge semantics, freshness, missing
-and unsupported signals, unpriced models and provenance. In particular, complete absence of
-inline counters can still look like zero; it must not become evidence of no spend.
+and unsupported signals, unpriced models and provenance. Inline totals now require at least
+one calculable priced component: complete telemetry absence stays unknown and observed zero
+stays zero. With one available direction, the existing zero-fill policy for missing directions
+remains; broader completeness and freshness evidence still belongs to this gate.
 
 **Pass only if:** known fixtures and pilot captures distinguish real zero from missing, stale
 or unsupported data; financial scope and coverage are inspectable; changed OTel/runtime

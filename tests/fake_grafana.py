@@ -8,6 +8,7 @@ qu'un exploitant comprend, pas une trace Python.
 """
 
 import hashlib, json, re, sys, time
+from urllib.parse import parse_qs, unquote, urlsplit
 from http.server import BaseHTTPRequestHandler, HTTPServer
 MODE = sys.argv[1] if len(sys.argv) > 1 else "ok"
 PORT = int(sys.argv[2]) if len(sys.argv) > 2 else 9198
@@ -47,10 +48,23 @@ class H(BaseHTTPRequestHandler):
         if p.startswith("/api/datasources/proxy"):
             if MODE == "proxy500": return self._j(500, {"message":"proxy failed"})
             if "label/__name__/values" in self.path:
-                return self._j(200, {"data":["gen_ai_client_operation_duration_seconds_bucket",
+                names = ["gen_ai_client_operation_duration_seconds_bucket",
                     "gen_ai_client_operation_duration_seconds_count",
-                    "gen_ai_client_token_usage_token_sum"]})
-            return self._j(200, {"data":["gpt-5.4"]})
+                    "gen_ai_client_token_usage_token_bucket",
+                    "gen_ai_client_token_usage_token_count",
+                    "gen_ai_client_token_usage_token_sum"]
+                selector = parse_qs(urlsplit(self.path).query).get("match[]", [""])[0]
+                if "=~" in selector:
+                    pattern = json.loads(selector.split("=~", 1)[1][:-1])
+                    names = [name for name in names if re.fullmatch(pattern, name)]
+                return self._j(200, {"data": names})
+            label = unquote(p.split("/label/", 1)[-1].rsplit("/values", 1)[0])
+            values = {"gen_ai_request_model": ["gpt-5.4"], "gen_ai_provider_name": ["openai"],
+                      "gen_ai_operation_name": ["chat", "invoke_agent", "execute_tool"],
+                      "error_type": ["timeout"], "gen_ai_tool_name": ["search"],
+                      "gen_ai_agent_name": ["assistant"], "gen_ai_token_type": ["input", "output"],
+                      "service_name": ["demo"]}
+            return self._j(200, {"data": values.get(label, [])})
         if p.startswith("/api/folders"): return self._j(404, {"message":"not found"})
         if p.startswith("/api/dashboards/uid/"):
             uid = p.rsplit("/", 1)[-1]

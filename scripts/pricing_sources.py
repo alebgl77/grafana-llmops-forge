@@ -376,15 +376,25 @@ def strict_catalog_match(seen: str, catalog: list[dict]) -> tuple[dict | None, s
     return item, "matched"
 
 
-def _match_score(needle: str, key: str) -> int:
-    if not needle or len(key) < 4:
+def _dated_model_base(seen: str) -> str | None:
+    """Only a separated, valid YYYYMMDD or YYYY-MM-DD suffix is compatible."""
+    match = re.fullmatch(r"(.+)[-_]([0-9]{8}|[0-9]{4}-[0-9]{2}-[0-9]{2})", seen)
+    if not match:
+        return None
+    try:
+        datetime.strptime(match[2].replace("-", ""), "%Y%m%d")
+    except ValueError:
+        return None
+    return normalize_model_name(match[1])
+
+
+def _match_score(needle: str, key: str, dated_base: str | None = None) -> int:
+    if not needle or not key:
         return 0
     if key == needle:
-        return 10000 + len(key)
-    if key in needle:
-        return 1000 + len(key)
-    if needle in key:
-        return len(key)
+        return 2
+    if key == dated_base:
+        return 1
     return 0
 
 
@@ -392,11 +402,12 @@ def resolve_registry_model(seen: str, models: list[dict]
                            ) -> tuple[int | None, dict | None, str]:
     """Refuse tout ex aequo de specificite entre entrees du registre."""
     needle = normalize_model_name(seen)
+    dated_base = _dated_model_base(seen)
     scored = []
     for index, model in enumerate(models):
         aliases = model.get("aliases", [])
         values = [model.get("id")] + (aliases if isinstance(aliases, list) else [])
-        score = max((_match_score(needle, normalize_model_name(value))
+        score = max((_match_score(needle, normalize_model_name(value), dated_base)
                      for value in values), default=0)
         if score:
             scored.append((score, index))
@@ -417,11 +428,12 @@ def _registry_match(seen: str, models: list[dict]) -> tuple[int | None, dict | N
 def _registry_destinations(seen: str, models: list[dict]) -> set[tuple]:
     """Retourne toutes les destinations maximales, meme en cas d'ambiguite."""
     needle = normalize_model_name(seen)
+    dated_base = _dated_model_base(seen)
     scored = []
     for index, model in enumerate(models):
         aliases = model.get("aliases", [])
         values = [model.get("id")] + (aliases if isinstance(aliases, list) else [])
-        score = max((_match_score(needle, normalize_model_name(value))
+        score = max((_match_score(needle, normalize_model_name(value), dated_base)
                      for value in values), default=0)
         if score:
             scored.append((score, index))
