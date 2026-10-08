@@ -54,9 +54,11 @@ class H(BaseHTTPRequestHandler):
                     "gen_ai_client_token_usage_token_count",
                     "gen_ai_client_token_usage_token_sum"]
                 selector = parse_qs(urlsplit(self.path).query).get("match[]", [""])[0]
-                if "=~" in selector:
-                    pattern = json.loads(selector.split("=~", 1)[1][:-1])
-                    names = [name for name in names if re.fullmatch(pattern, name)]
+                # This fixture supports discovery and literal name selectors,
+                # never execution of a regex supplied by an HTTP request.
+                if selector not in ("", '{__name__=~".*gen_ai[._].*"}'):
+                    names = [name for name in names
+                             if selector == '{__name__=' + json.dumps(name) + '}']
                 return self._j(200, {"data": names})
             label = unquote(p.split("/label/", 1)[-1].rsplit("/values", 1)[0])
             values = {"gen_ai_request_model": ["gpt-5.4"], "gen_ai_provider_name": ["openai"],
