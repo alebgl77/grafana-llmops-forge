@@ -721,6 +721,20 @@ _third = [m for m in ("yaml", "requests", "httpx", "pydantic", "jinja2", "click"
 check("le produit livre n'importe que la stdlib", not _third, str(_third))
 check("dependabot suit les actions epinglees",
       os.path.exists(os.path.join(SK, ".github", "dependabot.yml")))
+_dependabot = yaml.safe_load(open(os.path.join(SK, ".github", "dependabot.yml")))
+_dependabot_updates = (_dependabot.get("updates", [])
+                       if isinstance(_dependabot, dict) else [])
+_demo_dependabot = [entry for entry in _dependabot_updates
+                    if isinstance(entry, dict)
+                    and entry.get("directory") == "/demo"]
+_demo_ecosystems = [entry.get("package-ecosystem")
+                    for entry in _demo_dependabot]
+check("Dependabot /demo a une unique entree Docker Compose",
+      len(_demo_dependabot) == 1
+      and _demo_ecosystems == ["docker-compose"],
+      str(_demo_ecosystems))
+check("le manifeste Docker Compose surveille existe",
+      os.path.exists(os.path.join(SK, "demo", "docker-compose.yml")))
 check("CODEOWNERS present (revue obligatoire des chemins sensibles)",
       os.path.exists(os.path.join(SK, ".github", "CODEOWNERS")))
 
