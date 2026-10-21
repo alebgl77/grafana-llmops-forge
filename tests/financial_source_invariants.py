@@ -92,6 +92,39 @@ class FinancialSourceTests(unittest.TestCase):
         self.assertEqual(manifest["financial_source"]["datasource_uid"], "b")
         self.assertEqual(manifest["recording_rules"]["datasource_uid"], "a")
 
+    def test_finops_native_single_panels_expand_to_full_width(self):
+        cap = capability({"a": signals("otel_genai"), "b": signals("litellm")})
+        board = f.bp_finops(f.Ctx(cap, REGISTRY)).d
+        positions = {panel["title"]: panel["gridPos"] for panel in board["panels"]}
+        self.assertEqual(positions["Spend by team (USD/s)"],
+                         {"x": 0, "y": 5, "w": 24, "h": 8})
+        self.assertEqual(positions["Output tokens by model/s"],
+                         {"x": 0, "y": 13, "w": 24, "h": 8})
+
+    def test_finops_complete_pairs_share_rows(self):
+        board = f.bp_finops(f.Ctx(capability({"a": signals("otel_genai")}),
+                                  REGISTRY)).d
+        positions = {panel["title"]: panel["gridPos"] for panel in board["panels"]}
+        self.assertEqual(positions["Estimated spend by provider origin (USD/s)"],
+                         {"x": 0, "y": 5, "w": 12, "h": 8})
+        self.assertEqual(positions["Input tokens by model (cost proxy)"],
+                         {"x": 12, "y": 5, "w": 12, "h": 8})
+        self.assertEqual(positions["Output tokens by model/s"],
+                         {"x": 0, "y": 13, "w": 12, "h": 8})
+        self.assertEqual(positions["Top models (tokens, range)"],
+                         {"x": 12, "y": 13, "w": 12, "h": 8})
+
+    def test_finops_stats_are_neutral_without_business_thresholds(self):
+        board = f.bp_finops(f.Ctx(capability({"a": signals("otel_genai"),
+                                              "b": signals("litellm")}),
+                                  REGISTRY)).d
+        stats = [panel for panel in board["panels"] if panel["type"] == "stat"]
+        self.assertEqual(len(stats), 4)
+        for panel in stats:
+            with self.subTest(panel=panel["title"]):
+                self.assertEqual(panel["options"]["colorMode"], "none")
+                self.assertNotIn("thresholds", panel["fieldConfig"]["defaults"])
+
     def test_recorded_exact_metric_is_found_beyond_first_dialect_entry(self):
         cap = capability({"a": signals("otel_genai"), "b": {
             "custom": {"metric_names": [f.COST_RECORDED]}}})

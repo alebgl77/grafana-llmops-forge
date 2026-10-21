@@ -753,6 +753,7 @@ class Board:
             p["options"].setdefault("reduceOptions",
                                     {"calcs": ["lastNotNull"], "fields": "", "values": False})
             p["options"].setdefault("graphMode", "area")
+            p["options"].setdefault("colorMode", "none")
         if ptype == "timeseries":
             p["fieldConfig"]["defaults"].setdefault(
                 "custom", {"fillOpacity": 12, "lineWidth": 1, "showPoints": "never"})
@@ -1135,32 +1136,42 @@ def bp_finops(ctx: Ctx) -> Board | None:
                ("asia", "🌏 Asia providers")]
     region_exprs = [(source.expr(region=r), lbl)
                     for r, lbl in regions]
-    if any(e for e, _ in region_exprs):
+    region_available = any(e for e, _ in region_exprs)
+    team_available = bool(source.mode == "native" and q.s.group_label and q.spend)
+    input_expr = (q.tokens_rate("input", by=q.s.model_label)
+                  if not team_available and q.s.model_label else None)
+    companion_available = team_available or bool(input_expr)
+    pair_width = 12 if region_available and companion_available else 24
+    if region_available:
         region_title = ("Priced subtotal by provider origin (USD/s)" if source.is_subtotal else
                         "Estimated spend by provider origin (USD/s)" if inline else
                         "Spend by provider origin (USD/s)")
-        b.ts(region_title, ds, region_exprs, 12, 8,
+        b.ts(region_title, ds, region_exprs, pair_width, 8,
              "currencyUSD", stacked=True,
              desc=PROVIDER_ORIGIN_NOTE
              + (" " + money_note if inline else ""))
-    if source.mode == "native" and q.s.group_label:
+    if team_available:
         b.ts("Spend by team (USD/s)", ds,
              [(f"sum by({qlbl(q.s.group_label)})(rate({msel(q.spend)}[{RATE}]))",
-               "{{" + q.s.group_label + "}}")], 12, 8, "currencyUSD", stacked=True,
+               "{{" + q.s.group_label + "}}")], pair_width, 8, "currencyUSD", stacked=True,
              topk=12)
-    elif q.s.model_label:
-        ti = q.tokens_rate("input", by=q.s.model_label)
+    elif input_expr:
         b.ts("Input tokens by model (cost proxy)", ds,
-             [(ti, "{{" + q.s.model_label + "}}")], 12, 8, "short", stacked=True)
+             [(input_expr, "{{" + q.s.model_label + "}}")], pair_width, 8,
+             "short", stacked=True)
     b.row_break()
     if q.s.model_label:
-        b.ts("Output tokens by model/s", ds,
-             [(q.tokens_rate("output", by=q.s.model_label),
-               "{{" + q.s.model_label + "}}")], 12, 8, "short", stacked=True)
+        output_expr = q.tokens_rate("output", by=q.s.model_label)
         top = (f"topk(10, sum by({qlbl(q.s.model_label)})"
                f"(increase({msel(q.tok + chr(95) + 'sum')}[$__range])))" if q.s.dialect == "otel_genai" and q.tok
                else None)
-        b.table("Top models (tokens, range)", ds, top, 12, 8)
+        pair_width = 12 if output_expr and top else 24
+        if output_expr:
+            b.ts("Output tokens by model/s", ds,
+                 [(output_expr, "{{" + q.s.model_label + "}}")], pair_width, 8,
+                 "short", stacked=True)
+        if top:
+            b.table("Top models (tokens, range)", ds, top, pair_width, 8)
     if inline:
         b.text("Financial coverage", source.coverage_note(), 24, 6)
     missing_prices = source.unmatched + source.partially_priced
