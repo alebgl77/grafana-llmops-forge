@@ -301,7 +301,7 @@ These are planned horizons, with evidence gates rather than release dates:
 - **H2 · Ship with evidence:** portable promotion dossiers and checks consumed by the customer's existing CI and provisioning tools.
 - **H3 · Rehearse the next migration:** executed migration tests or clearly labeled sensitivity scenarios, after the earlier workflow proves useful.
 
-As of 2026-09-14, **v2.0.2 is the released baseline**; the five foundational corrections and budget-alert lifecycle fix in [PR #5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) are integrated into main but not yet included in a release. The proposed comparison and dossier workflows are future work.
+As of 2026-10-21, **v2.0.3 is the released baseline**. It includes the foundational financial, discovery, deployment-provenance and budget-alert lifecycle corrections, refreshed official pricing, Qwen alias fixes, the real Executive FinOps capture and corrected Docker Compose dependency monitoring. The proposed comparison and dossier workflows are future work.
 
 Read the [canonical roadmap](ROADMAP.md) or its [French translation](docs/ROADMAP.fr.md) for the future demonstration, scope and pass/fail criteria.
 

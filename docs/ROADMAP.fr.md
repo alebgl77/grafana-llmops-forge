@@ -12,10 +12,10 @@ sans Forge Cloud obligatoire.
 
 ## Version publiée, intégration et propositions
 
-**État au 2026-09-14.** La version publiée de référence est **v2.0.2**, sortie le 2026-09-02.
-Les cinq corrections de fondation et le correctif du cycle des alertes budgétaires de la
-[PR nº 5](https://github.com/alebgl77/grafana-llmops-forge/pull/5) sont **intégrés dans main,
-mais pas encore inclus dans une version publiée**.
+**État au 2026-10-21.** La version publiée de référence est **v2.0.3**, sortie le 2026-10-21.
+Elle inclut les corrections de fondation sur les finances, la découverte, la provenance des
+déploiements et le cycle des alertes budgétaires, les tarifs officiels rafraîchis, les alias Qwen
+corrigés, la capture réelle Executive FinOps et le suivi Docker Compose corrigé.
 Les contrats H0 restants, H1–H3, le parcours et le dossier de décision restent des travaux futurs proposés.
 
 Aujourd'hui, Forge est une CLI locale fondée sur la bibliothèque standard Python et un agent skill.
