@@ -1,5 +1,13 @@
 # Changelog
 
+## [2.0.4] - 2026-10-21
+### Added : attribution et citation
+- Ajout d'un fichier `CITATION.cff` versionné et de sections auteur alignées dans les README anglais et français.
+
+### Fixed : cohérence documentaire et CI
+- Normalisation de la ponctuation suivie par un contrôle de non-régression sur les fichiers versionnés.
+- Le contrôle de récupération des alertes conserve son comportement avec une commande conforme à la limite de ligne YAML.
+
 ## [2.0.3] - 2026-10-21
 ### Changed : lisibilité et préparation à la production
 - Publication d'une feuille de route centrée sur des décisions IA reproductibles, avec horizons et critères de passage explicites.

@@ -3,7 +3,7 @@
 Le registre livré reste la source hors ligne et ne contient aucune valeur
 Artificial Analysis. Le fallback tiers est désactivé par défaut.
 
-## Revue du seed officiel — 2026-10-08
+## Revue du seed officiel : 2026-10-08
 
 Les 33 entrées ont été revues sur les sources officielles : 24 portent un tarif
 officiel et 9 restent indisponibles. Les IDs et leur ordre sont conservés ;

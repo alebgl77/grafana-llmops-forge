@@ -58,6 +58,10 @@ Ces horizons sont prévus avec des critères de passage, sans dates de livraison
 - **H2 · Livrer avec des preuves :** dossiers portables de promotion et contrôles consommés par la CI et les outils de provisioning du client.
 - **H3 · Répéter la prochaine migration :** tests de migration exécutés ou scénarios de sensibilité clairement identifiés, après validation de l'utilité du parcours précédent.
 
-Au 2026-10-21, **v2.0.3 est la version publiée de référence**. Elle inclut les corrections de fondation sur les finances, la découverte, la provenance des déploiements et le cycle des alertes budgétaires, les tarifs officiels rafraîchis, les alias Qwen corrigés, la capture réelle Executive FinOps et le suivi Docker Compose corrigé. Les parcours de comparaison et dossiers proposés restent des travaux futurs.
+Au 2026-10-21, **v2.0.4 est la version publiée de référence**. Elle ajoute des métadonnées de citation canoniques, des sections auteur alignées en anglais et en français, ainsi que des corrections de lint documentaire et CI. Les corrections de préparation à la production livrées dans v2.0.3 restent incluses. Les parcours de comparaison et dossiers proposés restent des travaux futurs.
 
 Consulter la [feuille de route française](ROADMAP.fr.md) ou la [version anglaise canonique](../ROADMAP.md) pour la démonstration future, le périmètre et les critères de passage.
+
+## Auteur
+
+Conçu et maintenu par **[Alexandre Beguel](https://github.com/alebgl77)**, architecte IA agentique et CAIO externalisé basé à Paris. Il travaille sur l'IA générative en production, le LLMOps, le FinOps des LLM et la gouvernance de l'IA fondée sur les preuves. [beguel.com](https://beguel.com/) · [LinkedIn](https://www.linkedin.com/in/beguel/) · [Profil en français, anglais et espagnol](https://alebgl77.github.io/fr/)

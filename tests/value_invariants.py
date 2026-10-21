@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import sys
 import time
 import urllib.parse
@@ -59,9 +60,9 @@ def main() -> int:
                          "durée devinée est un pile ou face, on attend la série.")
     ap.add_argument("--tolerance", type=float, default=0.25,
                     help="Écart relatif toléré entre les deux chemins de coût. "
-                         "Large à dessein : deux expressions rate() évaluées à "
-                         "des instants différents sur une charge variable ne "
-                         "s'accordent pas au pourcent près. Ce seuil attrape "
+                         "Large à dessein : même alignées sur le dernier point "
+                         "enregistré, les fenêtres rate() tolèrent le bruit de "
+                         "collecte. Ce seuil attrape "
                          "une erreur de formule (facteur ~6 quand le coût des "
                          "tokens de sortie disparaissait), pas du bruit.")
     a = ap.parse_args()
@@ -118,12 +119,15 @@ def main() -> int:
           (tin or 0) > (tout or 0), f"in={tin} out={tout}")
 
     print("--- convergence des deux chemins de coût ---")
-    recorded = float(_rec[0]["value"][1]) if _rec else None
-    # La série enregistrée date de la dernière évaluation de la règle (jusqu'à
-    # un intervalle de retard). Comparer à un calcul « maintenant » mesurerait
-    # la variation de charge, pas un désaccord de formule : on évalue donc le
-    # chemin composé À L'HORODATAGE du point enregistré.
-    at = float(_rec[0]["value"][0]) if _rec else None
+    # Dans une réponse d'instant query, value[0] est l'instant demandé par le
+    # client, pas celui du dernier échantillon utilisé. On récupère donc
+    # explicitement l'horodatage du dernier point de la recording rule, puis on
+    # réévalue les deux chemins à cet instant exact.
+    at = scalar(b, f"max(timestamp({COST}))")
+    valid_at = at is not None and math.isfinite(at) and at > 0
+    check("horodatage de la recording rule valide", valid_at,
+          "horodatage absent, non fini ou non positif")
+    recorded = scalar(b, f"sum({COST})", at=at) if valid_at else None
     if recorded is None:
         check("recording rules chargées", False,
               f"{COST} absent après {a.wait_for_rules:.0f}s ; le fichier de "
