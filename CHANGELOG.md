@@ -1,5 +1,15 @@
 # Changelog
 
+## [2.0.3] - 2026-10-21
+### Changed : lisibilité et préparation à la production
+- Publication d'une feuille de route centrée sur des décisions IA reproductibles, avec horizons et critères de passage explicites.
+- Le README présente une capture réelle du tableau de bord Executive FinOps, dont la mise en page a été améliorée.
+
+### Fixed : exactitude financière et maintenance
+- Renforcement de la couverture financière, de la provenance des déploiements, du cycle des alertes budgétaires et des contrôles live sur les coûts, la télémétrie et les alertes.
+- Rafraîchissement des tarifs officiels et correction des alias Qwen.
+- Le suivi Dependabot de la démo cible désormais son manifeste Docker Compose.
+
 ## [2.0.2] - 2026-09-02
 ### Fixed : classification des hôtes Grafana Cloud
 - La détection utilise désormais le hostname canonique, refuse les hôtes et chemins trompeurs, couvre ces cas par des tests de régression et conserve les UID publics historiques.
