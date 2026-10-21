@@ -301,7 +301,7 @@ These are planned horizons, with evidence gates rather than release dates:
 - **H2 · Ship with evidence:** portable promotion dossiers and checks consumed by the customer's existing CI and provisioning tools.
 - **H3 · Rehearse the next migration:** executed migration tests or clearly labeled sensitivity scenarios, after the earlier workflow proves useful.
 
-As of 2026-10-21, **v2.0.3 is the released baseline**. It includes the foundational financial, discovery, deployment-provenance and budget-alert lifecycle corrections, refreshed official pricing, Qwen alias fixes, the real Executive FinOps capture and corrected Docker Compose dependency monitoring. The proposed comparison and dossier workflows are future work.
+As of 2026-10-21, **v2.0.4 is the released baseline**. It adds canonical citation metadata, aligned English and French author sections, and documentation and CI lint cleanups. The production-readiness corrections delivered in v2.0.3 remain included. The proposed comparison and dossier workflows are future work.
 
 Read the [canonical roadmap](ROADMAP.md) or its [French translation](docs/ROADMAP.fr.md) for the future demonstration, scope and pass/fail criteria.
 
@@ -312,6 +312,10 @@ Issues and discussions are the place for bugs and questions; I read everything. 
 ## Contributing
 
 Model prices drift quarterly, so **registry PRs are the most valuable contribution** and take 2 minutes ([guide](CONTRIBUTING.md)). Dialect additions (new gateway/engine signatures) are second. `python3 tests/audit_harness.py` must stay green.
+
+## Author
+
+Built and maintained by **[Alexandre Beguel](https://github.com/alebgl77)**, Agentic AI Architect and external CAIO based in Paris. He works on production GenAI, LLMOps, LLM FinOps and evidence-first AI governance. [beguel.com](https://beguel.com/) · [LinkedIn](https://www.linkedin.com/in/beguel/) · [Profile in English, French and Spanish](https://alebgl77.github.io/)
 
 <div align="center">
 <sub>Built with the <a href="https://agentskills.io">Agent Skills</a> open standard · works in Claude Code, Claude.ai, Cowork, and as a plain CLI.<br/>

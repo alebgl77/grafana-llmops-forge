@@ -668,6 +668,18 @@ check("aucun fichier du projet ignore a tort", not _lost, str(_lost))
 check("aucun fichier suivi n'est masque par un motif",
       not subprocess.run(["git", "ls-files", "-i", "-c", "--exclude-standard"],
                          cwd=SK, capture_output=True, text=True).stdout.strip())
+_tracked = subprocess.run(["git", "ls-files", "-z"], cwd=SK,
+                          capture_output=True, check=True).stdout.decode().split("\0")
+_em_dash = []
+for _rel in filter(None, _tracked):
+    try:
+        _text = open(os.path.join(SK, _rel)).read()
+    except (OSError, UnicodeDecodeError):
+        continue
+    if "\u2014" in _text:
+        _em_dash.append(_rel)
+check("aucun tiret cadratin U+2014 dans les fichiers suivis",
+      not _em_dash, str(_em_dash[:4]))
 _gi = open(os.path.join(SK, ".gitignore")).read().splitlines()
 _inline = [l for l in _gi if re.search(r"\S\s+#", l) and not l.lstrip().startswith("#")]
 check("aucun commentaire en fin de ligne (git ne les interprete pas)",

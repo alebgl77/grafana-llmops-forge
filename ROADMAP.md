@@ -11,10 +11,9 @@ chooses and controls external integrations; there is no mandatory Forge Cloud.
 
 ## Release, integration and proposed work
 
-**Status: 2026-10-21.** The released baseline is **v2.0.3**, published on 2026-10-21.
-It includes the foundational financial, discovery, deployment-provenance and budget-alert
-lifecycle corrections, refreshed official pricing, Qwen alias fixes, the real Executive FinOps
-capture and corrected Docker Compose dependency monitoring.
+**Status: 2026-10-21.** The released baseline is **v2.0.4**, published on 2026-10-21.
+It adds canonical citation metadata, aligned English and French author sections, and documentation
+and CI lint cleanups. The production-readiness corrections delivered in v2.0.3 remain included.
 The remaining H0 contracts, H1–H3, the journey and the decision dossier remain proposed future work.
 
 Today, Forge is a local Python standard-library CLI and an agent skill. Discovery drives seven
@@ -177,7 +176,7 @@ the customer's CI. A controlled fixture must exercise rollback prerequisites thr
 tools. Incomplete attribution must remain visible, and unsupported schema combinations fail
 explicitly. No deployment-controller capability is required to pass.
 
-### H3 · Rehearse the next migration — exploration
+### H3 · Rehearse the next migration: exploration
 
 **Output:** dependency inventory, observed endpoints where available, and a bounded provider
 or hosting migration exercise. Distinguish an **executed rehearsal**, with its test mechanism

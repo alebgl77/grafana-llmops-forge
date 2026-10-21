@@ -354,7 +354,9 @@ jobs:
         # Real PromQL semantics are tested with promtool in the audit job.
         run: |
           GRAFANA_CONTAINER=$(docker compose -f demo/docker-compose.yml ps -q grafana)
-          HOST_GATEWAY=$(docker inspect --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' "$GRAFANA_CONTAINER")
+          HOST_GATEWAY=$(docker inspect \
+            --format '{{range .NetworkSettings.Networks}}{{.Gateway}}{{end}}' \
+            "$GRAFANA_CONTAINER")
           python tests/burn_alert_recovery_e2e.py --datasource-host "$HOST_GATEWAY" --timeout 90
       - name: Diagnose on failure (compose ps + container logs)
         if: failure()
