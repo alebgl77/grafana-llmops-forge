@@ -47,8 +47,8 @@ Deployment writes a v2 manifest with `success|partial|failed`; `--best-effort`
 changes only the exit code. Visual audit likewise remains `failed` when an
 expected capture is absent, even when `--allow-empty` explicitly permits exit 0.
 
-<div align="center"><img src="docs/assets/dashboard-finops.svg" alt="FinOps dashboard illustration" width="100%"/>
-<sub><i><b>Illustration</b> (hand-drawn SVG, not a screenshot) of the FinOps blueprint: cost composed from a 33-model price registry. Current panels label the regional split as provider origin, which does not establish processing or storage locations. For the real thing on real data, run <code>make demo</code>: it boots Grafana + Prometheus + a synthetic LLM workload and deploys these dashboards for real in about a minute.</i></sub></div>
+<div align="center"><img src="docs/assets/dashboard-finops.png" alt="Executive FinOps dashboard rendered in Grafana 12.4.9 with synthetic LLM telemetry" width="100%"/>
+<sub><i><b>Live Grafana 12.4.9 capture</b> rendered from the repository demo stack with synthetic LLM telemetry. The Executive FinOps view shows spend, daily run rate, cost per request, token throughput, team spend and model mix.</i></sub></div>
 
 ## Why this is different
 
