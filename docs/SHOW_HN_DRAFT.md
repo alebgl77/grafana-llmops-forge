@@ -57,8 +57,8 @@ each one taught me which layer of testing was missing.
    The fix wasn't the escaping, it was the missing test class. The repo now
    downloads a real Prometheus, feeds it a synthetic LLM workload, runs the
    whole pipeline and executes every generated expression against real data.
-   63 of 63 return data, and that's a CI job. Structure is not semantics, and
-   I had been testing only structure.
+   The CI job requires the generated expressions to execute and return data.
+   Structure is not semantics, and I had been testing only structure.
 
 After deployment, a separate capture command can screenshot dashboards and
 panels with the native renderer or a headless browser fallback. Browser mode
