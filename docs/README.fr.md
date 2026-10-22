@@ -1,6 +1,6 @@
 # grafana-llmops-forge en français
 
-**Une seule condition : un Grafana joignable.** Le reste est **découvert, généré, déployé et vérifié visuellement** : ce que vos équipes consomment réellement en IA, ce que ça coûte par origine du fournisseur, ce que font vos agents, et les preuves d'observabilité qu'un auditeur réclamera.
+**À partir d'un Grafana joignable et des accès nécessaires**, la forge découvre la télémétrie, génère et déploie les dashboards IA/LLM, puis propose des captures pour une revue visuelle distincte : usages, coûts par origine du fournisseur, activité des agents et éléments d'observabilité utiles à un audit.
 
 ➡ Le README complet est [en anglais ici](../README.md). Cette page en résume l'essentiel en français.
 
@@ -46,6 +46,22 @@ python3 scripts/forge_dashboards.py --capability capability_map.json \
 ```
 
 Utilisable aussi comme **Agent Skill** (Claude Code, Claude.ai, Cowork) : *« Audite mon Grafana, déploie ce qui est pertinent, puis prouve-le visuellement. »*
+
+## Ce qui est vérifié, et par qui
+
+| Couche | Exécution et portée |
+|---|---|
+| Tests hors ligne, requêtes Prometheus, invariants de valeurs et déploiement Grafana | Automatisés en CI ; le job E2E ne lance ni renderer ni modèle de vision. |
+| Captures et précontrôles | `visual_audit.py` produit les PNG ; le mode Playwright préanalyse les marqueurs d'erreur du DOM. Les chemins d'échec de capture sont testés hors ligne en CI. |
+| Revue sémantique du rendu | Optionnelle et distincte, réalisée par une personne ou un agent capable de lire les images ; elle ne tourne pas en CI. |
+
+Après le déploiement, `python3 scripts/visual_audit.py --dashboards generated_dashboards`
+prépare les captures. Un `audit_status: success` décrit la capture et les
+précontrôles, sans verdict sur la cohérence des chiffres ou la lisibilité.
+Pour annoncer une vérification visuelle, inspecter les PNG avec le
+[protocole de revue](../references/visual_verification.md) et consigner le
+verdict. Sinon, indiquer **revue visuelle non effectuée**. Les statuts du
+déploiement, des captures et de la revue doivent rester distincts.
 
 ## Feuille de route
 

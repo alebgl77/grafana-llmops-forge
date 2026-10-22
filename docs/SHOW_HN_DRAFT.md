@@ -60,12 +60,12 @@ each one taught me which layer of testing was missing.
    63 of 63 return data, and that's a CI job. Structure is not semantics, and
    I had been testing only structure.
 
-That principle got generalised: after deploying, it screenshots every panel
-(native Grafana renderer, headless browser fallback) and does a vision pass
-looking for No data panels, impossible values like p50 above p95, and
-cross-panel incoherence such as tokens/s above zero while cost sits at zero,
-which means a model didn't match the registry. HTTP 200 means the JSON was
-accepted, not that the render is right.
+After deployment, a separate capture command can screenshot dashboards and
+panels with the native renderer or a headless browser fallback. Browser mode
+also pre-scans DOM errors. A human or vision-capable agent can then inspect
+the captures for readability, scale plausibility and cross-panel coherence
+using the documented checklist. That semantic review is not run by the script
+or CI. HTTP 200 confirms acceptance; captured PNGs still need a reviewer.
 
 Other things people might care about. Zero dependencies, stdlib only,
 deliberately readable in one sitting given that a Snyk audit this year found

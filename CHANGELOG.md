@@ -1,5 +1,14 @@
 # Changelog
 
+## [Unreleased]
+### Fixed : portée des preuves de vérification
+- Distinction explicite entre tests CI automatisés, captures/précontrôles et
+  revue sémantique séparée par une personne ou un agent capable de lire les images.
+- README, skill EN/FR, protocole et supports de présentation ne présentent plus
+  la revue par vision comme un traitement exécuté par le script ou la CI.
+- Le message final de capture indique que la revue visuelle reste à effectuer ;
+  les contrôles d'échec de capture et leurs codes de sortie restent inchangés.
+
 ## [2.0.4] - 2026-10-21
 ### Added : attribution et citation
 - Ajout d'un fichier `CITATION.cff` versionné et de sections auteur alignées dans les README anglais et français.
