@@ -1,14 +1,23 @@
 # Vérification visuelle : protocole vision
 
-La forge valide le JSON et l'API valide l'ingestion ; **seule la vision valide
-le rendu**. Ce protocole s'applique aux PNG produits par `visual_audit.py`.
-C'est Claude qui regarde : ouvrir les images (outil de lecture de fichiers) et
-appliquer les checklists ci-dessous. Ne jamais déclarer un déploiement réussi
-sans verdict visuel quand la capture est possible.
+La forge valide le JSON et l'API confirme l'ingestion. `visual_audit.py` produit
+les captures et, avec Playwright, préanalyse le DOM. Son statut de succès
+concerne ces contrôles techniques ; il ne constitue pas un verdict sémantique.
+La CI teste les requêtes, invariants, déploiements et contrats de capture hors
+ligne ; elle ne réalise pas de revue par modèle de vision.
+
+Ce protocole est une revue distincte, effectuée par une personne ou un agent
+capable de lire les PNG. Il aide à repérer les défauts de rendu et les
+incohérences ; il ne garantit pas la justesse de toutes les données. Pour
+revendiquer une vérification visuelle, ouvrir les images, appliquer les
+checklists et consigner le périmètre, le reviewer et le verdict. Sans cette
+étape, déclarer **revue visuelle non effectuée**, même si le déploiement et les
+captures ont réussi. Les obligations ci-dessous s'appliquent à une mission
+qui inclut cette revue.
 
 ## 1. Moments stratégiques (quand déclencher)
 
-| Moment | Portée | Obligatoire |
+| Moment | Portée | Requis pour cette revue |
 |---|---|---|
 | Juste après `forge --deploy` | full.png de chaque dashboard, puis panels douteux | **oui** |
 | Avant remise du dashboard governance (pièce d'audit) | tous les panels du dashboard | **oui** |

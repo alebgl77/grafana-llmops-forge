@@ -4,7 +4,7 @@
 
 # grafana-llmops-forge
 
-**Point it at any Grafana. Get a complete AI/LLM observability suite: discovered, generated, deployed, and *visually verified*.**
+**Discover your Grafana telemetry, generate and deploy AI/LLM dashboards, then capture their rendering for a separate visual review.**
 
 [![CI](https://img.shields.io/github/actions/workflow/status/alebgl77/grafana-llmops-forge/ci.yml?branch=main&label=CI&logo=githubactions&logoColor=white)](../../actions/workflows/ci.yml)
 [![Python](https://img.shields.io/badge/python-3.9%2B%20·%20stdlib%20only-3776AB?logo=python&logoColor=white)](#-security-model)
@@ -35,8 +35,12 @@ python3 scripts/discover.py --out capability_map.json          # ① what do you
 python3 scripts/forge_dashboards.py \
         --capability capability_map.json \
         --blueprints auto --deploy --with-alerts               # ② forge + deploy + SLO alerts
-python3 scripts/visual_audit.py --dashboards generated_dashboards  # ③ prove it renders right
+python3 scripts/visual_audit.py --dashboards generated_dashboards  # ③ capture rendering for review
 ```
+
+`visual_audit.py` captures PNGs and, with Playwright, pre-scans the DOM. It does
+not call a vision model or judge the dashboard's meaning. A human or vision-capable
+agent must inspect the captures before calling the result visually verified.
 
 Multi-org deployments can pin `--org-id <id>` on discovery, forge and visual
 audit. Use `--uid-scope <tenant-or-folder>` when deploying the same blueprints
@@ -58,7 +62,7 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 2. **Four telemetry dialects, one mental model.** OpenTelemetry GenAI (`gen_ai_*`), LiteLLM gateway (`litellm_*`, native USD spend), inference engines (`vllm:*`, `tgi_*`), GPU (`DCGM_*`). Each blueprint is translated into whatever you actually emit.
 3. **Cost is computed, not hoped for.** Native gateway spend when available; otherwise PromQL composed by joining your token counters with a bundled **33-model price registry** (US/EU/Asia, input/output/cached, tiered pricing), refreshable from official pricing pages when stale.
 4. **Governance is observable.** The EU AI Act dashboard maps articles (12, 26§6, 50, 73) to live signals: logging evidence, retention posture, incident watch, an auto-built model inventory with provider-origin and GPAI flags, and the post-Digital-Omnibus timeline. A separate optional deployment inventory shows declared processing/storage locations; absent declarations remain unknown.
-5. **Verified by eye, not just by API.** HTTP 200 proves the JSON was accepted, not that the render is right. After deploy, `visual_audit.py` captures every panel (native Grafana renderer, Playwright fallback) and an AI vision pass checks scale plausibility, "No data" panels, p50>p95 impossibilities, cross-panel coherence, then loops remediation (max 2 iterations, then a report of what remains).
+5. **Capture first, review explicitly.** After deployment, `visual_audit.py` captures dashboards and panels with the native Grafana renderer or Playwright fallback; Playwright also pre-scans DOM error markers. An optional, separate human or vision-capable agent review uses the checklist to assess scale plausibility, empty panels and cross-panel coherence. That reviewer can guide up to two remediation rounds. Captures and a successful API response alone do not establish semantic correctness.
 
 <div align="center"><img src="docs/assets/architecture.svg" alt="Pipeline" width="100%"/>
 <sub><i>Diagram, not a screenshot. Every box is a script in <code>scripts/</code>.</i></sub></div>
@@ -128,13 +132,16 @@ Drop the folder into your skills directory, or download the packaged `.skill` fr
 
 > *"Audit my Grafana at https://grafana.internal and deploy whatever makes sense, then prove it visually."*
 
-The skill handles discovery → registry refresh → blueprint selection → deploy → vision-verified loop, and reports gaps with exact instrumentation configs.
+The skill guides discovery → registry refresh → blueprint selection → deploy → capture.
+If a human or vision-capable agent performs the separate review, it records a
+visual verdict and can guide remediation. Otherwise, visual review remains
+**not performed**. Instrumentation gaps are reported with exact configs.
 </details>
 
 <details>
 <summary><b>As a standalone CLI (no AI required)</b></summary>
 
-Pure Python 3.9+ stdlib. No pip install. The three commands at the top of this README are the whole workflow. `--dry-run` writes JSON without touching your instance; `--selftest` renders all seven blueprints offline from a simulated capability map.
+Pure Python 3.9+ stdlib. No pip install. The three commands at the top of this README cover discovery, deployment and capture; semantic visual review is a separate step. `--dry-run` writes JSON without touching your instance; `--selftest` renders all seven blueprints offline from a simulated capability map.
 
 Unknown or officially unpriced detected models can use an explicit third-party
 fallback:
@@ -171,16 +178,22 @@ crashed anything. All produced a plausible, wrong dashboard. That is the
 failure mode that matters in observability, and the reason for these test
 layers:
 
-| Layer | What it can catch | Where |
+| Layer | What it checks | Execution |
 |---|---|---|
-| Offline harness, four simulated instance topologies | structure, regressions, escaping, cardinality, packaging, supply chain | `tests/audit_harness.py` |
-| Live query check against a real Prometheus | queries that are valid but return nothing, or error at query time | `tests/live_query_check.py` |
-| Value invariants | numbers that exist but disagree with each other: ordered quantiles, bounded ratios, cost paths converging | `tests/value_invariants.py` |
-| End-to-end deploy on the demo stack | the full pipeline against a real Grafana | CI `e2e` job |
-| Vision pass on rendered panels | what only an eye sees: empty panels, implausible scales | `scripts/visual_audit.py` |
+| Offline harness, four simulated instance topologies | structure, regressions, escaping, cardinality, packaging, supply chain | CI: `tests/audit_harness.py` |
+| Live query check against a real Prometheus | queries that error or unexpectedly return no data | CI: `tests/live_query_check.py` |
+| Value invariants | ordered quantiles, bounded ratios, converging cost paths | CI: `tests/value_invariants.py` |
+| End-to-end deploy on the demo stack | deployment APIs, dashboard retrieval and alert lifecycle on real Grafana | CI `e2e` job; no renderer or vision review |
+| Rendering capture and DOM precheck | expected PNGs, HTTP failures and browser error markers | Operator-run `scripts/visual_audit.py`; capture failure paths are tested offline in CI |
+| Semantic visual review | readability, scale plausibility and cross-panel interpretation | Separate human or vision-capable agent using `references/visual_verification.md`; not run in CI |
 
-All of it runs in CI on every push. The forge runtime makes no third-party calls
-by default; CI downloads pinned test tools and container images.
+CI runs the automated query, invariant, deployment and offline capture-contract
+checks on pushes to `main` and on pull requests. It does not capture every live
+dashboard or run a vision model. In the capture manifest, `audit_status: success`
+means the capture/precheck completed; it is not a semantic review verdict.
+Report deployment, capture and visual-review status separately. The forge
+runtime makes no third-party calls by default; CI downloads test tools and
+pinned container images.
 
 ## What it touches, and how to back it out
 
@@ -276,7 +289,7 @@ tests/audit_harness.py        # offline checks across 4 instance topologies + re
 
 **Does it overwrite my existing dashboards?** No. Everything lives in its own folder with `llmops-forge`-tagged, deterministically-UID'd dashboards. Re-running updates in place.
 
-**Grafana Cloud?** Yes. Cloud is auto-detected; the image renderer is built in, so visual audit works out of the box.
+**Grafana Cloud?** Yes. Cloud is auto-detected; the image renderer is built in, so rendering capture is available without a local renderer. Semantic review remains separate.
 
 **My models aren't in the registry.** They appear in an "unpriced models" panel instead of being billed wrong. Add a price or alias to `model_registry.json`, or explicitly opt in to `--pricing-fallback artificial-analysis`. The fallback accepts only a unique exact normalized ID, slug, name, or alias match. Ambiguous, absent, null, or failed responses stay unpriced.
 

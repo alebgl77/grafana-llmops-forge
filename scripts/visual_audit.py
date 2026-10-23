@@ -8,9 +8,10 @@ Deux moteurs, sélection automatique :
                avec pré-scan DOM ("No data", erreurs de panel) avant la vision.
                Requiert : pip install playwright && playwright install chromium
 
-Les PNG produits sont ensuite LUS PAR CLAUDE (vision) avec la checklist de
-references/visual_verification.md. Ce script capture et pré-diagnostique ;
-il ne juge pas la cohérence sémantique ; c'est le rôle de la vision.
+Les PNG peuvent ensuite être examinés par une personne ou un agent doté de
+vision avec references/visual_verification.md. Ce script capture et
+pré-diagnostique ; il ne lance aucun modèle et ne juge pas la cohérence
+sémantique. Son statut de succès concerne la capture et les précontrôles.
 
 Usage :
     python3 visual_audit.py --dashboards generated_dashboards --out visual_audit
@@ -455,9 +456,9 @@ def main() -> int:
         captures = sum(len(d.get("files", [])) for d in manifest["dashboards"])
         if not (args.allow_empty and captures == 0 and not hard_failure):
             return 4
-    print("SUITE OBLIGATOIRE : ouvrir les PNG (vision) et appliquer la checklist "
-          "de references/visual_verification.md ; commencer par full.png de "
-          "chaque dashboard, puis les panels signalés douteux.")
+    print("REVUE VISUELLE NON EFFECTUEE par ce script. Pour la réaliser, ouvrir "
+          "les PNG et appliquer references/visual_verification.md ; commencer "
+          "par full.png de chaque dashboard, puis les panels signalés douteux.")
     return 0
 
 

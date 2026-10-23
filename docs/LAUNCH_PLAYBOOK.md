@@ -4,12 +4,12 @@ Interne au repo (pas listé dans le README). Séquencement optimisé : d'abord l
 
 ## J0 : Publication
 
-1. **Repo public** `grafana-llmops-forge`, description : *« Point it at any Grafana → full AI/LLM observability: FinOps by sovereignty, agents, EU AI Act, generated, deployed, vision-verified. Zero-dependency Agent Skill + CLI. »*
+1. **Repo public** `grafana-llmops-forge`, description : *« Point it at any Grafana → full AI/LLM observability: FinOps by provider origin, agents, governance evidence, generated and deployed, with captures for separate review. Zero-dependency Agent Skill + CLI. »*
 2. **Topics** (l'algorithme de découverte GitHub) : `llmops` `llm-observability` `ai-observability` `grafana` `grafana-dashboards` `prometheus` `opentelemetry` `finops` `eu-ai-act` `ai-governance` `vllm` `litellm` `claude-skills` `agent-skills` `claude-code` `sre`
 3. **Social preview** : uploader `docs/assets/social-preview.png` (Settings → General → Social preview) ; c'est l'image des partages X/LinkedIn/Slack.
 4. **Release v1.1.0** avec le `.skill` en asset (les catalogues type Chat2AnyLLM indexent les SKILL.md automatiquement une fois le repo référencé).
 5. Activer Discussions ; épingler une discussion « Show us your forge output (redacted) » ; les captures partagées servent de preuve sociale.
-6. Vérifier que le badge CI passe au vert (le workflow tourne offline, aucune raison d'échouer).
+6. Vérifier les jobs CI hors ligne, les requêtes Prometheus et le déploiement E2E. La capture sur instance et la revue sémantique du rendu sont des étapes distinctes ; aucune revue par vision ne tourne en CI.
 
 ## Ordre corrigé par l'expérience : traction D'ABORD, listes ensuite
 
@@ -37,8 +37,8 @@ Règle d'or : **une PR = une ligne au format exact de la liste**, description �
 
 | Liste | Section cible | Ligne à proposer (adapter au format local) |
 |---|---|---|
-| `tensorchord/Awesome-LLMOps` (~5k★, LA référence) | Observability | `grafana-llmops-forge: Turn any Grafana into an AI observability suite: auto-discovery, 6 generated dashboards (FinOps by sovereignty, agents, EU AI Act), vision-verified rendering. Zero deps.` |
-| `hesreallyhim/awesome-claude-code` (~28k★) | Skills / Plugins | `grafana-llmops-forge: Skill that audits a Grafana instance, forges & deploys LLM observability dashboards (FinOps, agents, EU AI Act), then verifies rendering by vision.` |
+| `tensorchord/Awesome-LLMOps` (~5k★, LA référence) | Observability | `grafana-llmops-forge: Turn any Grafana into an AI observability suite: auto-discovery, 7 generated dashboards (FinOps by provider origin, agents, governance evidence), captures for separate visual review. Zero deps.` |
+| `hesreallyhim/awesome-claude-code` (~28k★) | Skills / Plugins | `grafana-llmops-forge: Skill that audits a Grafana instance, forges & deploys LLM observability dashboards (FinOps, agents, EU AI Act), then prepares captures for a human or vision-capable agent to review.` |
 | `ComposioHQ/awesome-claude-skills` | DevOps/Infra | idem ci-dessus |
 | `travisvn/awesome-claude-skills` | Infrastructure | idem |
 | `BehiSecc/awesome-claude-skills` | Ops/Monitoring | idem |
@@ -53,12 +53,12 @@ Bonus FR : `french-tech` awesome lists éventuelles + Grafana Community Dashboar
 ## J3-J7 : Canaux (dans cet ordre)
 
 1. **Show HN** (mardi ou mercredi, 15h-17h CET = matin US), titre sobre et factuel :
-   *« Show HN: Point it at any Grafana, get LLM FinOps + EU AI Act dashboards, vision-verified »*
+   *« Show HN: Point it at any Grafana, get LLM FinOps + governance dashboards and rendering captures »*
    Premier commentaire (le vrai pitch) : le bug gpt-5.4-mini ×5,5 trouvé par l'audit, le choix stdlib-only post-ToxicSkills, la boucle vision. HN adore les post-mortems de ses propres bugs.
 2. **r/grafana** (angle : « I built a generator that only creates panels your metrics can actually answer ») + **r/sre** + **r/LocalLLaMA** (angle vLLM/KV-cache/GPU + benchmark coût API vs self-hosted) + **r/devops**. Un post par sub, adapté, à 24h d'intervalle.
 3. **Grafana Community Forum** (community.grafana.com, catégorie Dashboards) ; les mainteneurs Grafana repèrent et relaient parfois.
 4. **LinkedIn FR**, angle AI Act : *« Le 2 août 2026, les sanctions de l'AI Act s'activent. Voici le dashboard Grafana que votre auditeur voudra voir, généré en 3 commandes. »* + captures FR.
-5. **X/Twitter** : thread 6 tweets = 6 dashboards, 1 visuel chacun, finir sur la boucle vision (le GIF/screenshot du verdict ✅⚠❌).
+5. **X/Twitter** : thread 7 tweets = 7 dashboards, 1 visuel chacun, finir sur la boucle vision (le GIF/screenshot du verdict ✅⚠❌).
 6. **Newsletter pitchs** : TLDR DevOps, Last Week in AWS (angle FinOps), MLOps Community Slack (#llmops).
 
 ## Amplificateurs
