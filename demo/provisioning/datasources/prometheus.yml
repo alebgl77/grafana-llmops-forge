@@ -23,7 +23,7 @@ datasources:
       # scrape.
       timeInterval: 10s
       prometheusType: Prometheus
-      prometheusVersion: 3.14.0
+      prometheusVersion: 3.15.1
       # Wire this to a Tempo datasource UID to make exemplars clickable:
       # exemplarTraceIdDestinations:
       #   - name: trace_id

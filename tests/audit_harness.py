@@ -848,6 +848,12 @@ check("volumes nommes declares au niveau racine",
 _pcfg = yaml.safe_load(open(os.path.join(SK, "demo", "prometheus.yml")))
 _ds = yaml.safe_load(open(os.path.join(SK, "demo", "provisioning",
                                       "datasources", "prometheus.yml")))["datasources"][0]
+_prometheus_runtime_version = (_svc["prometheus"]["image"].split("@", 1)[0]
+                               .rsplit(":", 1)[1].removeprefix("v"))
+_prometheus_datasource_version = str(_ds["jsonData"]["prometheusVersion"])
+check("version Prometheus de la datasource == version runtime",
+      _prometheus_datasource_version == _prometheus_runtime_version,
+      f"datasource {_prometheus_datasource_version} vs runtime {_prometheus_runtime_version}")
 check("timeInterval de la datasource == scrape_interval "
       "(sinon $__rate_interval fausse tous les panneaux)",
       _ds["jsonData"]["timeInterval"] == _pcfg["global"]["scrape_interval"],
