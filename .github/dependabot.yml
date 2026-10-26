@@ -10,3 +10,7 @@ updates:
   - package-ecosystem: docker-compose
     directory: "/demo"
     schedule: {interval: weekly}
+    # grafana/grafana est fixé par la matrice E2E (GRAFANA_IMAGE) ;
+    # Dependabot échoue sur l'interpolation ${GRAFANA_IMAGE:-...}.
+    ignore:
+      - dependency-name: "grafana/grafana"
