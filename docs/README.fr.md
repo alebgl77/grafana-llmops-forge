@@ -74,7 +74,15 @@ Ces horizons sont prévus avec des critères de passage, sans dates de livraison
 - **H2 · Livrer avec des preuves :** dossiers portables de promotion et contrôles consommés par la CI et les outils de provisioning du client.
 - **H3 · Répéter la prochaine migration :** tests de migration exécutés ou scénarios de sensibilité clairement identifiés, après validation de l'utilité du parcours précédent.
 
-Au 2026-10-21, **v2.0.4 est la version publiée de référence**. Elle ajoute des métadonnées de citation canoniques, des sections auteur alignées en anglais et en français, ainsi que des corrections de lint documentaire et CI. Les corrections de préparation à la production livrées dans v2.0.3 restent incluses. Les parcours de comparaison et dossiers proposés restent des travaux futurs.
+Au 2026-10-27, **v2.0.5 est la version publiée de référence**. Elle distingue
+les illustrations statiques, la capture live des tableaux de bord et la revue
+sémantique optionnelle ; met à jour la CI vers setup-python 7.1.0 avec lancement
+manuel ; et rafraîchit la démo vers Python 3.15 et Prometheus 3.15.1. Un invariant
+empêche désormais toute dérive de version entre la datasource et le runtime
+Prometheus. Dependabot reste limité au manifeste Docker Compose de `/demo` et
+ignore l'image Grafana pilotée par la matrice. Les corrections de citation et de
+préparation à la production des versions précédentes restent incluses. Les
+parcours de comparaison et dossiers proposés restent des travaux futurs.
 
 Consulter la [feuille de route française](ROADMAP.fr.md) ou la [version anglaise canonique](../ROADMAP.md) pour la démonstration future, le périmètre et les critères de passage.
 

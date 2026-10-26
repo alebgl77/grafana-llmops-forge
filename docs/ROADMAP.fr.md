@@ -12,10 +12,13 @@ sans Forge Cloud obligatoire.
 
 ## Version publiée, intégration et propositions
 
-**État au 2026-10-21.** La version publiée de référence est **v2.0.4**, sortie le 2026-10-21.
-Elle ajoute des métadonnées de citation canoniques, des sections auteur alignées en anglais et en
-français, ainsi que des corrections de lint documentaire et CI. Les corrections de préparation à
-la production livrées dans v2.0.3 restent incluses.
+**État au 2026-10-27.** La version publiée de référence est **v2.0.5**, sortie le 2026-10-27.
+Elle distingue les illustrations statiques, la capture live des tableaux de bord et la revue
+sémantique optionnelle ; met à jour la CI vers setup-python 7.1.0 avec lancement manuel ;
+rafraîchit la démo vers Python 3.15 et Prometheus 3.15.1 ; et impose l'alignement de version
+entre la datasource et le runtime. Dependabot reste limité au manifeste Docker Compose de
+`/demo` et ignore l'image Grafana pilotée par la matrice. Les corrections de citation et de
+préparation à la production des versions précédentes restent incluses.
 Les contrats H0 restants, H1–H3, le parcours et le dossier de décision restent des travaux futurs proposés.
 
 Aujourd'hui, Forge est une CLI locale fondée sur la bibliothèque standard Python et un agent skill.

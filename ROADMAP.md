@@ -11,9 +11,12 @@ chooses and controls external integrations; there is no mandatory Forge Cloud.
 
 ## Release, integration and proposed work
 
-**Status: 2026-10-21.** The released baseline is **v2.0.4**, published on 2026-10-21.
-It adds canonical citation metadata, aligned English and French author sections, and documentation
-and CI lint cleanups. The production-readiness corrections delivered in v2.0.3 remain included.
+**Status: 2026-10-27.** The released baseline is **v2.0.5**, published on 2026-10-27.
+It separates static illustrations, live dashboard capture and optional semantic visual review;
+updates CI to setup-python 7.1.0 with manual dispatch; refreshes the demo to Python 3.15 and
+Prometheus 3.15.1; and enforces datasource/runtime version alignment. Dependabot remains scoped
+to the `/demo` Docker Compose manifest and skips the matrix-controlled Grafana image. The citation
+and production-readiness corrections from earlier releases remain included.
 The remaining H0 contracts, H1–H3, the journey and the decision dossier remain proposed future work.
 
 Today, Forge is a local Python standard-library CLI and an agent skill. Discovery drives seven
