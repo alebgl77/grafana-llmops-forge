@@ -7,3 +7,6 @@ updates:
     schedule: {interval: weekly}
     groups:
       actions: {patterns: ["*"]}
+  - package-ecosystem: docker-compose
+    directory: "/demo"
+    schedule: {interval: weekly}
