@@ -741,11 +741,9 @@ _demo_dependabot = [entry for entry in _dependabot_updates
                     and entry.get("directory") == "/demo"]
 _demo_ecosystems = [entry.get("package-ecosystem")
                     for entry in _demo_dependabot]
-# Temporaire : l'entree /demo est retiree le temps que Dependabot oublie sa
-# configuration docker obsolete ; elle revient en docker-compose ensuite.
-check("Dependabot /demo a au plus une entree, en Docker Compose",
-      len(_demo_dependabot) <= 1
-      and all(e == "docker-compose" for e in _demo_ecosystems),
+check("Dependabot /demo a une unique entree Docker Compose",
+      len(_demo_dependabot) == 1
+      and _demo_ecosystems == ["docker-compose"],
       str(_demo_ecosystems))
 check("le manifeste Docker Compose surveille existe",
       os.path.exists(os.path.join(SK, "demo", "docker-compose.yml")))
