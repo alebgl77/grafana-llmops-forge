@@ -2,14 +2,15 @@ cff-version: 1.2.0
 message: "If you use this software, please cite it as below."
 type: software
 title: "grafana-llmops-forge"
-version: 2.0.4
-date-released: "2026-10-21"
+version: 2.0.5
+date-released: "2026-10-27"
 abstract: >-
   Discovers the LLM telemetry a Grafana deployment actually collects
-  (OpenTelemetry GenAI, LiteLLM, vLLM/TGI, DCGM), then generates, deploys and
-  visually verifies dashboards for LLM FinOps, agents, quality and AI governance,
-  with multi-window burn-rate SLO alerts and an EU AI Act, ISO/IEC 42001 and
-  NIST AI RMF evidence layer.
+  (OpenTelemetry GenAI, LiteLLM, vLLM/TGI, DCGM), then generates and deploys
+  dashboards for LLM FinOps, agents, quality and AI governance, captures their
+  rendering for a separate optional visual review, and provides multi-window
+  burn-rate SLO alerts plus an EU AI Act, ISO/IEC 42001 and NIST AI RMF
+  evidence layer.
 authors:
   - family-names: "Beguel"
     given-names: "Alexandre"

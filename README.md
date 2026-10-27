@@ -314,7 +314,14 @@ These are planned horizons, with evidence gates rather than release dates:
 - **H2 · Ship with evidence:** portable promotion dossiers and checks consumed by the customer's existing CI and provisioning tools.
 - **H3 · Rehearse the next migration:** executed migration tests or clearly labeled sensitivity scenarios, after the earlier workflow proves useful.
 
-As of 2026-10-21, **v2.0.4 is the released baseline**. It adds canonical citation metadata, aligned English and French author sections, and documentation and CI lint cleanups. The production-readiness corrections delivered in v2.0.3 remain included. The proposed comparison and dossier workflows are future work.
+As of 2026-10-27, **v2.0.5 is the released baseline**. It separates static
+illustrations, live dashboard capture and optional semantic visual review;
+updates CI to setup-python 7.1.0 with manual dispatch; refreshes the demo to
+Python 3.15 and Prometheus 3.15.1; and enforces datasource/runtime Prometheus
+version alignment. Dependabot remains scoped to the `/demo` Docker Compose
+manifest and skips the matrix-controlled Grafana image. The citation and
+production-readiness corrections from earlier releases remain included. The
+proposed comparison and dossier workflows are future work.
 
 Read the [canonical roadmap](ROADMAP.md) or its [French translation](docs/ROADMAP.fr.md) for the future demonstration, scope and pass/fail criteria.
 

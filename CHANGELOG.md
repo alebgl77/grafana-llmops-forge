@@ -1,13 +1,21 @@
 # Changelog
 
 ## [Unreleased]
-### Fixed : portée des preuves de vérification
-- Distinction explicite entre tests CI automatisés, captures/précontrôles et
-  revue sémantique séparée par une personne ou un agent capable de lire les images.
-- README, skill EN/FR, protocole et supports de présentation ne présentent plus
-  la revue par vision comme un traitement exécuté par le script ou la CI.
-- Le message final de capture indique que la revue visuelle reste à effectuer ;
-  les contrôles d'échec de capture et leurs codes de sortie restent inchangés.
+
+## [2.0.5] - 2026-10-27
+### Changed : vérification et dépendances
+- Les illustrations statiques, la capture live Grafana et la revue sémantique
+  optionnelle sont désormais distinguées explicitement dans la documentation,
+  le skill, le protocole et les messages de capture.
+- `actions/setup-python` passe à 7.1.0 dans les workflows CI et release.
+- La démo passe à `python:3.15-slim-bookworm` et à Prometheus 3.15.1.
+
+### Fixed : CI et cohérence d'infrastructure
+- Le suivi Dependabot Docker Compose reste limité à `/demo` et ignore l'image
+  Grafana pilotée par la matrice E2E, dont l'interpolation n'est pas résolue.
+- La CI accepte désormais des relances manuelles avec `workflow_dispatch`.
+- La version Prometheus déclarée par la datasource est alignée sur le runtime,
+  et le harnais d'audit bloque toute dérive future entre les deux.
 
 ## [2.0.4] - 2026-10-21
 ### Added : attribution et citation
