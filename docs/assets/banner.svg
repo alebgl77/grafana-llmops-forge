@@ -9,19 +9,19 @@
 <text x="48" y="272" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" fill="#79c0ff">7 dashboards · 10 dialects</text>
 <text x="48" y="308" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">FinOps, SLOs, agents, adoption, inference,</text>
 <text x="48" y="334" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">quality and governance evidence.</text>
-<rect x="725" y="32" width="507" height="104" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="725" y="32" width="507" height="104" rx="10" fill="#161b22" stroke="#3d4856" data-stage="discover"/>
 <rect x="725" y="48" width="3" height="72" rx="0" fill="#ff9830" stroke="#ff9830"/>
 <text x="745" y="65" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#ff9830">Discover and generate</text>
 <text x="745" y="93" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Use the metrics your platform actually emits.</text>
-<path d="M978 138 L978 160" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<path d="M978 138 L978 160" fill="none" stroke="#79c0ff" stroke-width="2" data-flow="deploy"/>
 <path d="M973 153 L978 160 L983 153" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<rect x="725" y="164" width="507" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="725" y="164" width="507" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="deploy"/>
 <rect x="725" y="180" width="3" height="56" rx="0" fill="#79c0ff" stroke="#79c0ff"/>
 <text x="745" y="197" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#79c0ff">Deploy and capture</text>
 <text x="745" y="225" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Grafana APIs, renderer or Playwright.</text>
-<path d="M978 254 L978 276" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<path d="M973 269 L978 276 L983 269" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<rect x="725" y="280" width="507" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<path d="M978 254 L978 276" fill="none" stroke="#80d495" stroke-width="2" data-flow="review"/>
+<path d="M973 269 L978 276 L983 269" fill="none" stroke="#80d495" stroke-width="2"/>
+<rect x="725" y="280" width="507" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="review"/>
 <rect x="725" y="296" width="3" height="56" rx="0" fill="#80d495" stroke="#80d495"/>
 <text x="745" y="313" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#80d495">Review the evidence</text>
 <text x="745" y="341" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">A separate human or vision-agent step.</text>

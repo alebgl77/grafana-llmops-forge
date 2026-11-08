@@ -4,91 +4,91 @@
 <rect x="0" y="0" width="1280" height="1040" rx="0" fill="#0d1117" stroke="#0d1117"/>
 <text x="40" y="48" font-family="Arial, Helvetica, sans-serif" font-size="31" font-weight="700" fill="#e6edf3">From observed signals to reviewable evidence</text>
 <text x="40" y="79" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#b0bac5">Runtime pipeline and its explicit boundaries</text>
-<rect x="40" y="112" width="360" height="126" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="40" y="112" width="360" height="126" rx="10" fill="#161b22" stroke="#3d4856" data-stage="inputs"/>
 <rect x="40" y="128" width="3" height="94" rx="0" fill="#79c0ff" stroke="#79c0ff"/>
 <text x="60" y="145" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#79c0ff">Grafana and datasources</text>
 <text x="60" y="173" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Prometheus / Mimir, Loki, Tempo</text>
 <text x="60" y="198" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Read through grafana_client.py</text>
-<path d="M400 175 L450 175" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<path d="M400 175 L450 175" fill="none" stroke="#79c0ff" stroke-width="2" data-flow="discovery"/>
 <path d="M443 170 L450 175 L443 180" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<rect x="454" y="112" width="360" height="126" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="454" y="112" width="360" height="126" rx="10" fill="#161b22" stroke="#3d4856" data-stage="discovery"/>
 <rect x="454" y="128" width="3" height="94" rx="0" fill="#79c0ff" stroke="#79c0ff"/>
 <text x="474" y="145" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#79c0ff">discover.py</text>
 <text x="474" y="173" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Observed metrics and label bindings</text>
 <text x="474" y="198" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">capability_map.json</text>
-<rect x="860" y="112" width="380" height="126" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="860" y="112" width="380" height="126" rx="10" fill="#161b22" stroke="#3d4856" data-stage="registry"/>
 <rect x="860" y="128" width="3" height="94" rx="0" fill="#ff9830" stroke="#ff9830"/>
 <text x="880" y="145" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#ff9830">Pricing and declarations</text>
 <text x="880" y="173" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">pricing_sources.py + model registry</text>
 <text x="880" y="198" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Optional deployment inventory</text>
-<path d="M634 238 V265 H640" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<path d="M1050 238 V265 H640" fill="none" stroke="#ff9830" stroke-width="2"/>
-<path d="M640 265 L640 290" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<path d="M634 238 V265 H640" fill="none" stroke="#79c0ff" stroke-width="2" data-flow="capability"/>
+<path d="M1050 238 V265 H640" fill="none" stroke="#ff9830" stroke-width="2" data-flow="registry"/>
+<path d="M640 265 L640 290" fill="none" stroke="#79c0ff" stroke-width="2" data-flow="forge"/>
 <path d="M635 283 L640 290 L645 283" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<rect x="40" y="294" width="1200" height="108" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="40" y="294" width="1200" height="108" rx="10" fill="#161b22" stroke="#3d4856" data-stage="forge"/>
 <rect x="40" y="310" width="3" height="76" rx="0" fill="#ff9830" stroke="#ff9830"/>
 <text x="60" y="327" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#ff9830">forge_dashboards.py</text>
 <text x="60" y="355" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">7 blueprints selected by available signals · English by default, --locale fr</text>
 <text x="60" y="380" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">One financial datasource; ambiguous sources require explicit selection.</text>
 <g data-blueprint="finops">
-<rect x="40" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="40" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="blueprint-finops"/>
 <text x="56" y="462" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#79c0ff">FinOps &amp; Cost</text>
 <text x="56" y="490" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#b0bac5">Native, recorded or estimated cost</text>
 </g>
 <g data-blueprint="gateway">
-<rect x="344" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="344" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="blueprint-gateway"/>
 <text x="360" y="462" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#79c0ff">Gateway SLO</text>
 <text x="360" y="490" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#b0bac5">Latency, TTFT and errors</text>
 </g>
 <g data-blueprint="agents">
-<rect x="648" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="648" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="blueprint-agents"/>
 <text x="664" y="462" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#79c0ff">Agents &amp; RAG</text>
 <text x="664" y="490" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#b0bac5">Tools, operations and traces</text>
 </g>
 <g data-blueprint="adoption">
-<rect x="952" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="952" y="430" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="blueprint-adoption"/>
 <text x="968" y="462" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#79c0ff">Adoption</text>
 <text x="968" y="490" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#b0bac5">Usage by model and team</text>
 </g>
 <g data-blueprint="inference">
-<rect x="40" y="538" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="40" y="538" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="blueprint-inference"/>
 <text x="56" y="570" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#79c0ff">Inference</text>
 <text x="56" y="598" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#b0bac5">Queues, tokens and GPU</text>
 </g>
 <g data-blueprint="quality">
-<rect x="344" y="538" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="344" y="538" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="blueprint-quality"/>
 <text x="360" y="570" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#79c0ff">Quality &amp; Evaluations</text>
 <text x="360" y="598" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#b0bac5">Scores and guardrail signals</text>
 </g>
 <g data-blueprint="governance">
-<rect x="648" y="538" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="648" y="538" width="288" height="88" rx="10" fill="#161b22" stroke="#3d4856" data-stage="blueprint-governance"/>
 <text x="664" y="570" font-family="Arial, Helvetica, sans-serif" font-size="19" font-weight="700" fill="#79c0ff">Governance</text>
 <text x="664" y="598" font-family="Arial, Helvetica, sans-serif" font-size="15" font-weight="400" fill="#b0bac5">Observed and declared evidence</text>
 </g>
 <text x="970" y="566" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Missing signals are reported.</text>
 <text x="970" y="590" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#b0bac5">Data availability is checked later.</text>
-<path d="M640 631 L640 658" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<path d="M635 651 L640 658 L645 651" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<rect x="40" y="662" width="580" height="118" rx="10" fill="#161b22" stroke="#3d4856"/>
+<path d="M640 631 V644 H330 V658" fill="none" stroke="#79c0ff" stroke-width="2" data-flow="deploy"/>
+<path d="M640 644 H950 V658" fill="none" stroke="#ff9830" stroke-width="2" data-flow="rules"/>
+<rect x="40" y="662" width="580" height="118" rx="10" fill="#161b22" stroke="#3d4856" data-stage="deploy"/>
 <rect x="40" y="678" width="3" height="86" rx="0" fill="#79c0ff" stroke="#79c0ff"/>
 <text x="60" y="695" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#79c0ff">Deploy via grafana_client.py</text>
 <text x="60" y="723" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Scoped folder, deterministic UIDs, optional alerts</text>
 <text x="60" y="748" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">deploy_manifest.json records per-resource status</text>
-<rect x="660" y="662" width="580" height="118" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="660" y="662" width="580" height="118" rx="10" fill="#161b22" stroke="#3d4856" data-stage="rules"/>
 <rect x="660" y="678" width="3" height="86" rx="0" fill="#ff9830" stroke="#ff9830"/>
 <text x="680" y="695" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#ff9830">Prometheus recording rules</text>
 <text x="680" y="723" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Exported as YAML and PrometheusRule CRD</text>
 <text x="680" y="748" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Install, reload, then rediscover after evaluation</text>
-<path d="M330 781 L330 812" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<path d="M330 781 L330 812" fill="none" stroke="#79c0ff" stroke-width="2" data-flow="capture"/>
 <path d="M325 805 L330 812 L335 805" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<rect x="40" y="816" width="580" height="124" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="40" y="816" width="580" height="124" rx="10" fill="#161b22" stroke="#3d4856" data-stage="capture"/>
 <rect x="40" y="832" width="3" height="92" rx="0" fill="#79c0ff" stroke="#79c0ff"/>
 <text x="60" y="849" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#79c0ff">visual_audit.py</text>
 <text x="60" y="877" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Renderer / Playwright: PNGs and DOM prechecks</text>
 <text x="60" y="902" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">audit_manifest.json describes capture status</text>
-<path d="M620 876 L656 876" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<path d="M649 871 L656 876 L649 881" fill="none" stroke="#79c0ff" stroke-width="2"/>
-<rect x="660" y="816" width="580" height="124" rx="10" fill="#161b22" stroke="#3d4856"/>
+<path d="M620 876 L656 876" fill="none" stroke="#80d495" stroke-width="2" data-flow="review"/>
+<path d="M649 871 L656 876 L649 881" fill="none" stroke="#80d495" stroke-width="2"/>
+<rect x="660" y="816" width="580" height="124" rx="10" fill="#161b22" stroke="#3d4856" data-stage="review"/>
 <rect x="660" y="832" width="3" height="92" rx="0" fill="#80d495" stroke="#80d495"/>
 <text x="680" y="849" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#80d495">Separate visual review</text>
 <text x="680" y="877" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Human or vision-capable agent inspects the PNGs</text>

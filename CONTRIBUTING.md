@@ -51,6 +51,25 @@ The diagrams and `dashboard-finops.svg` are illustrations. The separate
 by another real capture. `social-preview.png` is the raster export of
 `social-preview.svg`; regenerate it when that SVG changes.
 
+The six GIFs use geometry marked by `data-stage` and `data-flow` in those SVGs.
+Text and illustrative values remain fixed. Pricing paths are alternatives;
+governance highlights are mappings, not transfers between frameworks.
+To rebuild the animations with Python 3.13:
+
+```bash
+python -m pip install -r tools/visual-requirements.txt
+python tools/build_visual_assets.py
+python tools/build_gif_assets.py
+python tools/build_gif_assets.py --check
+```
+
+Pillow and PyMuPDF are optional documentation-authoring dependencies only.
+The `--check` command uses the standard library: CI checks source fingerprints,
+GIF hashes, dimensions and the 2 MB per-image budget via `docs/assets/animations.json`.
+Generation also decodes every frame to verify animation and total duration.
+Keep static SVG links and reduced-motion `<picture>` sources beside GIF embeds.
+See [the visual guide](docs/ANIMATED_VISUALS.md) for the six export variants.
+
 Production-impacting changes must also follow
 [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md), including the
 manual Grafana Cloud, Enterprise, and SSO validation where applicable.
