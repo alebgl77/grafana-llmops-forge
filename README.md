@@ -1,6 +1,8 @@
 <div align="center">
 
-<img src="docs/assets/banner.svg" alt="grafana-llmops-forge" width="100%"/>
+<picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/banner.svg"><img src="docs/assets/banner.gif" alt="Grafana LLMOps Forge: discover and generate, deploy and capture, then review the evidence" width="100%"/></picture>
+
+[Static banner](docs/assets/banner.svg) · [Six animated visual guides](docs/ANIMATED_VISUALS.md)
 
 # grafana-llmops-forge
 
@@ -64,8 +66,8 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 4. **Governance is observable.** The EU AI Act dashboard maps articles (12, 26§6, 50, 73) to live signals: logging evidence, retention posture, incident watch, an auto-built model inventory with provider-origin and GPAI flags, and the post-Digital-Omnibus timeline. A separate optional deployment inventory shows declared processing/storage locations; absent declarations remain unknown.
 5. **Capture first, review explicitly.** After deployment, `visual_audit.py` captures dashboards and panels with the native Grafana renderer or Playwright fallback; Playwright also pre-scans DOM error markers. An optional, separate human or vision-capable agent review uses the checklist to assess scale plausibility, empty panels and cross-panel coherence. That reviewer can guide up to two remediation rounds. Captures and a successful API response alone do not establish semantic correctness.
 
-<div align="center"><img src="docs/assets/architecture.svg" alt="Pipeline" width="100%"/>
-<sub><i>Diagram, not a screenshot. Every box is a script in <code>scripts/</code>.</i></sub></div>
+<div align="center"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/architecture.svg"><img src="docs/assets/architecture.gif" alt="Observed signals and pricing feed seven blueprints, deployment and exports, then capture and separate review" width="100%"/></picture>
+<sub><i>Animated diagram of inputs, scripts and generated artifacts. Capture and review are distinct steps. <a href="docs/assets/architecture.svg">Static version</a>.</i></sub></div>
 
 ## The seven blueprints
 
@@ -81,8 +83,8 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 
 Signal-dependent blueprints materialize only when their inputs are detected; governance also reports gaps. Empty results remain possible after discovery and must be checked on the target instance.
 
-<div align="center"><img src="docs/assets/governance-crosswalk.svg" alt="One telemetry layer, three regulatory readings" width="100%"/>
-<sub><i>Diagram, not a screenshot. The measured panels are identical whichever framework you select; only the reading changes.</i></sub></div>
+<div align="center"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/governance-crosswalk.svg"><img src="docs/assets/governance-crosswalk.gif" alt="Each observed signal is highlighted alongside its indicative references in three governance frameworks" width="100%"/></picture>
+<sub><i>Row-by-row reading of the same signals across three frameworks, not a transfer or certification. <a href="docs/assets/governance-crosswalk.svg">Static version</a>.</i></sub></div>
 
 Plus **provisioned SLO alerts** built the way SREs expect them: **multi-window burn-rate** on the error budget (5m/1h page, 30m/6h ticket, `--slo-target`), telemetry-signal-lost (with `noDataState: Alerting`, because the alert that catches a dead pipeline must not go quiet when the pipeline dies), daily budget breach, TTFT p95, vLLM KV-cache saturation, and eval-score drop.
 
@@ -112,8 +114,8 @@ See the [field contract and local-path restrictions](docs/deployment_inventory.m
 
 OTel pricing and generated rules remain independent of that financial choice. When discovery finds OTel GenAI signals, token counters, a model label, and usable prices, the forge writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. An explicitly requested Artificial Analysis fallback can still price those OTel artifacts while FinOps displays native spend. The manifest's `recording_rules.datasource_uid` identifies their target separately from `financial_source.datasource_uid`. Load the rules into that Prometheus and repeat discovery to make the recorded total a candidate. Without rules or native spend, on-the-fly composition is useful to bootstrap and becomes expensive past ~15 models.
 
-<div align="center"><img src="docs/assets/pricing-flow.svg" alt="Financial source priority: recorded cost, then native LiteLLM spend, then inline OTel estimates; ambiguous datasources require explicit selection and unpriced models remain visible" width="100%"/>
-<sub><i>Conceptual cost flow for native gateway spend and OTel GenAI token pricing. Not a Grafana screenshot.</i></sub></div>
+<div align="center"><picture><source media="(prefers-reduced-motion: reduce)" srcset="docs/assets/pricing-flow.svg"><img src="docs/assets/pricing-flow.gif" alt="Alternative financial sources: recorded cost, native spend or inline estimate; only one source is selected" width="100%"/></picture>
+<sub><i>Three alternative paths shown in priority order. Costs from separate datasources are never combined. <a href="docs/assets/pricing-flow.svg">Static version</a>.</i></sub></div>
 
 ## Try it in 60 seconds (no Grafana needed)
 
