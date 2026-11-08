@@ -894,7 +894,7 @@ for _c in _combos:
     _uids.add(_g["uid"])
     _txt = " ".join(p["options"]["content"] for p in _g["panels"]
                     if p["type"] == "text")
-    for _f, _needle in (("eu-ai-act", "Art. 12"), ("iso-42001", "A.6.2.8"),
+    for _f, _needle in (("eu-ai-act", "AI Act milestones"), ("iso-42001", "A.6.2.8"),
                         ("nist-rmf", "MANAGE 4.1")):
         _want = _f in _c
         if (_needle in _txt) is not _want:
@@ -907,7 +907,7 @@ r, d = run_forge(forge_dashboards.selftest_capability(), "audit_fw_bad",
                  extra=("--framework", "inexistant"))
 check("referentiel inconnu : avertit et retombe sur l'AI Act",
       r.returncode == 0 and "unknown framework" in r.stderr
-      and "Art. 12" in " ".join(p["options"]["content"]
+      and "AI Act milestones" in " ".join(p["options"]["content"]
                                 for p in load_boards(d)["governance"]["panels"]
                                 if p["type"] == "text"), r.stderr[-120:])
 _ref = open(os.path.join(SK, "references", "ai_governance_frameworks.md")).read()
