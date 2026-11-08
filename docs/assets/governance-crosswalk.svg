@@ -12,37 +12,37 @@
 <text x="836" y="148" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#79c0ff">ISO/IEC 42001</text>
 <rect x="1100" y="116" width="300" height="50" rx="10" fill="#161b22" stroke="#3d4856"/>
 <text x="1116" y="148" font-family="Arial, Helvetica, sans-serif" font-size="21" font-weight="700" fill="#80d495">NIST AI RMF</text>
-<rect x="40" y="182" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856"/>
+<rect x="40" y="182" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856" data-stage="mapping-0"/>
 <text x="56" y="217" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">Logs exist continuously and are retained</text>
 <text x="561" y="207" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#ff9830">Art. 12 · Art. 26(6)</text>
 <text x="836" y="207" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#79c0ff">A.6.2.8</text>
 <text x="1116" y="207" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#80d495">MANAGE 4.1</text>
-<rect x="40" y="248" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856"/>
+<rect x="40" y="248" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856" data-stage="mapping-1"/>
 <text x="56" y="283" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">Production systems are monitored</text>
 <text x="561" y="273" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#ff9830">Art. 72 post-market</text>
 <text x="836" y="273" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#79c0ff">A.6.2.6 · Cl. 9.1</text>
 <text x="1116" y="273" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#80d495">MEASURE 3.x · MANAGE 4.1</text>
-<rect x="40" y="314" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856"/>
+<rect x="40" y="314" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856" data-stage="mapping-2"/>
 <text x="56" y="349" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">Inventory of models actually consumed</text>
 <text x="561" y="339" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#ff9830">Art. 26 · GPAI chain</text>
 <text x="836" y="339" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#79c0ff">A.10</text>
 <text x="1116" y="339" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#80d495">GOVERN 6.1 · MAP 4.1</text>
-<rect x="40" y="380" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856"/>
+<rect x="40" y="380" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856" data-stage="mapping-3"/>
 <text x="56" y="415" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">Provider dependency and registry origin</text>
 <text x="561" y="405" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#ff9830">GPAI contractual terms</text>
 <text x="836" y="405" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#79c0ff">A.10</text>
 <text x="1116" y="405" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#80d495">GOVERN 6.2</text>
-<rect x="40" y="446" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856"/>
+<rect x="40" y="446" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856" data-stage="mapping-4"/>
 <text x="56" y="481" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">Quality and drift measured</text>
 <text x="561" y="471" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#ff9830">Art. 15 accuracy/robustness</text>
 <text x="836" y="471" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#79c0ff">A.6.2.6</text>
 <text x="1116" y="471" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#80d495">MEASURE 2.x</text>
-<rect x="40" y="512" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856"/>
+<rect x="40" y="512" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856" data-stage="mapping-5"/>
 <text x="56" y="547" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">Incidents detected and escalated</text>
 <text x="561" y="537" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#ff9830">Art. 73</text>
 <text x="836" y="537" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#79c0ff">A.8</text>
 <text x="1116" y="537" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#80d495">MANAGE 4.x</text>
-<rect x="40" y="578" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856"/>
+<rect x="40" y="578" width="1360" height="60" rx="0" fill="#0d1117" stroke="#3d4856" data-stage="mapping-6"/>
 <text x="56" y="613" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">Who uses the systems, and how</text>
 <text x="561" y="603" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#ff9830">Art. 4 · Art. 26</text>
 <text x="836" y="603" font-family="Arial, Helvetica, sans-serif" font-size="16" font-weight="400" fill="#79c0ff">A.9</text>

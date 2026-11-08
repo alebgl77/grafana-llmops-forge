@@ -1,0 +1,64 @@
+{
+  "source_sha256": "0ce152bc5a6e7a9382f99f4f7692fe2d4863f9f7d5cfda47bd60fe9dd7253f71",
+  "frame_ms": 50,
+  "dependencies": {
+    "Pillow": "12.2.0",
+    "PyMuPDF": "1.27.2.3"
+  },
+  "assets": {
+    "banner.gif": {
+      "width": 1280,
+      "height": 400,
+      "frames": 91,
+      "duration_ms": 5000,
+      "loop": 0,
+      "bytes": 168182,
+      "sha256": "c9f6a3d50d0ca0e9d1de4e9d6b4f7dc70a4417902cf8f401a6825878a9e41621"
+    },
+    "social-preview.gif": {
+      "width": 1280,
+      "height": 640,
+      "frames": 91,
+      "duration_ms": 5000,
+      "loop": 0,
+      "bytes": 175000,
+      "sha256": "f4c5858902de969240b6cb520a968e3010eec5e48f747e56d1737808160387bd"
+    },
+    "architecture.gif": {
+      "width": 1280,
+      "height": 1040,
+      "frames": 151,
+      "duration_ms": 8000,
+      "loop": 0,
+      "bytes": 479460,
+      "sha256": "f2a35c603fcb9f37c4069297316d2ff3b888ce3405a89fc527a36cf031615462"
+    },
+    "pricing-flow.gif": {
+      "width": 1280,
+      "height": 700,
+      "frames": 151,
+      "duration_ms": 9000,
+      "loop": 0,
+      "bytes": 369943,
+      "sha256": "8e132dfeb7e106043138b9bb6a0498334fa5324917102fbb4d9e1019ea729d82"
+    },
+    "governance-crosswalk.gif": {
+      "width": 1280,
+      "height": 764,
+      "frames": 148,
+      "duration_ms": 8300,
+      "loop": 0,
+      "bytes": 272763,
+      "sha256": "11be76be1a9db081619ae2b6ba5313ad4fb0726dc2955cbb7f4276bf9c784def"
+    },
+    "dashboard-finops.gif": {
+      "width": 1280,
+      "height": 720,
+      "frames": 93,
+      "duration_ms": 5000,
+      "loop": 0,
+      "bytes": 335006,
+      "sha256": "9be46df7aa6bcd5ef8b4f3f61faf5eec5fbfbc6b1c93f40e4851aaab99e20f6a"
+    }
+  }
+}
