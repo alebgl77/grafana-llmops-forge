@@ -1,117 +1,145 @@
 ---
 name: grafana-llmops-forge
-description: Pilote l'observabilité IA/LLM de bout en bout sur Grafana (OSS, Cloud, Enterprise) avec un seul prérequis, une instance Grafana accessible. Auto-découverte (version, APIs, datasources), détection des signaux LLM présents (OTel GenAI gen_ai.*, LiteLLM, vLLM, TGI, GPU/DCGM), génération et déploiement automatiques de dashboards (FinOps & coûts multi-providers US/EU/Asie, gateway, tracing agents & RAG, adoption interne, gouvernance EU AI Act, inference self-hosted), alerting SLO, registre de modèles avec pricing, puis captures du rendu et précontrôles pour une revue visuelle distincte. Utilise ce skill dès que l'utilisateur mentionne Grafana, un dashboard, du monitoring/observabilité IA ou LLM, des coûts de tokens, du FinOps IA, du LLMOps, des agents ou du RAG, l'adoption de modèles, la conformité AI Act, ou Prometheus/Loki/Tempo appliqués à l'IA, même sans le mot « dashboard ». Vaut aussi pour auditer un Grafana existant ou une stack IA qui n'émet encore rien.
+description: "Découvrir la télémétrie IA d'un Grafana, générer et déployer les dashboards compatibles, exporter les règles, puis capturer le rendu pour une revue distincte. Couvre coûts, SLO, agents, adoption, inference, qualité et preuves de gouvernance EU AI Act, ISO/IEC 42001 et NIST AI RMF. Sortie anglaise ou française."
 ---
 
-# Grafana LLMOps Forge
+# Grafana LLMOps Forge : guide français
 
-Transforme n'importe quelle instance Grafana en centre de commandement IA/LLM pour une DSI : découverte, génération de dashboards, alerting, FinOps, gouvernance AI Act. Prérequis unique : `GRAFANA_URL` + un token de service account. Tout le reste est découvert ou provisionné.
+Ce guide résume le [protocole canonique](../SKILL.md). Il accompagne le dépôt ;
+le paquet distribué utilise le `SKILL.md` racine. Lire ce protocole avant une
+intervention, notamment ses limites d'accès, de déploiement et de preuve.
 
-## Doctrine (ce qui rend ce skill différent)
+## Principes
 
-1. **Discovery-first, jamais d'hypothèse.** On ne génère jamais un panel « au cas où ». On sonde l'instance et les datasources, on capture les **noms réels** des métriques présentes, et on ne construit que des panels dont les requêtes retourneront des données. Les exporters OTel varient dans leurs suffixes (`_seconds`, `_token`, `_total`) : c'est la capability map qui fait foi, pas la théorie.
-2. **Quatre dialectes de télémétrie, un seul modèle mental.** Les signaux LLM arrivent en pratique sous 4 formes : conventions OTel GenAI (`gen_ai_*`, statut Development, v1.4x, opt-in `OTEL_SEMCONV_STABILITY_OPT_IN=gen_ai_latest_experimental`), passerelle LiteLLM (`litellm_*`, spend en USD natif), moteurs d'inference (`vllm:*`, `tgi_*`, `ollama_*`), et GPU (`DCGM_*`). Le générateur traduit chaque blueprint dans le dialecte détecté.
-3. **Le coût est calculé, pas espéré.** Quand la passerelle expose le spend (LiteLLM), on l'utilise. Sinon, le générateur **compose des expressions PromQL** en joignant les compteurs de tokens au registre de modèles embarqué (prix input/output/cache par modèle, US/EU/Asie). Le registre porte une date de vérification ; s'il a plus de 30 jours et que la recherche web est disponible, rafraîchir les prix depuis les pages officielles AVANT de générer les panels de coûts (protocole dans `references/model_registry.json`, clé `_meta.refresh_protocol`).
-4. **La gouvernance est observable.** L'AI Act impose journalisation (Art. 12), conservation des logs ≥ 6 mois côté déployeur (Art. 26§6), signalement d'incidents (Art. 73), transparence (Art. 50). Le dashboard gouvernance mappe articles → signaux mesurables, avec le calendrier vérifié post-Digital Omnibus (juillet 2026). Ce n'est pas un avis juridique : le dire explicitement à l'utilisateur.
-5. **Idempotence totale.** UIDs déterministes (hash du nom), upsert avec overwrite, folder unique « AI Observability ». Relancer la forge est toujours sûr. Mode `--dry-run` disponible pour tout ce qui écrit.
-6. **Dégradation élégante.** Zéro signal LLM détecté ≠ échec : produire un **rapport d'écart d'instrumentation** (quoi brancher, dans quel ordre, avec les configs exactes de `references/instrumentation_guide.md`) + déployer quand même le dashboard gouvernance (fonctionne sans métriques) et le squelette des autres avec annotation « en attente de signaux ».
-7. **Séparer déploiement, capture et revue.** Capturer le rendu avec `visual_audit.py` (renderer Grafana ou Playwright). Le script et la CI n'effectuent pas de revue sémantique par vision. Si une personne ou un agent capable de lire les images réalise cette revue distincte, appliquer `references/visual_verification.md`, consigner le verdict observé et limiter la remédiation à deux tours. Un succès API, un statut de capture ou un badge CI ne suffit pas pour annoncer un résultat vérifié visuellement. Si la revue est indisponible ou non effectuée, le signaler avec les statuts de déploiement et de capture.
+- Partir des métriques et des labels découverts. Ne pas inventer de signal.
+  La découverte ne garantit pas des résultats sur toutes les plages temporelles.
+- Séparer les résultats : génération, déploiement, capture technique et revue
+  visuelle. Une capture réussie n'est pas une validation de la justesse des chiffres.
+- Ne générer que les blueprints compatibles. La gouvernance peut documenter les
+  lacunes sans signal LLM. Ne pas déployer des squelettes décoratifs.
+- Préserver une seule source financière : en mode automatique, priorité
+  `recorded`, puis `native`, puis `inline`. Une ambiguïté entre datasources de
+  même priorité exige `--datasource UID`. Ne jamais additionner leurs coûts.
+- L'origine du fournisseur dans le registre n'indique ni le lieu de traitement,
+  ni le stockage, ni une souveraineté garantie.
+- Générer en anglais par défaut ; passer `--locale fr` pour les libellés français.
+  Les trois cadres de gouvernance sont inclus par défaut ; filtrer avec
+  `--framework eu-ai-act,iso-42001,nist-rmf`.
+- Ne jamais exposer les identifiants. Les fournir par variables d'environnement.
+  Les scripts restent en Python standard, sans LLM ; Playwright est optionnel.
 
-## Pipeline standard
+## Parcours
 
-Suivre ces phases dans l'ordre. Chaque script s'exécute avec Python 3 stdlib uniquement (aucun `pip install`).
+### 1. Découvrir
 
-### Phase 0 : Credentials
-
-Variables d'environnement attendues :
-
-```bash
-export GRAFANA_URL="https://grafana.exemple.com"     # sans slash final
-export GRAFANA_TOKEN="glsa_..."                       # token de service account
-# Fallback accepté : GRAFANA_USER + GRAFANA_PASSWORD (basic auth)
-```
-
-Si l'utilisateur n'a pas de token : Administration → Users and access → Service accounts → créer un compte rôle **Editor** (Admin si provisioning d'alertes/datasources souhaité) → Add service account token. Sur Grafana Cloud, l'URL est `https://<stack>.grafana.net`. Ne jamais afficher le token en clair dans les réponses ni dans les fichiers générés.
-
-### Phase 1 : Découverte
+Définir `GRAFANA_URL` et les identifiants autorisés, puis exécuter :
 
 ```bash
 python3 scripts/discover.py --out capability_map.json
 ```
 
-Produit la capability map : version/édition/namespace, disponibilité des APIs (legacy `/api` vs resource `/apis/dashboard.grafana.app`), datasources classées (prometheus-like, loki, tempo), dialectes LLM détectés **avec les noms réels de métriques**, labels Loki, et la liste des gaps. Lire le JSON et **résumer à l'utilisateur ce qui a été trouvé avant de continuer** ; c'est le moment de corriger le tir (mauvaise datasource, instance de staging, etc.).
+Lire version, APIs, datasources, métriques, labels, modèles observés et lacunes.
+Pour cibler une organisation, utiliser `--org-id` ; pour lever une ambiguïté
+Prometheus, `--datasource UID`. Lire les
+[compatibilités](../references/grafana_api_compat.md) en cas de doute.
 
-### Phase 2 : Registre de modèles
+### 2. Vérifier provenance et couverture
 
-Lire `references/model_registry.json`. Si `_meta.verified_at` date de plus de 30 jours ET que la recherche web est disponible : rafraîchir les prix des modèles effectivement détectés dans la capability map (pas tout le registre) depuis les URLs de `_meta.sources`, puis écrire un `model_registry.local.json` à côté de la capability map. Le générateur charge le fichier local en priorité. Sans accès web : utiliser le seed tel quel ; les dashboards de coûts affichent la date du registre dans leur description.
+Lire le registre et sa date de vérification. Le runtime ne rafraîchit pas
+automatiquement les prix officiels sur le Web. Vérifier les sources officielles
+si une mise à jour est nécessaire, puis consigner provenance et date.
 
-### Phase 3 : Sélection des blueprints
+Les dépenses natives et les coûts enregistrés gardent leur provenance amont.
+L'estimation inline utilise les modèles et alias exacts. Prix manquant ou ambigu :
+signaler la lacune ; ne pas fabriquer un montant nul. Une couverture partielle
+peut supprimer les montants ou rendre l'alerte de budget inéligible.
 
-Sept blueprints. Choisir selon la demande + la capability map (ne pas demander à l'utilisateur de re-choisir ce qu'il a déjà exprimé) :
+Le recours à Artificial Analysis est désactivé par défaut et exige
+`--pricing-fallback artificial-analysis` avec `ARTIFICIAL_ANALYSIS_API_KEY`.
+Les résultats restent des estimations tierces identifiées. Lire la
+[provenance financière](../references/pricing_provenance.md).
 
-| Blueprint | ID | Condition d'activation |
-|---|---|---|
-| Executive FinOps & Coûts | `finops` | tokens ou spend détectés (otel/litellm) |
-| Gateway Operations (latence, erreurs, TTFT) | `gateway` | otel ou litellm |
-| Agents & RAG (traces, tools, workflows) | `agents` | otel + Tempo idéalement ; otel seul = version métriques |
-| Adoption interne (équipes, apps, mix modèles) | `adoption` | otel ou litellm |
-| Inference self-hosted (vLLM/TGI + GPU) | `inference` | vllm/tgi/ollama ou DCGM détectés |
-| Gouvernance EU AI Act | `governance` | toujours activable (fonctionne dégradé) |
+Un inventaire local peut déclarer les lieux de déploiement via
+`--deployment-inventory FILE`. Sans inventaire, les lieux restent inconnus.
+Ces déclarations ne sont pas des vérifications indépendantes :
+[format et validation](deployment_inventory.md).
 
-### Phase 4 : Forge et déploiement
+### 3. Choisir les sept blueprints
+
+| Clé | Finalité |
+|---|---|
+| `finops` | Dépenses, rythme de coût, provenance et couverture |
+| `gateway` | Latence, erreurs, TTFT et disponibilité |
+| `agents` | Opérations, outils et traces des agents |
+| `adoption` | Usage par équipe, service et modèle |
+| `inference` | Serveurs d'inférence, files, tokens et GPU |
+| `quality` | Évaluations et garde-fous ; distinguer histogrammes et scores simples |
+| `governance` | Preuves observées, inventaire et déclarations de déploiement |
+
+Lire les [spécifications des blueprints](../references/dashboard_blueprints.md).
+En mode `auto`, une télémétrie incomplète produit moins de sept dashboards.
+
+### 4. Générer et déployer dans le périmètre autorisé
 
 ```bash
-# Tout ce qui est activable :
-python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints auto --deploy --with-alerts
-# Ou ciblé :
-python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints finops,governance --deploy
-# Vérification sans écriture :
-python3 scripts/forge_dashboards.py --capability capability_map.json --blueprints auto --dry-run
+python3 scripts/forge_dashboards.py --capability capability_map.json \
+  --blueprints auto --locale fr --dry-run --out-dir generated_dashboards
+# Une fois le déploiement autorisé :
+python3 scripts/forge_dashboards.py --capability capability_map.json \
+  --blueprints auto --locale fr --deploy --with-alerts --out-dir generated_dashboards
 ```
 
-Le script génère les JSON (schéma classique v41, compatible OSS/Cloud/Enterprise de la v9 à la v13, déployé via l'API legacy, fallback API resource K8s-style si nécessaire), crée le folder, upsert les dashboards, provisionne les alertes SLO (`--with-alerts` : taux d'erreur burn-rate, TTFT p95, budget quotidien, saturation KV cache, absence de signal), écrit `deploy_manifest.json` puis imprime les URLs. Toujours relayer les URLs finales à l'utilisateur.
+Les ressources utilisent le dossier dédié et des UIDs déterministes.
+Pour plusieurs dossiers gérés indépendamment, fixer un `--uid-scope` stable.
+Expliquer le retour arrière avant déploiement : le client ne supprime rien ;
+l'exploitant peut supprimer le dossier créé et retirer séparément les règles
+Prometheus. Ne pas toucher aux ressources préexistantes hors de ce périmètre.
 
-### Phase 4b : Captures et revue sémantique distincte
+Lire le manifeste de déploiement v2 et les statuts par ressource.
+`--best-effort` peut assouplir le code retour ; il ne transforme pas un résultat
+partiel en réussite. Les règles exportées en YAML et PrometheusRule doivent être
+installées côté Prometheus, rechargées puis évaluées. Rediscover et re-forge
+permettent ensuite d'utiliser les séries enregistrées.
+
+### 5. Capturer, puis examiner
 
 ```bash
 python3 scripts/visual_audit.py --dashboards generated_dashboards --out visual_audit
 ```
 
-Sélection auto du moteur : `/render/...` natif Grafana (plugin image-renderer ; inclus sur Cloud), sinon Playwright (vrai navigateur headless, auth par header Bearer, mode kiosk, pré-scan DOM des « No data »/erreurs). Le statut du manifeste concerne les captures/précontrôles, pas la sémantique. Si une revue est réalisée, **ouvrir les PNG par vision** (`visual_audit/<dash>/full.png` d'abord, panels douteux ensuite, correspondances dans `audit_manifest.json`) et appliquer la checklist + la table signatures→correctifs de `references/visual_verification.md`. Verdict par dashboard (✅/⚠/❌), remédiation à la source (registre, capability map, code, jamais l'UI), re-forge, re-capture des seuls dashboards corrigés, max 2 itérations. Une personne ou un agent équipé peut aussi inspecter les paramétrages hors dashboards (datasources, règles d'alerte) dans un navigateur ; voir la référence §6. Le CLI ne visite pas ces pages. Sans inspection des images, déclarer **revue visuelle non effectuée** ; ne jamais déduire un verdict du manifeste ou de la CI.
+Le moteur renderer produit les PNG ; Playwright fournit une solution de repli
+avec précontrôles DOM. Lire `audit_manifest.json`, ses chemins `files[]`, captures
+manquantes, erreurs et `org_id`. Les dossiers sont isolés par instance,
+organisation et UID. Un statut `success` concerne uniquement la capture et les
+précontrôles. `--allow-empty` peut assouplir le code retour mais laisse le
+manifeste en échec.
 
-### Phase 5 : Rapport d'écart
+Ouvrir les PNG et appliquer la
+[checklist de revue](../references/visual_verification.md). Consigner le
+périmètre, le reviewer et le verdict. Sans inspection effective, indiquer
+« revue visuelle non effectuée ». Corriger à la source, régénérer et recapturer
+les dashboards concernés ; ne pas considérer la CI comme un verdict de vision.
 
-Si des blueprints demandés sont bloqués par des signaux manquants : lire `references/instrumentation_guide.md` et produire un plan d'instrumentation ordonné par ratio valeur/effort (typiquement : 1. LiteLLM devant les providers → spend immédiat ; 2. OTel GenAI dans les apps → traces agents ; 3. DCGM si GPU on-prem). Donner les configs exactes, pas des généralités.
+### 6. Restituer
 
-### Phase 6 : Restitution
+Rapporter séparément ce qui a été généré, déployé, capturé et examiné, les
+lacunes de télémétrie, la provenance des coûts et les limites restantes.
+Lier les [configurations d'instrumentation](../references/instrumentation_guide.md)
+utiles. Les correspondances
+[EU AI Act / ISO / NIST](../references/ai_governance_frameworks.md) sont un appui
+à l'audit, sans certification ni avis juridique. Revérifier les références
+réglementaires applicables avant une utilisation décisionnelle.
 
-Format de sortie systématique : ce qui a été **détecté** → ce qui a été **déployé** (URLs) → ce qui **manque** et comment le combler → prochaines étapes datées si gouvernance activée (échéances AI Act). Concision : une DSI lit ça en 90 secondes.
-
-## Personnalisation au-delà des blueprints
-
-Les scripts couvrent le noyau déterministe. Pour étendre (panels supplémentaires, requêtes spécifiques, variables custom) :
-- `references/query_library.md` : bibliothèque PromQL/LogQL/TraceQL par dialecte, prête à coller dans de nouveaux panels.
-- `references/dashboard_blueprints.md` : spécification panel par panel des 7 blueprints, y compris les panels optionnels non générés par défaut.
-- `references/grafana_api_compat.md` : matrice OSS/Cloud/Enterprise, APIs legacy vs resource, namespaces Cloud (`stacks-<id>`), schéma v2 (dynamic dashboards) et quand l'utiliser.
-- Pour ajouter un panel à un dashboard déjà déployé : re-générer avec la forge (source de vérité = le code), jamais d'édition manuelle silencieuse, sinon la prochaine exécution écrase.
-
-## Pièges connus
-
-- **Suffixes OTel→Prometheus variables** : `gen_ai.client.token.usage` peut apparaître comme `gen_ai_client_token_usage_token_*`, `..._tokens_*` ou sans unité selon l'exporter. Le résolveur de la forge matche par préfixe sur les noms capturés en Phase 1 ; ne jamais coder un nom en dur sans vérifier la capability map.
-- **Cardinalité** : ne jamais grouper par `gen_ai.conversation.id` ou tout ID unique dans un panel de série temporelle. Les approximations d'« utilisateurs actifs » passent par `count(count by(label)(...))` sur un label borné.
-- **Prix par paliers** : certains modèles (ex. Gemini 3.1 Pro) changent de prix au-delà d'un seuil de contexte ; le registre porte `tiered_pricing` et le panel de coût affiche alors une note « estimation basse ».
-- **Grafana Cloud** : l'API legacy dashboards fonctionne, mais les alertes provisionnées exigent le bon `folderUID` et un token avec rôle suffisant ; en cas de 403, dégrader en exportant les règles en JSON et indiquer l'import manuel.
-- **Contenu des prompts** : ne jamais encourager la capture de `gen_ai.input.messages`/`output.messages` par défaut (données sensibles). Si l'utilisateur la veut : opt-in explicite + renvoyer aux précautions de `instrumentation_guide.md`.
-- **Rendu absent** : `/render/...` en 404 = plugin grafana-image-renderer non installé (installation en une ligne dans `visual_verification.md` §5) ; basculer sur `--engine playwright` en attendant. Derrière un SSO/proxy où le Bearer ne passe pas : `GRAFANA_COOKIE`.
-- **Captures sensibles** : les PNG d'audit contiennent coûts, équipes, modèles : stockage local, partage à bon escient, purge après audit si l'environnement l'exige.
-- **Ne jamais** stocker le token dans un dashboard, un fichier de config commité, ou l'afficher dans une sortie.
-
-## Auto-test hors ligne
-
-Sans instance disponible (démo, CI, développement du skill) :
+## Vérification hors ligne
 
 ```bash
-python3 scripts/forge_dashboards.py --selftest
+python3 scripts/forge_dashboards.py --selftest --with-alerts
+python3 tests/audit_harness.py
+python3 tests/visual_capture_invariants.py
+python3 tests/project_coherence.py
+python3 tools/package.py
+python3 tools/package.py --verify
 ```
 
-Génère une capability map simulée (tous dialectes), rend les 7 blueprints, valide les invariants (IDs de panels uniques, gridPos dans la grille 24 colonnes, targets non vides, expressions référencées résolues) et écrit les JSON dans `./selftest_output/`. Utile aussi pour montrer à l'utilisateur à quoi ressembleront les dashboards avant de toucher à son instance.
+Le selftest utilise une capability map simulée. Les tests Prometheus/Grafana
+réels et la revue visuelle sur l'instance cible restent distincts.
