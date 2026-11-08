@@ -1502,25 +1502,30 @@ def crosswalk_md(picked: list) -> str:
 
 
 
-AI_ACT_TIMELINE_MD = """### Calendrier AI Act : état vérifié juillet 2026 (post-Digital Omnibus)
+AI_ACT_TIMELINE_MD = """### AI Act milestones: checked 8 November 2026
 
-| Échéance | Obligation | Statut |
+| Date | Milestone | Scope |
 |---|---|---|
-| 2 fév. 2025 | Pratiques interdites (Art. 5) + maîtrise de l'IA (Art. 4) | ✅ en vigueur |
-| 2 août 2025 | Obligations GPAI (Art. 51-56) : documentation, transparence, incidents | ✅ en vigueur |
-| **2 août 2026** | **Activation des pouvoirs de sanction** ; transparence Art. 50 (chatbots : information des utilisateurs) | ⚠️ imminent |
-| 2 déc. 2026 | Marquage machine-réadable des contenus synthétiques (Art. 50§2, reporté) | à préparer |
-| 2 déc. 2027 | Systèmes haut risque Annexe III (RH, crédit, biométrie…), reporté par l'Omnibus (accord provisoire du 7 mai 2026, adoption formelle en cours) | à cartographier |
-| 2 août 2028 | Haut risque intégré aux produits (Annexe I) | horizon |
+| 2 February 2025 | Initial general provisions and prohibitions | Read with subsequent amendments |
+| 2 August 2025 | GPAI obligations and governance | Relevant model providers |
+| 2 August 2026 | Main transparency rules and enforcement for applicable provisions | Role and use-case dependent |
+| 2 December 2026 | Article 50(2) transition deadline for certain existing systems; new prohibitions | Not a general postponement of all transparency obligations |
+| 2 December 2027 | Annex III high-risk systems | Amended application date |
+| 2 August 2028 | High-risk systems embedded in regulated products | Check sector-specific scope and exceptions |
 
-**Ce que ce dashboard prouve** : journalisation active (Art. 12), rétention côté
-déployeur ≥ 6 mois (Art. 26§6), veille incidents (Art. 73, signalement des
-incidents graves), inventaire des systèmes. Sanctions : jusqu'à 35 M€ / 7 % CA.
-*Support d'aide à la conformité ; ne constitue pas un avis juridique.*"""
+The AI Omnibus entered into force on 27 July 2026. Sources:
+[Commission timeline](https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai)
+and [AI Act Service Desk](https://ai-act-service-desk.ec.europa.eu/en/ai-act/eu-ai-act-implementation-timeline).
+Verify the applicable legal text before relying on these milestones.
+
+These panels support review of observed telemetry. They do not establish a complete
+inventory, configured log retention, effective oversight or legal compliance.
+Retention requires a separate backend configuration and evidence check.
+*Compliance evidence support; not legal advice or certification.*"""
 
 
 FRAMEWORKS = {
-    "eu-ai-act": ("EU AI Act", "Regulatory timeline", lambda: AI_ACT_TIMELINE_MD, 11),
+    "eu-ai-act": ("EU AI Act", "Regulatory timeline", lambda: AI_ACT_TIMELINE_MD, 18),
     "iso-42001": ("ISO/IEC 42001", "ISO/IEC 42001 evidence map", lambda: ISO_42001_MD, 10),
     "nist-rmf": ("NIST AI RMF", "NIST AI RMF signal map", lambda: NIST_RMF_MD, 11),
 }
@@ -1611,7 +1616,7 @@ def bp_governance(ctx: Ctx) -> Board:
                "{{" + lbl + "}}")],
              12, 8, "short", dstype="loki", topk=12,
              desc="Art. 12 (logging) and Art. 26(6) (deployer retention of at "
-                  "least six months). Check Loki retention ≥ 4320h.")
+                  "least six months where applicable). Check the backend retention policy and evidence separately; queries do not verify retention.")
     b.row_break()
     if ctx.matched or ctx.unmatched:
         rows = []
@@ -1620,15 +1625,15 @@ def bp_governance(ctx: Ctx) -> Board:
             rows.append(f"| `{_md(it['seen'])}` | {_md(str(m.get('vendor','?')))} | "
                         f"{m.get('region','?').upper()} | "
                         f"{'open-weights' if m.get('open_weights') else 'proprietary'} | "
-                        f"{'oui' if m.get('gpai_in_scope', True) else 'non'} |")
+                        f"{'yes' if m.get('gpai_in_scope', True) else 'no'} |")
         for s in ctx.unmatched:
             rows.append(f"| `{_md(s)}` | ? | ? | ? | to qualify |")
         b.text("Observed model inventory (feeds your AI system register)",
                "Models actually in use (auto-detected):\n\n"
                "| Observed model | Vendor | Provider region (registry) | Licence | GPAI |\n"
                "|---|---|---|---|---|\n" + "\n".join(rows) +
-               "\n\nÀ rapprocher de votre registre interne des systèmes d'IA "
-               "(cartographie fournisseur/déployeur).\n\n" + PROVIDER_ORIGIN_NOTE, 12, 10)
+               "\n\nReconcile observed models with your internal AI system register "
+               "and provider/deployer roles.\n\n" + PROVIDER_ORIGIN_NOTE, 12, 10)
     b.row_break()
     add_deployment_inventory_panel(b, ctx)
     b.alertlist("Incident watch (AI Act Art. 73 · ISO A.8 · NIST MANAGE 4.x)", 12, 10)
@@ -1642,9 +1647,8 @@ def bp_quality(ctx: Ctx) -> Board | None:
         return None
     ds, names = qe.s.ds_uid, qe.s.names
     b = Board(det_uid("ai-quality-evals", scope=ctx.uid_scope), "AI · Quality & Evaluations",
-              "Scores d'évaluation, garde-fous et dérive qualité. Un système peut "
-              "être vert en latence et faux en sortie : c'est ce que ce dashboard "
-              "regarde. Generated by grafana-llmops-forge.", ["quality", "evals"])
+              "Evaluation scores, guardrails and quality drift. Healthy latency "
+              "does not imply correct output. Generated by grafana-llmops-forge.", ["quality", "evals"])
     ml = qe.s.model_label
     sb = qe.s.find("score", "_bucket") or qe.s.find("evaluation", "_bucket")
     score = sb or qe.s.find("score") or qe.s.find("evaluation")
@@ -1685,10 +1689,9 @@ def bp_quality(ctx: Ctx) -> Board | None:
                  desc="If this volume falls to zero, the scores shown elsewhere are stale.")
     b.text("What this dashboard does not prove",
            "An evaluation score measures what your evaluator knows how to measure. "
-           "Documentez la méthode (juge LLM ? jeu de référence ? échantillonnage ?) "
-           "à côté de ces courbes, sans quoi la métrique se retourne contre vous "
-           "en revue. Pour l'AI Act, ces signaux alimentent la surveillance "
-           "post-commercialisation (Art. 72), pas la conformité à eux seuls.", 24, 5)
+           "Document the evaluator, reference set and sampling method beside these "
+           "curves. These signals support post-market monitoring; "
+           "they do not establish compliance on their own.", 24, 5)
     return b
 
 
@@ -2387,8 +2390,12 @@ def main() -> int:
                  "\n     copy into Prometheus (rule_files), then rerun "
                  "discover+forge for shorter cost queries; execution still depends "
                  "on series count and the queried window."))
-    elif os.path.exists(rules_path):
-        os.remove(rules_path)
+    else:
+        # Both exports describe this run; do not leave an obsolete Kubernetes
+        # rule behind when pricing or the OTel signal is no longer available.
+        for obsolete in (rules_path, os.path.join(args.out_dir, "prometheusrule_llmops.yaml")):
+            if os.path.exists(obsolete):
+                os.remove(obsolete)
 
     if operation == "deploy" and deploy_exit == 0:
         failed = sum(v["failed"] for v in manifest["resources"].values())

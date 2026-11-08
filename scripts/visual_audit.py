@@ -24,6 +24,7 @@ from __future__ import annotations
 import argparse
 import base64
 import glob
+import hashlib
 import json
 import os
 import re
@@ -49,6 +50,14 @@ def slug(s: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", s.lower()).strip("-")[:48] or "x"
 
 
+def capture_directory(base: str, org_id: int, dash: dict) -> str:
+    """Keep evidence distinct across dashboards, organizations and instances."""
+    identity = json.dumps([base.rstrip("/"), org_id, dash["uid"]],
+                          ensure_ascii=True, separators=(",", ":"))
+    suffix = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:16]
+    return f"{slug(dash['title'])}--{suffix}"
+
+
 # --------------------------------------------------------------------------- #
 #  Plan de capture : quels dashboards, quels panels                           #
 # --------------------------------------------------------------------------- #
@@ -72,8 +81,14 @@ def load_plan(args) -> list[dict]:
                              "panels": [{"id": p["id"], "title": p.get("title", ""),
                                          "type": p["type"]} for p in d["panels"]]})
     for uid in (args.uids.split(",") if args.uids else []):
-        plan.append({"uid": uid.strip(), "title": uid.strip(), "panels": []})
-    return plan
+        uid = uid.strip()
+        if uid:
+            plan.append({"uid": uid, "title": uid, "panels": []})
+    # A repeated --uids value must not replace the richer manifest panel plan.
+    unique = {}
+    for dash in plan:
+        unique.setdefault(dash["uid"], dash)
+    return list(unique.values())
 
 
 # --------------------------------------------------------------------------- #
@@ -404,7 +419,8 @@ def main() -> int:
         manifest["errors"].append(
             {"resource_type": "capture-plan", "message": "no dashboard to capture"})
     for dash in plan:
-        out = os.path.join(args.out, slug(dash["title"]))
+        out = os.path.join(args.out, capture_directory(
+            client.base, args.resolved_org_id, dash))
         os.makedirs(out, exist_ok=True)
         try:
             cap = (capture_renderer if engine == "renderer" else capture_playwright)(
