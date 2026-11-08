@@ -24,16 +24,18 @@ qui inclut cette revue.
 | Après avoir comblé un gap d'instrumentation | dashboards impactés par le nouveau signal | oui |
 | Après modification du registre de prix | finops (échelles $ plausibles) | oui |
 | Vérification de paramétrage (datasource, règle d'alerte, variable) | page concernée, **Playwright uniquement** (le renderer ne rend que les dashboards) | à la demande |
-| Instance de prod inconnue / premier contact | 1 dashboard témoin avant de générer les 6 | recommandé |
+| Instance de prod inconnue / premier contact | 1 dashboard témoin avant de générer les autres blueprints compatibles | recommandé |
 
 ## 2. Séquence
 
 ```bash
 python3 scripts/visual_audit.py --dashboards generated_dashboards --out visual_audit
 # multi-org : --org-id 7 (sinon résolution stricte via /api/org)
-# puis : ouvrir visual_audit/<dash>/full.png (vision), croiser avec audit_manifest.json
+# puis : ouvrir les chemins files[] du manifeste audit_manifest.json (vision)
 # (panel_index = correspondance fichier → titre ; dom_findings = pré-scan Playwright)
 ```
+
+Les dossiers de capture portent un titre lisible et une empreinte de l’instance, de l’organisation et de l’UID. Deux dashboards de même titre ne partagent donc pas leurs PNG. Les UIDs répétés sont dédupliqués sans perdre les panels du manifeste. Utiliser les chemins `files[]`, sans reconstruire un dossier à partir du seul titre. Le fichier `audit_manifest.json` décrit toujours la dernière exécution dans `--out` ; choisir un répertoire distinct pour archiver chaque campagne.
 
 Le manifeste v2 porte `org_id`, `audit_status`, la liste des captures attendues
 et manquantes, et des erreurs structurées. Zéro capture ou toute capture

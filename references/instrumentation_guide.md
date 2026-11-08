@@ -126,7 +126,7 @@ Rétention déployeur ≥ 6 mois (Art. 26§6) :
 
 ```yaml
 limits_config:
-  retention_period: 4392h   # ~6 mois ; compactor requis pour l'appliquer
+  retention_period: 4392h   # exemple de 183 jours ; adapter à la durée calendaire requise, compactor nécessaire
 ```
 
 Envoyer les logs applicatifs IA avec un label `service_name` stable. Ne jamais
