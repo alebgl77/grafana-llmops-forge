@@ -67,6 +67,42 @@ class FinancialSourceTests(unittest.TestCase):
             files = {item.name: item.read_text(encoding="utf-8") for item in output.glob("*")}
             return code, stdout.getvalue(), stderr.getvalue(), files, remote.call_count, pricing.call_args_list
 
+    def test_rerun_removes_both_obsolete_rule_exports_and_preserves_other_files(self):
+        unpriced = signals("otel_genai")
+        unpriced["otel_genai"]["models_seen"] = ["unpriced-test-model"]
+        for replacement in (signals("litellm"), unpriced):
+            with self.subTest(dialects=list(replacement)), tempfile.TemporaryDirectory() as temp:
+                directory = pathlib.Path(temp)
+                cap_path, registry_path = directory / "cap.json", directory / "registry.json"
+                registry = copy.deepcopy(REGISTRY)
+                registry["models"][0].update(pricing_source_url="https://example.test/prices",
+                                             pricing_verified_at="2026-09-01")
+                registry_path.write_text(json.dumps(registry), encoding="utf-8")
+                output = directory / "output"
+                argv = ["forge", "--capability", str(cap_path), "--registry", str(registry_path),
+                        "--out-dir", str(output), "--blueprints", "finops"]
+                with mock.patch.object(sys, "argv", argv), mock.patch.object(
+                        f, "GrafanaClient", side_effect=AssertionError("unexpected network")), \
+                        contextlib.redirect_stdout(io.StringIO()):
+                    cap_path.write_text(json.dumps(capability({"p": signals("otel_genai")})),
+                                        encoding="utf-8")
+                    self.assertEqual(f.main(), 0)
+                    flat, crd = output / "prometheus_rules_llmops.yml", output / "prometheusrule_llmops.yaml"
+                    self.assertTrue(flat.exists() and crd.exists())
+                    unrelated = output / "manual_rules.yml"
+                    unrelated.write_text("preserve", encoding="utf-8")
+                    cap_path.write_text(json.dumps(capability({"p": replacement})), encoding="utf-8")
+                    self.assertEqual(f.main(), 0)
+                    self.assertFalse(flat.exists())
+                    self.assertFalse(crd.exists())
+                    # A previously interrupted cleanup may leave only the CRD.
+                    crd.write_text("obsolete", encoding="utf-8")
+                    self.assertEqual(f.main(), 0)
+                    self.assertFalse(crd.exists())
+                    self.assertEqual(unrelated.read_text(encoding="utf-8"), "preserve")
+                    manifest = json.loads((output / "deploy_manifest.json").read_text(encoding="utf-8"))
+                    self.assertFalse(manifest["recording_rules"]["generated"])
+
     def test_recorded_b_with_otel_a_never_crosses_scopes(self):
         ctx = f.Ctx(capability({"a": signals("otel_genai"), "b": recorded()}), REGISTRY)
         self.assertEqual(ctx.primary.s.ds_uid, "a")
