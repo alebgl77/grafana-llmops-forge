@@ -127,7 +127,7 @@ sum by(service_name)(count_over_time({service_name=~".+"} | json | human_review=
 ```
 
 Rétention Art. 26§6 (≥ 6 mois) : se vérifie dans la **config** Loki
-(`limits_config.retention_period` ≥ `4320h`), pas par requête. La forge le
+(politique `limits_config.retention_period` couvrant la durée calendaire applicable), pas par requête. La forge le
 rappelle dans la description du panel.
 
 <a name="traceql"></a>

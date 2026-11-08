@@ -1,5 +1,7 @@
 # Launch Playbook : lancement du repo (juillet 2026)
 
+> Historical launch plan. Dates and release references below describe the original campaign, not the current release or validation status. See [README](../README.md) and [ROADMAP](../ROADMAP.md) for the current project.
+
 Interne au repo (pas listé dans le README). Séquencement optimisé : d'abord la preuve sociale technique, ensuite les listes, ensuite les canaux grand public.
 
 ## J0 : Publication

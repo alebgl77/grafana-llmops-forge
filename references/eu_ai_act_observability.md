@@ -1,32 +1,31 @@
-# EU AI Act × Observabilité : état vérifié le 12 juillet 2026
+# EU AI Act × observabilité : repères vérifiés le 8 novembre 2026
 
-Support d'aide à la conformité. **Ne constitue pas un avis juridique**,
-à rappeler à l'utilisateur. Règlement UE 2024/1689, modifié par le
-paquet Digital Omnibus (accord provisoire Conseil/Parlement du 7 mai 2026,
-adoption formelle en cours au moment de la vérification ; re-vérifier via web
-search si la question est critique).
+Support à la revue, sans avis juridique. L'AI Omnibus est entré en vigueur le
+27 juillet 2026. Les échéances dépendent du rôle, du système et des exceptions.
+Vérifier le texte applicable avant toute décision ; un dashboard ne certifie
+ni une rétention effective ni la conformité.
 
-## 1. Calendrier applicable
+## 1. Repères d'application
 
-| Date | Obligation | Impact observabilité |
+| Date | Repère | Limite |
 |---|---|---|
-| 2 fév. 2025 ✅ | Pratiques interdites (Art. 5) + maîtrise de l'IA (Art. 4) | Inventaire des usages (dashboard adoption = preuve de cartographie vivante) |
-| 2 août 2025 ✅ | GPAI (Art. 51-56) : documentation, transparence, signalement | Concerne les *fournisseurs* de modèles ; le déployeur doit tracer QUELS modèles il consomme → inventaire du dashboard governance |
-| **2 août 2026** | **Pouvoirs de sanction pleinement activés** ; transparence Art. 50 (chatbots doivent s'annoncer, Art. 50§1) | Compteur de disclosure si instrumenté ; à défaut, documentation produit |
-| 2 déc. 2026 | Marquage machine-réadable des contenus synthétiques (Art. 50§2, reporté par l'Omnibus) | Journaliser la pose du watermark côté génération |
-| 2 déc. 2027 | Haut risque **Annexe III** (RH, crédit, biométrie, éducation, services essentiels, justice…), reporté du 2 août 2026 par l'Omnibus | Journalisation Art. 12 + rétention Art. 26§6 + supervision humaine Art. 14 : tout le dashboard governance |
-| 2 août 2028 | Haut risque intégré à des produits réglementés (Annexe I) | Idem, périmètre produits |
-| 31 déc. 2030 | Systèmes mis sur le marché avant l'échéance : fin du sursis | rien |
+| 2 février 2025 | Dispositions générales et interdictions initiales | Lire avec les modifications ultérieures |
+| 2 août 2025 | GPAI et gouvernance | Fournisseurs concernés |
+| 2 août 2026 | Transparence et contrôle des dispositions applicables | Pas une activation simultanée de toutes les règles |
+| 2 décembre 2026 | Transition Art. 50(2) pour certains systèmes déjà sur le marché ; nouvelles interdictions | Pas un report général de la transparence |
+| 2 décembre 2027 | Haut risque Annexe III | Champ à qualifier |
+| 2 août 2028 | Haut risque intégré aux produits réglementés | Vérifier les règles sectorielles |
 
-Sanctions : 35 M€ / 7 % CA (pratiques interdites), 15 M€ / 3 % (haut risque),
-7,5 M€ / 1 % (informations incorrectes). Plafonds adaptés PME.
+Sources officielles : [Commission européenne](https://digital-strategy.ec.europa.eu/en/policies/regulatory-framework-ai),
+[entrée en vigueur de l'AI Omnibus](https://digital-strategy.ec.europa.eu/en/news/ai-omnibus-enters-force),
+[calendrier du Service Desk](https://ai-act-service-desk.ec.europa.eu/en/ai-act/eu-ai-act-implementation-timeline).
 
 ## 2. Mapping articles → signaux → panels
 
 | Article | Exigence | Signal mesurable | Panel forge |
 |---|---|---|---|
 | Art. 12 | Journalisation automatique des systèmes haut risque | Volume de logs par système, continuité (pas de trous) | governance › « Preuve de journalisation » |
-| Art. 26§6 | Déployeur conserve les logs ≥ 6 mois | `retention_period ≥ 4392h` (config Loki) + ancienneté des logs | description du panel + audit config |
+| Art. 26§6 | Déployeur conserve les logs ≥ 6 mois | Politique de rétention couvrant la durée calendaire applicable + contrôle effectif du backend | description du panel + audit config |
 | Art. 14 | Supervision humaine effective | Compteur d'interventions/overrides humains (à instrumenter côté app) | extension governance (§ blueprints) |
 | Art. 50§1 | Information « vous parlez à une IA » | Compteur de disclosures affichées | extension governance |
 | Art. 72 | Surveillance post-commercialisation | Dérive perf : taux d'erreur, latence, mix modèles dans le temps | gateway + adoption |
@@ -36,7 +35,7 @@ Sanctions : 35 M€ / 7 % CA (pratiques interdites), 15 M€ / 3 % (haut risque)
 
 ## 3. Checklist déployeur (à restituer à l'utilisateur)
 
-1. **Cartographier** : le dashboard adoption vous donne la carte *réelle*
+1. **Cartographier** : le dashboard adoption vous donne la carte des usages *observés*
    (souvent ≠ carte déclarée ; la shadow AI apparaît dans les métriques).
 2. **Qualifier** : quels usages tombent en Annexe III ? (RH, crédit, scoring…)
    → échéance déc. 2027, mais les contrats clients l'exigent souvent déjà.

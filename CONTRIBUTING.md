@@ -40,6 +40,17 @@ So the bar for a change is evidence, not plausibility:
 - No hardcoded metric names in blueprints; resolve through the capability map.
 - Panel descriptions teach interpretation, not paraphrase titles.
 
+## Documentation visuals
+
+Edit `tools/build_visual_assets.py`, then run `python3 tools/build_visual_assets.py`.
+The generator shares palette and typography and reads blueprint names and the
+governance crosswalk from the runtime. `python3 tests/project_coherence.py` checks
+the actual blueprint membership, accessible SVG labels and source/asset parity.
+The diagrams and `dashboard-finops.svg` are illustrations. The separate
+`dashboard-finops.png` is a historical Grafana capture and must only be replaced
+by another real capture. `social-preview.png` is the raster export of
+`social-preview.svg`; regenerate it when that SVG changes.
+
 Production-impacting changes must also follow
 [`docs/PRODUCTION_CHECKLIST.md`](docs/PRODUCTION_CHECKLIST.md), including the
 manual Grafana Cloud, Enterprise, and SSO validation where applicable.

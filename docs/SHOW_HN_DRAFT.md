@@ -105,7 +105,7 @@ as illustrations rather than fake screenshots.
 ## Réponses pré-écrites
 
 **« Grafana Cloud ships AI Observability already »** : la question la plus probable
-> Yes, and it's good: Agent Observability went public preview in April 2026. Two differences that matter for who I built this for: it's Cloud-only, and it asks you to adopt their SDK. This runs on self-hosted OSS against whatever you already emit. It also does two things no vendor ships: cost attribution by provider sovereignty, which EU procurement teams are actively asking for, and an AI Act evidence layer. They compose fine; nothing here conflicts with the Grafana plugins.
+> Yes, and it's good: Agent Observability went public preview in April 2026. Two differences that matter for who I built this for: it's Cloud-only, and it asks you to adopt their SDK. This runs on self-hosted OSS against whatever you already emit. It also does two things no vendor ships: cost attribution by registry provider origin, which EU procurement teams are actively asking for, and an AI Act evidence layer. They compose fine; nothing here conflicts with the Grafana plugins.
 
 **« Why not Langfuse / Helicone / Arize? »**
 > Different layer. Those are platforms you adopt instead of what you have. This assumes you already run Grafana, which most platform teams do, and turns it into the AI surface. No new tool, no new login, no new vendor security review.

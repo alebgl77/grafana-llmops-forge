@@ -39,3 +39,4 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+graphify-out/

@@ -18,7 +18,7 @@ readings; pass one to keep the board focused.
 | Logs exist continuously and are retained | Art. 12 · Art. 26(6) | A.6.2.8 | MANAGE 4.1 |
 | Production systems are monitored | Art. 72 post-market | A.6.2.6 · Cl. 9.1 | MEASURE 3.x · MANAGE 4.1 |
 | Inventory of models actually consumed | Art. 26 · GPAI chain | A.10 | GOVERN 6.1 · MAP 4.1 |
-| Provider dependency and jurisdiction | GPAI contractual terms | A.10 | GOVERN 6.2 |
+| Provider dependency and registry origin | GPAI contractual terms | A.10 | GOVERN 6.2 |
 | Quality and drift measured | Art. 15 accuracy/robustness | A.6.2.6 | MEASURE 2.x |
 | Incidents detected and escalated | Art. 73 | A.8 | MANAGE 4.x |
 | Who uses the systems, and how | Art. 4 · Art. 26 | A.9 | GOVERN 1.x |
@@ -48,9 +48,11 @@ GenAI-specific risk categories mapped back to the same four functions.
 
 ## 3. What the dashboard proves, and what it does not
 
-Proves: that logging is continuous, that a model inventory exists and matches
-reality, which providers and jurisdictions you actually depend on, that quality
-is measured, that incidents surface.
+Supports review of observed logging, detected models, registry provider origin,
+measured quality and surfaced alerts within the selected datasource and time
+window. Discovery can miss uninstrumented systems and does not establish a
+complete inventory. Registry origin establishes neither processing nor storage
+location; deployment declarations are separate and are not independently verified.
 
 Does not prove: a management system exists (ISO clauses 4–10 are organisational
 work no tool performs), that a risk assessment was done, that human oversight is

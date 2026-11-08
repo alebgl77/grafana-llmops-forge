@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title desc">
+<title id="title">Grafana LLMOps Forge</title>
+<desc id="desc">Discover telemetry, generate dashboards, deploy, capture and review separately.</desc>
+<rect x="0" y="0" width="1280" height="640" rx="0" fill="#0d1117" stroke="#0d1117"/>
+<text x="48" y="147" font-family="Arial, Helvetica, sans-serif" font-size="34" font-weight="700" fill="#e6edf3">Grafana</text>
+<text x="48" y="212" font-family="Arial, Helvetica, sans-serif" font-size="56" font-weight="700" fill="#ff9830">LLMOps Forge</text>
+<text x="48" y="258" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" fill="#e6edf3">Turn existing telemetry into</text>
+<text x="48" y="292" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="400" fill="#e6edf3">AI observability dashboards.</text>
+<text x="48" y="350" font-family="Arial, Helvetica, sans-serif" font-size="23" font-weight="400" fill="#79c0ff">7 dashboards · 10 dialects</text>
+<text x="48" y="386" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">FinOps, SLOs, agents, adoption, inference,</text>
+<text x="48" y="412" font-family="Arial, Helvetica, sans-serif" font-size="18" font-weight="400" fill="#e6edf3">quality and governance evidence.</text>
+<rect x="725" y="110" width="507" height="104" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="725" y="126" width="3" height="72" rx="0" fill="#ff9830" stroke="#ff9830"/>
+<text x="745" y="143" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#ff9830">Discover and generate</text>
+<text x="745" y="171" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Use the metrics your platform actually emits.</text>
+<path d="M978 216 L978 238" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<path d="M973 231 L978 238 L983 231" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<rect x="725" y="242" width="507" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="725" y="258" width="3" height="56" rx="0" fill="#79c0ff" stroke="#79c0ff"/>
+<text x="745" y="275" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#79c0ff">Deploy and capture</text>
+<text x="745" y="303" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">Grafana APIs, renderer or Playwright.</text>
+<path d="M978 332 L978 354" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<path d="M973 347 L978 354 L983 347" fill="none" stroke="#79c0ff" stroke-width="2"/>
+<rect x="725" y="358" width="507" height="88" rx="10" fill="#161b22" stroke="#3d4856"/>
+<rect x="725" y="374" width="3" height="56" rx="0" fill="#80d495" stroke="#80d495"/>
+<text x="745" y="391" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="700" fill="#80d495">Review the evidence</text>
+<text x="745" y="419" font-family="Arial, Helvetica, sans-serif" font-size="17" font-weight="400" fill="#b0bac5">A separate human or vision-agent step.</text>
+<text x="48" y="588" font-family="Arial, Helvetica, sans-serif" font-size="20" font-weight="400" fill="#b0bac5">github.com/alebgl77/grafana-llmops-forge</text>
+</svg>

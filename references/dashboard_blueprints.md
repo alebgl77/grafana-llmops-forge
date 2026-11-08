@@ -81,11 +81,22 @@ Extensions : coût interne $/1M tokens (formule dans query_library §3) à mettr
 en regard du tableau API ; c'est l'argument build-vs-buy chiffré ; débit par
 réplique (`by(instance)`) ; corrélation TTFT ↔ GPU_UTIL (panel 2 axes).
 
-## 6. `governance` : AI · Gouvernance & EU AI Act
+## 6. `quality` : AI · Quality & Evaluations
+
+**Question** : « La qualité mesurée reste-t-elle acceptable quand le modèle ou les usages changent ? »
+
+Généré si le dialecte `evals` est détecté. Les histogrammes produisent une médiane
+et un décile bas (p10) ; les scores simples produisent une moyenne non pondérée
+des séries et un minimum, jamais de faux quantiles. Selon les signaux : blocs
+de garde-fous, p50 par modèle, volume d'évaluations et limites d'interprétation.
+La baisse du volume peut rendre les scores obsolètes. Une bonne note ne prouve
+ni la couverture de l'évaluateur ni la conformité du système.
+
+## 7. `governance` : AI · Governance & Compliance Evidence
 
 **Question** : « Que montre-t-on à un auditeur / au comité risques ? »
 
-Générés : calendrier réglementaire (état juillet 2026, post-Digital Omnibus),
+Générés : repères réglementaires datés (vérifier les sources officielles avant usage),
 trafic par origine du fournisseur, preuve de journalisation (Loki),
 inventaire des modèles observés (origine fournisseur/licence/GPAI), inventaire séparé des lieux de déploiement déclarés, liste d'alertes actives
 (veille incidents Art. 73).
