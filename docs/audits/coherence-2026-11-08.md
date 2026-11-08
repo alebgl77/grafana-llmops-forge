@@ -76,6 +76,10 @@ existing owner session in GitHub's web interface allowed publication to the
 dedicated `codex/coherence-audit-2026-11-08` branch instead. Consult the pull
 request's checks for the current GitHub-runner results; the local results above
 do not claim completion of the remote CI or a live visual review.
+The first remote run exposed runner drift: `ubuntu-latest` resolved to Ubuntu
+26.04, for which `actions/setup-python` could not install Python 3.9. The audit
+job now uses Ubuntu 24.04, confirmed in the official Python versions manifest
+to provide Python 3.9 x64 builds. The compatibility check remains enabled.
 Do not interpret these local checks or diagrams as production approval or a
 semantic visual review of a newly deployed instance.
 
