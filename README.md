@@ -58,7 +58,7 @@ expected capture is absent, even when `--allow-empty` explicitly permits exit 0.
 
 Most "LLM dashboards" are static JSON that assume your metric names. This is a **forge**:
 
-1. **Discovery-first, never assume.** `discover.py` probes your datasources and captures the *actual* metric names present (OTel exporters disagree on suffixes: `_seconds`, `_token`, `_total`). Panels are only generated for queries that will return data. Missing signals become an **instrumentation gap report** with exact configs, not empty panels.
+1. **Discovery-first, never assume.** `discover.py` probes your datasources and captures the *actual* metric names present (OTel exporters disagree on suffixes: `_seconds`, `_token`, `_total`). Panels are generated from discovered signals. Discovery alone does not guarantee data for every time range; live query and rendering checks remain necessary. Missing signals become an **instrumentation gap report** with exact configs, not empty panels.
 2. **Four telemetry dialects, one mental model.** OpenTelemetry GenAI (`gen_ai_*`), LiteLLM gateway (`litellm_*`, native USD spend), inference engines (`vllm:*`, `tgi_*`), GPU (`DCGM_*`). Each blueprint is translated into whatever you actually emit.
 3. **Cost is computed, not hoped for.** Native gateway spend when available; otherwise PromQL composed by joining your token counters with a bundled **33-model price registry** (US/EU/Asia, input/output/cached, tiered pricing), refreshable from official pricing pages when stale.
 4. **Governance is observable.** The EU AI Act dashboard maps articles (12, 26§6, 50, 73) to live signals: logging evidence, retention posture, incident watch, an auto-built model inventory with provider-origin and GPAI flags, and the post-Digital-Omnibus timeline. A separate optional deployment inventory shows declared processing/storage locations; absent declarations remain unknown.
@@ -79,7 +79,7 @@ Most "LLM dashboards" are static JSON that assume your metric names. This is a *
 | ✅ **Quality & Evals** | *Is the output any good, and is it drifting?* | eval score p50/p10, score per model, guardrail blocks, eval volume (a system can be green on latency and wrong on content) |
 | ⚖ **Governance Evidence** | *What do we show an auditor?* | the same telemetry read against **EU AI Act, ISO/IEC 42001 and NIST AI RMF** (`--framework`): regulatory timeline, logging evidence, **auto model inventory**, provider-origin split, declared deployment locations, incident watch |
 
-Blueprints only materialize when the underlying signals exist. No empty panels.
+Signal-dependent blueprints materialize only when their inputs are detected; governance also reports gaps. Empty results remain possible after discovery and must be checked on the target instance.
 
 <div align="center"><img src="docs/assets/governance-crosswalk.svg" alt="One telemetry layer, three regulatory readings" width="100%"/>
 <sub><i>Diagram, not a screenshot. The measured panels are identical whichever framework you select; only the reading changes.</i></sub></div>
@@ -112,7 +112,7 @@ See the [field contract and local-path restrictions](docs/deployment_inventory.m
 
 OTel pricing and generated rules remain independent of that financial choice. When discovery finds OTel GenAI signals, token counters, a model label, and usable prices, the forge writes `prometheus_rules_llmops.yml`: prices become series (`llm:price_input_usd_per_token{model=...}`) and cost becomes one recorded metric joined by vector matching. An explicitly requested Artificial Analysis fallback can still price those OTel artifacts while FinOps displays native spend. The manifest's `recording_rules.datasource_uid` identifies their target separately from `financial_source.datasource_uid`. Load the rules into that Prometheus and repeat discovery to make the recorded total a candidate. Without rules or native spend, on-the-fly composition is useful to bootstrap and becomes expensive past ~15 models.
 
-<div align="center"><img src="docs/assets/pricing-flow.png" alt="Cost flow from native LiteLLM spend directly to FinOps, or from OTel GenAI token counters through the official registry and opt-in Artificial Analysis fallback to Prometheus rules and FinOps dashboards; models with ambiguous matches or no price remain unpriced" width="100%"/>
+<div align="center"><img src="docs/assets/pricing-flow.svg" alt="Financial source priority: recorded cost, then native LiteLLM spend, then inline OTel estimates; ambiguous datasources require explicit selection and unpriced models remain visible" width="100%"/>
 <sub><i>Conceptual cost flow for native gateway spend and OTel GenAI token pricing. Not a Grafana screenshot.</i></sub></div>
 
 ## Try it in 60 seconds (no Grafana needed)
