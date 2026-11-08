@@ -31,6 +31,11 @@ jobs:
         run: |
           python tests/live_query_gate_invariants.py
           python tests/burn_alert_recovery_e2e.py --selftest
+      - name: Cross-file visual and capture identity contracts
+        run: |
+          python tests/visual_capture_invariants.py
+          python tests/project_coherence.py
+          python tools/build_visual_assets.py --check
       - name: Infrastructure YAML must lint and load
         if: matrix.python == '3.13'
         run: |
